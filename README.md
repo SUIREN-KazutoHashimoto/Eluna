@@ -22,6 +22,8 @@ Windows向けのローカルAIチャットツール。llama.cppを推論基盤�
 
 入力欄の「スキル」で、再利用する手順・参考資料・補助コードを依頼へ適用できます。SKILL.md／ZIPの取り込み、GUI作成、会話ごとの自動・指定・オフ、プロジェクト分離と使用記録に対応します。標準スキルは管理画面から追加できます。PowerShellの実行条件、Claude形式との互換範囲と保存方法は[スキルガイド](docs/skills.md)を参照してください。
 
+サイドバーの「Computer Use」では、選んだWindowsアプリの画面とUI要素をローカルモデルが読み取り、確認を挟みながらクリック・入力・スクロール等を行います。操作対象は複数選べ、文字入力の提案は実行前に修正できます。Ctrl+Alt+Escで停止します。画像対応モデルとprojectorを使うと座標操作もできます。対応範囲・保存と制限は[Computer Useガイド](docs/computer-use.md)を参照してください。
+
 ソースから配布用exeを作る場合は、開発ツールを用意して次を実行します。
 
 ```powershell
@@ -123,6 +125,7 @@ docs/                  設計・品質・依存関係・リリース運用
 - [実装・検証の台帳](docs/implementation-status.md)
 - [検索・調査・ディベートの開発版ガイド](docs/research.md)
 - [モデルの取得・整理・設定](docs/models.md)
+- [Computer Use](docs/computer-use.md)
 - [リリース運用](docs/releasing.md)
 
 Elunaのライセンスは[Apache-2.0](LICENSE)です。llama.cppとその同梱コード、モデルのライセンスは別に扱います。[第三者コードの扱い](THIRD_PARTY_NOTICES.md)を参照してください。

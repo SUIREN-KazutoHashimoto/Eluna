@@ -47,3 +47,11 @@
 `SkillStore`はSKILL.md・ZIPの取り込みと不変の版、同梱ファイルの検証を扱う。`SkillRunner`はスコープを限定したメタデータから適用を選び、本文・参考資料・補助コードを段階的に読み込む。`SkillScriptRunner`はWindows標準PowerShellの確認・専用作業フォルダー・出力制限・キャンセルを扱う。OSによるコード隔離ではない。
 
 予約には候補のメタデータと版IDを保持し、実行時の画面選択に依存させない。使用した本文・抜粋・実行結果は回答へ保存する。プロジェクト外のスキルは初期状態で候補から除外する。形式3の`state-skills.json`は登録情報・会話ごとの選択・使用記録を保存し、従来の状態ファイルを残す。版の実ファイルと生成ファイルは別管理。詳細は[スキルガイド](skills.md)。
+
+## Computer Use
+
+`ComputerUseWindow`が対象選択・画面・提案の確認と文字修正・停止・履歴を扱い、`ComputerUseRunner`が観察→提案→確認→実行の回数・時間・許可範囲を管理する。`ComputerPlanner`は独立した`LlamaService`へ対象画面とUI要素を渡し、JSON schemaで単一操作を生成する。`ComputerActionPolicy`は形式・キー・パスワード欄・実行前の観察の一致を検査する。
+
+`ComputerDesktop`は同じexeの`--computer-worker`を要求ごとに起動し、標準入出力のJSONで通信する。補助プロセスのMTAスレッドがUI Automation / Win32 / GDIを扱い、12秒の要求期限とWindows Job Objectで終了させる。UIAプロバイダーが応答を止めてもWPFを止めない。前面化の前後で観察を比較し、入力先のフォーカス・マウス位置を検査する。OSの入力制約を回避しない。
+
+デスクトップの同時制御を名前付きmutexで1件に限定し、実行中だけCtrl+Alt+Escを登録する。`ComputerActivity`を処理リストへ表示する。終了・画面を閉じる・キャンセルで推論と補助プロセスを後始末する。画面・依頼・操作履歴は通常の保存状態へ加えず、利用者が選んだ履歴JSONだけを書き出す。詳細は[Computer Use](computer-use.md)。

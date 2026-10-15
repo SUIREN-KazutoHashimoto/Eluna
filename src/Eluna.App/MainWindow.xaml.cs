@@ -94,6 +94,8 @@ public partial class MainWindow : Window
         ShowUnique(() => { var browser = new ModelWindow(_store, _viewModel.Downloads, _viewModel.ComputeChoices, _viewModel.Settings.Compute, _viewModel.EffectiveContext, _viewModel) { Owner = this }; browser.Closed += async (_, _) => await _viewModel.RefreshModelsAsync(browser.DownloadedModel); return browser; });
     }
     private void Settings_Click(object sender, RoutedEventArgs e) => OpenSettings();
+    private void ComputerUse_Click(object sender, RoutedEventArgs e) => OpenComputerUse();
+    internal ComputerUseWindow OpenComputerUse() => ShowUnique(() => new ComputerUseWindow(_viewModel) { Owner = this });
     public void OpenSettings(int tab = 0) { var settings = ShowUnique(() => new SettingsWindow(_viewModel) { Owner = this }); settings.SelectTab(tab); }
     private static T ShowUnique<T>(Func<T> create) where T : Window
     {
@@ -160,6 +162,7 @@ public partial class MainWindow : Window
         Item("画像・文書を添付…", async () => { var picker = new OpenFileDialog { Filter = AttachmentService.Filter, Multiselect = true }; if (picker.ShowDialog(this) == true) { await _viewModel.AttachFilesAsync(picker.FileNames); } });
         if (menu.Items[0] is MenuItem attachment) { attachment.IsEnabled = _viewModel.CanChange; attachment.ToolTip = "実行中の推論・準備が終わると添付できます。別の依頼は送信・予約できます。"; ToolTipService.SetShowOnDisabled(attachment, true); }
         Item("画像認識モデルの設定…", () => OpenMedia("vision"));
+        Item("Computer Use · PCを操作…", () => OpenComputerUse());
         menu.Items.Add(new Separator());
         Item("画像を生成…", () => OpenMedia("image"));
         Item("ドキュメントを生成…", () => OpenMedia());
@@ -399,7 +402,7 @@ public partial class MainWindow : Window
         e.Cancel = true; if (_shutdownStarted) { return; }
         foreach (Window child in OwnedWindows.Cast<Window>().ToArray())
         {
-            child.Close(); bool closed = child is MediaWindow media ? await media.PendingClose : child is DataWindow data ? await data.PendingClose : await UnsavedChanges.PendingClose(child);
+            child.Close(); bool closed = child is ComputerUseWindow computer ? await computer.PendingClose : child is MediaWindow media ? await media.PendingClose : child is DataWindow data ? await data.PendingClose : await UnsavedChanges.PendingClose(child);
             if (!closed || child.IsVisible)
             {
                 if (_restoreBackup is { } canceled) { _restoreBackup = null; await Task.Run(() => BackupArchive.DeleteStage(canceled.Directory, _store.BackupsDirectory)); }

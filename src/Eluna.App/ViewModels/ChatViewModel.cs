@@ -84,7 +84,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     public bool CanGenerate => CanCompose && !_submitting && HasModel && Inferences.Items.Count(j => j.IsPending) < 100;
     public bool IsEmpty => SelectedConversation?.Messages.Count is not > 0;
     public ObservableCollection<ChatAttachment> PendingAttachments => SelectedConversation?.DraftAttachments ?? [];
-    public bool IsBusy { get => _isBusy || _submitting || Inferences.ActiveCount > 0 || MediaJobs.Any(j => j.State == "active"); private set { Set(ref _isBusy, value); Inferences.Suspended = value; RefreshCommands(); if (!value) { PumpMedia(); } } }
+    public bool IsBusy { get => _isBusy || _submitting || Inferences.ActiveCount > 0 || MediaJobs.Any(j => j.State == "active") || ComputerActivity?.State == "active"; private set { Set(ref _isBusy, value); Inferences.Suspended = value; RefreshCommands(); if (!value) { PumpMedia(); } } }
     public string Status { get => !_isBusy && SelectedJob is { IsPending: true } job && job.Request.Model.Id == SelectedModel?.Id ? job.Detail : _status; private set { Set(ref _status, value); Notify(nameof(ShowStatus)); } }
     public string Metrics { get => !_isBusy && SelectedJob is { } job && job.Request.Model.Id == SelectedModel?.Id ? (job.Metrics.Length > 0 && !job.IsPending ? "直前の回答 · " : "") + job.Metrics : _metrics; private set => Set(ref _metrics, value); }
     public string Error { get => _error; set { _retryAction = null; Set(ref _error, value); Notify(nameof(HasError)); Notify(nameof(ShowStatus)); Notify(nameof(CanRetry)); RetryCommand?.Refresh(); } }
@@ -657,7 +657,8 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     public async Task ShutdownAsync()
     {
-        _shuttingDown = true; _mediaShutdown.Cancel(); foreach (MediaJob job in MediaJobs.Where(j => j.IsPending).ToArray()) { job.Cancel(); if (job.State == "queued") { job.State = job.Request is null ? "canceled" : "paused"; job.Completion.TrySetCanceled(); } }
+        _shuttingDown = true; ComputerActivity?.Stop(); try { await ComputerCompletion; } catch (OperationCanceledException) { }
+        _mediaShutdown.Cancel(); foreach (MediaJob job in MediaJobs.Where(j => j.IsPending).ToArray()) { job.Cancel(); if (job.State == "queued") { job.State = job.Request is null ? "canceled" : "paused"; job.Completion.TrySetCanceled(); } }
         RefreshCommands(); _draftSave?.Cancel(); _generation?.Cancel();
         await Inferences.ShutdownAsync();
         try { await Task.WhenAll(_mediaWorkers.Values.ToArray()); } catch (Exception ex) { _lastError = ex; }
@@ -668,6 +669,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     public void Dispose()
     {
+        ComputerActivity?.Stop();
         _draftSave?.Cancel(); _draftSave?.Dispose(); _generation?.Cancel();
         foreach (Conversation c in Conversations) { c.PropertyChanged -= ConversationChanged; }
         ReleaseIdleEngines(); foreach (LlamaService engine in _busyEngines) { engine.Dispose(); }

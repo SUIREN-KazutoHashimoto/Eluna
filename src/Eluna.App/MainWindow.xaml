@@ -49,6 +49,7 @@
           <Popup x:Name="ProcessPopup" PlacementTarget="{Binding ElementName=ProcessButton}" Placement="Right" AllowsTransparency="True" StaysOpen="False" IsOpen="{Binding IsChecked, ElementName=ProcessButton, Mode=TwoWay}" Opened="ProcessPopup_Opened">
             <Border Width="420" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1" CornerRadius="10"><ContentControl x:Name="ProcessContent" /></Border>
           </Popup>
+          <Button Click="ComputerUse_Click" IsEnabled="{Binding CanCompose}" HorizontalContentAlignment="Left" AutomationProperties.Name="Computer Use · PCを操作"><TextBlock Text="▣  Computer Use" /></Button>
           <Button Click="Settings_Click" IsEnabled="{Binding CanCompose}" HorizontalContentAlignment="Left">
             <StackPanel Orientation="Horizontal"><TextBlock Text="⚙" Margin="0,0,12,0" /><TextBlock Text="設定" /></StackPanel>
           </Button>

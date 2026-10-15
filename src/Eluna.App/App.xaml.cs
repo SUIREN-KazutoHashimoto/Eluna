@@ -15,6 +15,14 @@ public partial class App : Application
         base.OnStartup(e);
         try
         {
+            if (e.Args.Contains("--computer-worker"))
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                _ = Task.Run(async () => { int code = await ComputerDesktop.RunWorkerAsync(); await Dispatcher.InvokeAsync(() => Shutdown(code)); }); return;
+            }
+            int fixtureIndex = Array.IndexOf(e.Args, "--computer-fixture");
+            if (fixtureIndex >= 0 && fixtureIndex + 1 < e.Args.Length)
+            { MainWindow = ComputerUseVerification.Fixture(e.Args[fixtureIndex + 1]); MainWindow.Show(); return; }
             int waitIndex = Array.IndexOf(e.Args, "--wait-for-exit");
             if (waitIndex >= 0 && waitIndex + 1 < e.Args.Length && int.TryParse(e.Args[waitIndex + 1], out int previousId))
             { try { using var previous = System.Diagnostics.Process.GetProcessById(previousId); if (!previous.WaitForExit(60000)) { Shutdown(1); return; } } catch (ArgumentException) { } }
@@ -32,6 +40,13 @@ public partial class App : Application
                 root = Path.Combine(captureDirectory, "preview-data");
             }
             var store = new AppStore(root);
+            int computerIndex = Array.IndexOf(e.Args, "--verify-computer");
+            if (computerIndex >= 0 && computerIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("Computer Useの検証には --data-dir で専用の保存先を指定してください。"); }
+                int modelIndex = Array.IndexOf(e.Args, "--model-meta"); string? metadata = modelIndex >= 0 && modelIndex + 1 < e.Args.Length ? e.Args[modelIndex + 1] : null;
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = ComputerUseVerification.RunAsync(store, e.Args[computerIndex + 1], metadata); return;
+            }
             int restoreCycle = Array.IndexOf(e.Args, "--verify-restore-cycle"), restoredCycle = Array.IndexOf(e.Args, "--verify-restored");
             if ((restoreCycle >= 0 && restoreCycle + 1 < e.Args.Length) || (restoredCycle >= 0 && restoredCycle + 1 < e.Args.Length))
             {

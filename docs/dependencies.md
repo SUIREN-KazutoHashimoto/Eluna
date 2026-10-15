@@ -7,6 +7,7 @@ llama.cpp以外の外部パッケージは原則使いません。必要な場�
 | 項目 | 扱い | バージョン管理 |
 | --- | --- | --- |
 | .NET / WPF / Windows API | 標準基盤 | global.jsonと対象フレームワーク |
+| Computer UseのUI Automation / User32 / GDI | WindowsとWPFの標準API。外部パッケージ・別ランタイム・操作SDKの追加なし | Windows / WPF基盤。既存llama.cppで操作を提案 |
 | 標準.NETランタイムパック / SDKのILLinkタスク | 単体exe配布のための標準プラットフォーム資材。アプリの外部ライブラリ追加とは区別 | SDKが選択するバージョン、NuGet.Configで取得可能なパッケージ名を限定 |
 | llama.cpp | 許可済みの推論基盤 | third_party/llama.cppのGit submoduleコミット |
 | stable-diffusion.cpp | 2026-10-15に追加・ビルド・同梱をオーナー承認。CPU/Vulkanの静的CRTエンジン。C#ライブラリは追加しない | third_party/stable-diffusion.cpp、120e3e875c5501c1babb50c0966122cb569d12d4 |
@@ -15,6 +16,8 @@ llama.cpp以外の外部パッケージは原則使いません。必要な場�
 | Vulkan SDK | オーナー承認済みのGPUビルド用依存。C#や配布物にSDK全体を同梱しない | scripts/vulkan-sdk.jsonでバージョンとSHA-256を固定 |
 | Git、PowerShell、MSVC、CMake | 開発用ツール。自動インストールしない | 必要環境をdocs/development.mdに記載 |
 | GitHub公式Actions | CIの実行用。アプリへ同梱しない | ci.ymlでコミットSHAを固定 |
+
+SDK 10.0.402ではWPFの配布用ランタイムを基底の`Microsoft.WindowsDesktop.App`にまとめて解決するため、self-contained時だけ標準FrameworkReferenceを明示する。`DisableTransitiveFrameworkReferenceDownloads`、NuGet.Configの取得先とパッケージ名の制限、ELUNA001のチェックは維持する。
 
 llama.cppにはggmlやcpp-httplibなどが同梱されています。「外部依存なし」とは説明せず、固定したllama.cppの構成とライセンスを確認します。Vulkan SDK以外のGPU SDKやOpenSSLなどは承認済みとはみなしません。
 
