@@ -40,6 +40,12 @@ public partial class App : Application
                 root = Path.Combine(captureDirectory, "preview-data");
             }
             var store = new AppStore(root);
+            int effectsIndex = Array.IndexOf(e.Args, "--verify-computer-effects");
+            if (effectsIndex >= 0 && effectsIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("画面効果の検証には --data-dir で専用の保存先を指定してください。"); }
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = ComputerEffectsVerification.RunAsync(e.Args[effectsIndex + 1]); return;
+            }
             int computerIndex = Array.IndexOf(e.Args, "--verify-computer");
             if (computerIndex >= 0 && computerIndex + 1 < e.Args.Length)
             {

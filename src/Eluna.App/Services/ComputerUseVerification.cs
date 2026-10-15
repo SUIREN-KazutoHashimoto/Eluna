@@ -26,7 +26,11 @@ internal static class ComputerUseVerification
         var password = new PasswordBox { Password = "fixture-secret-not-for-model", Width = 210, HorizontalAlignment = HorizontalAlignment.Left }; panel.Children.Add(password); AutomationProperties.SetName(password, "検証用パスワード");
         var hang = new Button { Content = "応答停止（検証）", Height = 30, Margin = new(0, 8, 0, 0) }; panel.Children.Add(hang);
         hang.Click += (_, _) => { File.WriteAllText(Path.Combine(output, "provider-blocked.txt"), "blocked"); Thread.Sleep(30000); };
-        window.Loaded += (_, _) => editor.Focus();
+        window.Loaded += (_, _) =>
+        {
+            window.Topmost = true; window.Activate(); window.Topmost = false; editor.Focus();
+            File.WriteAllText(Path.Combine(output, "fixture-window.json"), JsonSerializer.Serialize(new { window.Left, window.Top, window.Width, window.Height, window.WindowState, window.IsVisible }, ComputerJson.Options));
+        };
         var timeout = new DispatcherTimer { Interval = TimeSpan.FromMinutes(15) }; timeout.Tick += (_, _) => { timeout.Stop(); window.Close(); }; timeout.Start();
         return window;
     }

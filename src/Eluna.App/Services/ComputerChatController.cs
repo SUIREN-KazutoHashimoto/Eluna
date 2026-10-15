@@ -15,6 +15,7 @@ internal sealed class ComputerChatController(ComputerSession session, Func<Llama
     private IReadOnlyList<ComputerTarget> _allowed = [];
     private IReadOnlyList<ComputerTarget> _newSelection = [];
     private bool _pause, _takeover, _steering;
+    private ComputerUseOverlay? _overlay;
     internal Task Completion { get; private set; } = Task.CompletedTask;
 
     internal void Start()
@@ -23,8 +24,8 @@ internal sealed class ComputerChatController(ComputerSession session, Func<Llama
         session.Steer = Steer; session.ModelName = model.DisplayName;
         Completion = RunAsync(); session.Completion = Completion;
     }
-    internal void Stop() { try { _stop.Cancel(); _segment?.Cancel(); } catch (ObjectDisposedException) { } }
-    private void State(string stage, string detail) { session.Stage = stage; session.Detail = detail; changed(); }
+    internal void Stop() { _overlay?.SetActive(false); try { _stop.Cancel(); _segment?.Cancel(); } catch (ObjectDisposedException) { } }
+    private void State(string stage, string detail) { session.Stage = stage; session.Detail = detail; _overlay?.SetActive(stage == "running"); changed(); }
     private async Task HandleAsync(string command)
     {
         try
@@ -47,8 +48,8 @@ internal sealed class ComputerChatController(ComputerSession session, Func<Llama
                     if (proposal.Action.Type is "type_text" or "set_value") { proposal.ApprovedAction = proposal.Action with { Text = session.ReviewInput }; }
                     _approval?.TrySetResult(true); break;
                 case "deny": Stop(); break;
-                case "pause": _pause = true; _segment?.Cancel(); break;
-                case "takeover": _pause = _takeover = true; _segment?.Cancel(); break;
+                case "pause": _overlay?.SetActive(false); _pause = true; _segment?.Cancel(); break;
+                case "takeover": _overlay?.SetActive(false); _pause = _takeover = true; _segment?.Cancel(); break;
                 case "resume": _resume?.TrySetResult(true); break;
                 case "stop": Stop(); break;
             }
@@ -60,6 +61,7 @@ internal sealed class ComputerChatController(ComputerSession session, Func<Llama
     {
         if (text.Length > 4000 || session.Instructions.Count >= 40) { session.Detail = "追加指示は1回4,000文字、40回までです。"; return; }
         session.Instructions.Add(text); _steering = true; _pause = false; _takeover = false;
+        _overlay?.SetActive(false);
         _resume?.TrySetResult(true); _segment?.Cancel(); changed();
     }
     private async Task RefreshAsync(CancellationToken token)
@@ -117,14 +119,15 @@ internal sealed class ComputerChatController(ComputerSession session, Func<Llama
                     await DesktopGate.WaitAsync(segment.Token); acquired = true;
                     segment.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, 1200 - session.SecondsUsed)));
                     using var hotkey = new ComputerStopHotkey(Application.Current.MainWindow, Stop);
+                    using var overlay = new ComputerUseOverlay(() => _ = HandleAsync("pause"), Stop); _overlay = overlay;
                     using LlamaService engine = engineFactory();
                     State("running", "最新の画面から作業を進めます。"); clock.Start();
-                    var planner = new ComputerPlanner(engine, model, settings, text => { session.Detail = text; changed(); });
+                    var planner = new ComputerPlanner(engine, model, settings, text => { session.Detail = text; overlay.Status(text); changed(); });
                     if (session.Plan.Length == 0) { session.Plan = await planner.PlanAsync(TaskText(), segment.Token); changed(); }
                     var runner = new ComputerUseRunner(_desktop, planner);
                     ComputerUseResult result = await runner.RunAsync(TaskText(), _allowed, session.MaxSteps, false,
-                        session.Observe, step => { session.Steps.Add(step); changed(); }, text => { session.Detail = text; changed(); }, ReviewAsync, segment.Token,
-                        new(() => session.Automatic, [.. session.Steps], async (reason, token) => await SelectAppsAsync("別のアプリを使うための許可が必要です: " + reason, token), Math.Max(1, 1200 - session.SecondsUsed)));
+                        observation => { session.Observe(observation); overlay.Observe(observation); }, step => { session.Steps.Add(step); changed(); }, text => { session.Detail = text; overlay.Status(text); changed(); }, ReviewAsync, segment.Token,
+                        new(() => session.Automatic, [.. session.Steps], async (reason, token) => await SelectAppsAsync("別のアプリを使うための許可が必要です: " + reason, token), Math.Max(1, 1200 - session.SecondsUsed), overlay.BeforeAction, overlay.AfterAction));
                     if (result.State == "needs_user") { _pause = _takeover = true; State("takeover", result.Message + "\n対象アプリで操作した後、「最新画面から再開」を押してください。"); }
                     else { State(result.State, result.Message); return; }
                 }
@@ -133,6 +136,7 @@ internal sealed class ComputerChatController(ComputerSession session, Func<Llama
                 finally
                 {
                     clock.Stop(); session.SecondsUsed = Math.Min(1300, session.SecondsUsed + clock.Elapsed.TotalSeconds); _segment = null;
+                    _overlay = null;
                     session.Review = null; if (acquired) { DesktopGate.Release(); }
                     changed();
                 }

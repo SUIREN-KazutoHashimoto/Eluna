@@ -3,7 +3,8 @@ using Eluna.App.Models;
 namespace Eluna.App.Services;
 
 internal sealed record ComputerRunOptions(Func<bool> Automatic, IReadOnlyList<ComputerStep> PreviousSteps,
-    Func<string, CancellationToken, Task<IReadOnlyList<ComputerTarget>>>? RequestApps = null, double SecondsRemaining = 1200);
+    Func<string, CancellationToken, Task<IReadOnlyList<ComputerTarget>>>? RequestApps = null, double SecondsRemaining = 1200,
+    Action<ComputerObservation, ComputerAction>? BeforeAction = null, Action? AfterAction = null);
 
 internal sealed class ComputerUseRunner(IComputerDesktop desktop, IComputerPlanner planner)
 {
@@ -49,6 +50,7 @@ internal sealed class ComputerUseRunner(IComputerDesktop desktop, IComputerPlann
             string result = "実行済み。次の画面で結果を確認します。";
             try
             {
+                options?.BeforeAction?.Invoke(observation, action);
                 if (action.Type == "switch_window") { target = allowed[action.Window - 1]; }
                 else if (action.Type == "wait") { await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(action.Amount, 1, 5)), deadline.Token); }
                 else { await desktop.ExecuteAsync(observation, action, deadline.Token); }
@@ -56,6 +58,7 @@ internal sealed class ComputerUseRunner(IComputerDesktop desktop, IComputerPlann
             }
             catch (ComputerScreenChangedException ex)
             { result = "未実行 · " + ex.Message; if (++retries >= 3) { return new("needs_user", "画面の変化が続いています。対象アプリの状態を確認して再実行してください。", steps.Count); } }
+            finally { options?.AfterAction?.Invoke(); }
             var step = new ComputerStep(number, DateTimeOffset.UtcNow, observation.Title, action, result); steps.Add(step); record(step);
             await Task.Delay(450, deadline.Token);
         }

@@ -61,3 +61,5 @@ exeのみのコピーで.NET探索先を無効にし、独立した展開先を�
 確認結果は`artifacts/research-portable/preview/result.txt`、`artifacts/research-bundled-engine-*/verification.json`、`artifacts/research-bundled-work-*/verification.json`、`artifacts/split-model-verify.log`、`artifacts/split-model-real.log`に保存しています。利用者データと別の確認用ディレクトリで実行しています。
 
 開発環境がない別PC、実IME、高DPI・複数モニター、スクリーンリーダー、各社GPU、コード署名、実際のリリース公開・更新は未確認です。これらは正式リリース前の確認として残しています。
+
+2026-10-16: `codex/computer-use`で[Computer Useの画面効果](computer-use.md)を追加。対象枠、操作位置・入力先・ドラッグ経路、停止バーとチャットの状態連動を実装しています。自動チェック、描画、単体exeと同梱エンジンの起動確認は通過。実画面の前面化で停止しているため、効果と実入力の併用・取得画像への除外の実機検証は未完了です。最新の当該開発版は`artifacts/release-computer-effects/Eluna.exe`です。

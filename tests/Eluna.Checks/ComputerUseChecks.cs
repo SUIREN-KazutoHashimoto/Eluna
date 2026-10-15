@@ -18,6 +18,15 @@ internal static class ComputerUseChecks
     internal static async Task RunAsync()
     {
         ComputerObservation screen = Screen();
+        Check(ComputerUseOverlay.ActionArea(screen, new("click", X: 1000, Y: 1000)) is { Left: -229, Top: 771 }, "Overlay coordinates lost the negative monitor origin or last pixel.");
+        Check(ComputerUseOverlay.ActionArea(screen, new("set_value", Element: 1)) == screen.Elements[0].Bounds, "Typing highlight lost the element bounds.");
+        Check(ComputerUseOverlay.ActionArea(screen, new("click", Element: 3)) is null, "Overlay highlighted a password field.");
+        var work = new ComputerBounds(-1920, -200, 1920, 1080);
+        ComputerBounds bottom = ComputerUseOverlay.BarPlacement(work, 490, 68, null)!;
+        Check(bottom.Left >= work.Left && bottom.Top + bottom.Height <= work.Top + work.Height, "Overlay bar left the monitor work area.");
+        Check(ComputerUseOverlay.BarPlacement(work, 490, 68, bottom) is { Top: -188 }, "Overlay bar did not avoid an action under its controls.");
+        Check(ComputerUseOverlay.BarPlacement(work, 490, 68, work) is null, "Overlay controls covered a drag spanning the monitor.");
+        Check(ComputerUseOverlay.BarPlacement(new(0, 0, 200, 100), 490, 68, null) is null, "Overlay controls were clipped on an undersized work area.");
         ComputerAction action = new("set_value", "日本語を入力", 1, Text: "テスト文章");
         Check(ComputerActionPolicy.Parse(JsonSerializer.Serialize(action, ComputerJson.Options)) == action, "Action JSON round trip changed Unicode.");
         Reject(() => ComputerActionPolicy.Parse("{\"type\":\"shell\",\"text\":\"run\"}"), "Unrecognized action was accepted.");
@@ -59,13 +68,16 @@ internal static class ComputerUseChecks
         Reject(() => ComputerActionPolicy.RequireFresh(screen, screen with { Elements = [screen.Elements[0] with { Name = "別の入力欄" }] }, action), "Replaced element was accepted.");
 
         var desktop = new FakeDesktop(screen); var planner = new FakePlanner([action, new("click", Element: 2), new("finish", "保存結果を確認")]);
-        var log = new List<ComputerStep>(); int reviews = 0, observations = 0;
+        var log = new List<ComputerStep>(); int reviews = 0, observations = 0, effectsBefore = 0, effectsAfter = 0;
         ComputerUseResult result = await new ComputerUseRunner(desktop, planner).RunAsync("入力して保存", [Target], 10, true,
-            _ => observations++, log.Add, _ => { }, (_, _) => { reviews++; return Task.FromResult(true); }, CancellationToken.None);
+            _ => observations++, log.Add, _ => { }, (_, _) => { reviews++; return Task.FromResult(true); }, CancellationToken.None,
+            new(() => false, [], BeforeAction: (_, _) => { Check(reviews > effectsBefore, "Effects displayed before review approval."); effectsBefore++; }, AfterAction: () => effectsAfter++));
         Check(result.State == "complete" && desktop.Executed == 2 && reviews == 2 && observations == 3 && log.Count == 2, "Observe / confirm / execute / reobserve loop failed.");
+        Check(effectsBefore == 2 && effectsAfter == 2, "Action effects did not bracket execution.");
         await Task.Delay(40);
         desktop = new(screen); planner = new([action]);
-        result = await new ComputerUseRunner(desktop, planner).RunAsync("入力", [Target], 5, false, _ => { }, _ => { }, _ => { }, (_, _) => Task.FromResult(false), CancellationToken.None);
+        result = await new ComputerUseRunner(desktop, planner).RunAsync("入力", [Target], 5, false, _ => { }, _ => { }, _ => { }, (_, _) => Task.FromResult(false), CancellationToken.None,
+            new(() => false, [], BeforeAction: (_, _) => throw new InvalidOperationException("Declined action displayed execution effects.")));
         Check(result.State == "stopped" && desktop.Executed == 0, "Rejected action was executed.");
         await Task.Delay(40);
         desktop = new(screen); planner = new([action, new("click", Element: 2), new("finish")]); reviews = 0;
@@ -107,8 +119,11 @@ internal static class ComputerUseChecks
         Check(result.State == "complete" && observedTarget == secondTarget, "Allowed window switch observed the wrong window.");
         await Task.Delay(40);
         desktop = new(screen) { Changed = true }; planner = new([action, action, action]);
-        result = await new ComputerUseRunner(desktop, planner).RunAsync("入力", [Target], 10, false, _ => { }, _ => { }, _ => { }, (_, _) => Task.FromResult(true), CancellationToken.None);
+        effectsAfter = 0;
+        result = await new ComputerUseRunner(desktop, planner).RunAsync("入力", [Target], 10, false, _ => { }, _ => { }, _ => { }, (_, _) => Task.FromResult(true), CancellationToken.None,
+            new(() => false, [], AfterAction: () => effectsAfter++));
         Check(result.State == "needs_user" && desktop.Executed == 0, "Repeated screen changes did not stop safely.");
+        Check(effectsAfter == 3, "Stale actions left execution effects active.");
         await Task.Delay(40);
         desktop = new(screen); planner = new([new("switch_window", Window: 2)]);
         try { await new ComputerUseRunner(desktop, planner).RunAsync("別画面", [Target], 5, true, _ => { }, _ => { }, _ => { }, (_, _) => Task.FromResult(true), CancellationToken.None); throw new Exception("Unauthorized window switch succeeded."); }

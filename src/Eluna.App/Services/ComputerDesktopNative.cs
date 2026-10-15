@@ -50,13 +50,13 @@ internal static class ComputerDesktopNative
         return handle;
     }
 
-    internal static ComputerObservation Observe(ComputerTarget target, int parent)
+    internal static ComputerObservation Observe(ComputerTarget target, int parent, bool screenCapture = false)
     {
         nint surface = Validate(target, parent);
         if (!GetWindowRect(surface, out NativeRect rect)) { throw new Win32Exception(); }
         var bounds = new ComputerBounds(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
         (List<ComputerElement> elements, _) = Elements(surface);
-        (string image, int width, int height, byte[] signature) = Capture(surface, bounds, elements);
+        (string image, int width, int height, byte[] signature) = Capture(surface, bounds, elements, parent, screenCapture);
         return new(target, surface.ToInt64(), Title(surface), bounds, elements, image, width, height, signature,
             elements.Count == 0 ? "UI要素が得られません。画像対応モデルで座標を判断するか、対象アプリを確認してください。" :
             elements.Count >= 256 ? "要素は先頭256件です。必要な位置までスクロールして再確認します。" : "");
@@ -195,7 +195,7 @@ internal static class ComputerDesktopNative
     private static string Limit(string? text, int max) => text is null ? "" : text[..Math.Min(max, text.Length)];
     private static string Title(nint handle) { var text = new StringBuilder(Math.Min(4096, GetWindowTextLength(handle) + 1)); GetWindowText(handle, text, text.Capacity); return Limit(text.ToString(), 300); }
 
-    private static (string Image, int Width, int Height, byte[] Signature) Capture(nint surface, ComputerBounds bounds, List<ComputerElement> elements)
+    private static (string Image, int Width, int Height, byte[] Signature) Capture(nint surface, ComputerBounds bounds, List<ComputerElement> elements, int parent, bool screenCapture)
     {
         int width = bounds.Width, height = bounds.Height;
         if (width < 1 || height < 1 || width > 8192 || height > 8192 || (long)width * height > 16000000)
@@ -207,7 +207,7 @@ internal static class ComputerDesktopNative
             bitmap = CreateDIBSection(screen, ref info, 0, out nint pixels, 0, 0);
             if (bitmap == 0 || dc == 0) { throw new Win32Exception(); }
             previous = SelectObject(dc, bitmap);
-            bool printed = PrintWindow(surface, dc, 2);
+            bool printed = !screenCapture && PrintWindow(surface, dc, 2);
             var data = new byte[checked(width * height * 4)]; Marshal.Copy(pixels, data, 0, data.Length);
             bool blank = Enumerable.Range(0, Math.Min(1024, data.Length / 4)).All(i => data[i * (data.Length / 4 / Math.Min(1024, data.Length / 4)) * 4] == 0);
             if (!printed || blank)
@@ -219,6 +219,9 @@ internal static class ComputerDesktopNative
                 EnumWindows((h, _) =>
                 {
                     if (h == surface) { return false; }
+                    // Skip only verified capture-excluded effects owned by this Eluna process.
+                    // Other Eluna windows (including approvals) must still be masked.
+                    if (ComputerUseOverlay.IsExcludedWindow(h, parent)) { return true; }
                     if (IsWindowVisible(h) && GetWindowRect(h, out NativeRect r)) { Mask(data, width, height, bounds, new(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top)); }
                     return true;
                 }, 0);

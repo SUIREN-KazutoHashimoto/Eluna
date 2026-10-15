@@ -20,6 +20,12 @@ Computer Useを通常の会話へ統合しました。専用の操作ウィン�
 
 ## 作業中と追加指示
 
+実行中は、前面の操作対象に青紫の枠を重ね、クリック位置にカーソルと波紋、入力先に枠、ドラッグに経路を表示します。表示は入力を通過し、対象アプリのフォーカスを奪いません。画面下の操作バーには現在の状態、対象名、一時停止・停止とCtrl+Alt+Escの案内を表示します。操作位置にバーが重なる場合は画面上側へ移し、上下とも重なる場合はその操作中にバーを隠します。チャット内とショートカットの停止は引き続き使えます。
+
+承認待ち、対象の追加許可、一時停止、利用者への引き継ぎ、停止・完了では画面上の効果を消します。再開時は最新画面から表示し直します。対象の移動・サイズ変更とモニターの作業領域に追従し、ハイコントラストではシステム色を使います。Windowsのアニメーション設定がオフの場合、波紋は静止表示になります。
+
+表示効果にはWindows 10 バージョン2004以降の画面取得除外機能を使います。これを設定できない環境では画面効果を表示せず、チャットの進捗と停止操作を使います。通常のElunaウィンドウや他アプリの重なりを隠す処理は維持します。ChatGPTの公開資料は操作状態の細かな描画仕様を定義していないため、独自実装の視覚表現であり完全な複製ではありません。
+
 会話内のカードには、計画、進捗、最後に取得した画面、重要な操作の確認、操作履歴を表示します。実行中はプレビューを表示し、完了後は折りたたみます。画像は常時配信ではなく、操作の判断に使った最新の取得画像です。
 
 - 「一時停止」は判断中の生成や補助プロセスも中断し、再開を待ちます。
@@ -68,3 +74,17 @@ Eluna.exe --verify-computer <結果フォルダー> --data-dir <空の検証用�
 2026-10-16の配布確認は`artifacts/release-computer-chat/Eluna.exe`を単独でコピーし、インストール済み.NETの探索先を存在しないフォルダーへ設定して実行しました。自動検証は`artifacts/computer-chat-verify.log`、配布ログは`artifacts/computer-chat-publish.log`、実モデル・会話内の許可と確認拒否・描画・中断の結果は`artifacts/computer-chat-portable/verified-release/verification.json`と同フォルダーのPNGです。同梱CPU / Vulkanの推論・画像生成エンジン全4つの展開と起動は`artifacts/computer-chat-portable/native-release.json`に記録しました。最終exeのSHA-256は`9E498697B6B90077F58BCCC91B103E0A1746FFD40DC12FB3B5FF29A630F8E93F`です。
 
 実モデルでは、正しい結果が表示された後もクリックや保存を重ねる例を観測しました。操作済みの状態を読む指示を追加していますが、反復が完全に解消されたとは扱いません。起動一覧はスタートメニューの`.lnk`が対象で、ストアアプリ等を網羅しません。対象アプリを通常の方法で開いた後の操作許可も利用できます。
+
+### 画面効果の検証（2026-10-16）
+
+`scripts/Verify.ps1`のビルド・書式・全チェックは`artifacts/computer-effects-verify.log`で通過しました。負のモニター座標、操作位置を避けるバー配置、パスワード欄を強調しないこと、承認前に実行表示を出さないこと、画面変化での後始末を検証しています。表示の描画確認は`artifacts/computer-effects-live5/preview.png`です。これは自作検証画面と効果の合成描画で、実デスクトップの撮影結果ではありません。
+
+実画面の検証には次のコマンドを使います。対象は自作の「Eluna Computer Use 検証対象」だけです。最初にこのウィンドウを前面にし、後で表示される操作バーの一時停止と停止を押します。画面取得除外、座標クリックと日本語入力、通常の重なりの遮蔽、停止時の消去を確認し、成功時だけ`verification.json`を出力します。
+
+```powershell
+Eluna.exe --verify-computer-effects <結果フォルダー> --data-dir <空の検証用データフォルダー>
+```
+
+今回、Computer Useプラグインでの前面化は`failed to activate captured window`となり、実入力・画面取得除外・操作バーの実クリック確認は未完了です。実DPI・複数モニター切り替え、ハイコントラストの実機確認も未完了です。
+
+画面効果を含む単体exeは`artifacts/release-computer-effects/Eluna.exe`です。ビルドは`artifacts/computer-effects-publish.log`、.NET探索先を無効にした単独コピーでの起動・描画とCPU / Vulkanエンジン全4本の展開・起動は`artifacts/computer-effects-portable.log`、`artifacts/computer-effects-portable/native.json`に記録しました。SHA-256は`28D186249AFB11204AB6FD2BFAF9C0798EA9EFD11429686C326CA13806A30E7A`です。
