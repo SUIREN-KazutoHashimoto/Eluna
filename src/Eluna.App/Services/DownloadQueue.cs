@@ -61,7 +61,10 @@ public sealed class DownloadQueue : ObservableObject, IDisposable
             foreach (SavedDownload item in saved)
             {
                 if (item.AssetKind is not ("chat" or "image")) { throw new InvalidDataException("取得の種類が不正です。"); }
-                Items.Add(new() { Id = item.Id, CreatedAt = item.CreatedAt ?? DateTimeOffset.UtcNow, File = item.File, ImportPath = item.ImportPath, Name = item.Name, Status = item.Status == "complete" ? "complete" : "paused", Stage = "一時停止", Received = item.Received, Total = item.Total, Error = item.Error, ModelId = item.ModelId, AssetKind = item.AssetKind, ResultPath = item.ResultPath });
+                var restored = new DownloadItem { Id = item.Id, CreatedAt = item.CreatedAt ?? DateTimeOffset.UtcNow, File = item.File, ImportPath = item.ImportPath, Name = item.Name, Status = item.Status == "complete" ? "complete" : "paused", Stage = "再開待ち", Received = item.Received, Total = item.Total, Error = item.Error, ModelId = item.ModelId, AssetKind = item.AssetKind, ResultPath = item.ResultPath };
+                if (restored.Status == "complete" && !HasCompletedAsset(restored)) { restored.Status = "paused"; restored.Received = 0; restored.Error = "モデル本体が見つかりません。再開すると再取得します。"; }
+                if (restored.Status == "complete") { restored.Stage = "完了"; }
+                Items.Add(restored);
             }
             Notify(nameof(Label));
         }
@@ -75,8 +78,7 @@ public sealed class DownloadQueue : ObservableObject, IDisposable
         DownloadItem? existing = Items.FirstOrDefault(i => i.AssetKind == kind && i.File?.Repository == file.Repository && i.File.Revision == file.Revision && i.File.Filename == file.Filename);
         if (existing is not null)
         {
-            string directory = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"{file.Repository}/{file.Revision}/{file.Filename}"))).ToLowerInvariant()[..24];
-            if (existing.Status == "complete" && !System.IO.File.Exists(kind == "image" ? existing.ResultPath : Path.Combine(_store.ModelsDirectory, directory, "model.json"))) { existing.Status = "paused"; }
+            if (existing.Status == "complete" && !HasCompletedAsset(existing)) { existing.Status = "paused"; }
             if (existing.CanResume) { Resume(existing); }
             return existing;
         }
@@ -88,6 +90,21 @@ public sealed class DownloadQueue : ObservableObject, IDisposable
         var item = new DownloadItem { ImportPath = Path.GetFullPath(path), Name = Path.GetFileName(path), Total = new FileInfo(path).Length };
         lock (_snapshotLock) { Items.Add(item); }
         _ = PersistAsync(); Start(); return item;
+    }
+    private bool HasCompletedAsset(DownloadItem item)
+    {
+        try
+        {
+            if (item.AssetKind == "image") { return System.IO.File.Exists(item.ResultPath) && new FileInfo(item.ResultPath!).Length == item.Total; }
+            string? id = item.ModelId;
+            if (id is null && item.File is { } file) { id = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"{file.Repository}/{file.Revision}/{file.Filename}"))).ToLowerInvariant()[..24]; }
+            if (id is null || id.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || id is "." or "..") { return false; }
+            string path = Path.Combine(_store.ModelsDirectory, id, "model.json");
+            if (!System.IO.File.Exists(path)) { string folder = id.StartsWith("local-", StringComparison.Ordinal) && id.Length >= 26 ? id[..26] : id.Length > 24 ? id[..24] : id; path = Path.Combine(_store.ModelsDirectory, folder, "model.json"); }
+            LocalModel? model = System.IO.File.Exists(path) ? JsonSerializer.Deserialize<LocalModel>(System.IO.File.ReadAllText(path), AppStore.JsonOptions) : null;
+            return model is not null && model.Files.All(f => System.IO.File.Exists(f.FilePath) && new FileInfo(f.FilePath).Length == f.Size);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return false; }
     }
     public void Pause(DownloadItem item)
     {

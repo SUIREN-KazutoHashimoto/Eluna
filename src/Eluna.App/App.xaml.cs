@@ -15,6 +15,9 @@ public partial class App : Application
         base.OnStartup(e);
         try
         {
+            int waitIndex = Array.IndexOf(e.Args, "--wait-for-exit");
+            if (waitIndex >= 0 && waitIndex + 1 < e.Args.Length && int.TryParse(e.Args[waitIndex + 1], out int previousId))
+            { try { using var previous = System.Diagnostics.Process.GetProcessById(previousId); if (!previous.WaitForExit(60000)) { Shutdown(1); return; } } catch (ArgumentException) { } }
             string? root = null;
             int captureIndex = Array.IndexOf(e.Args, "--capture-dir");
             string? captureDirectory = captureIndex >= 0 && captureIndex + 1 < e.Args.Length ? Path.GetFullPath(e.Args[captureIndex + 1]) : null;
@@ -29,6 +32,21 @@ public partial class App : Application
                 root = Path.Combine(captureDirectory, "preview-data");
             }
             var store = new AppStore(root);
+            int restoreCycle = Array.IndexOf(e.Args, "--verify-restore-cycle"), restoredCycle = Array.IndexOf(e.Args, "--verify-restored");
+            if ((restoreCycle >= 0 && restoreCycle + 1 < e.Args.Length) || (restoredCycle >= 0 && restoredCycle + 1 < e.Args.Length))
+            {
+                if (root is null) { throw new InvalidOperationException("復元サイクル検証には --data-dir で専用の保存先を指定してください。"); }
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                _ = RestoreCycleVerification.RunAsync(store, e.Args[(restoreCycle >= 0 ? restoreCycle : restoredCycle) + 1], restoreCycle >= 0); return;
+            }
+            int backupIndex = Array.IndexOf(e.Args, "--verify-backup");
+            if (backupIndex >= 0 && backupIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("バックアップ検証には --data-dir で専用の保存先を指定してください。"); }
+                int realIndex = Array.IndexOf(e.Args, "--model-meta"); string? model = realIndex >= 0 && realIndex + 1 < e.Args.Length ? e.Args[realIndex + 1] : null;
+                int stressIndex = Array.IndexOf(e.Args, "--stress-seconds"); int seconds = stressIndex >= 0 && stressIndex + 1 < e.Args.Length && int.TryParse(e.Args[stressIndex + 1], out int duration) ? Math.Clamp(duration, 0, 1800) : 0;
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = BackupVerification.RunAsync(store, e.Args[backupIndex + 1], model, seconds); return;
+            }
             int placementIndex = Array.IndexOf(e.Args, "--verify-window-placement");
             if (placementIndex >= 0 && placementIndex + 1 < e.Args.Length)
             {
@@ -103,5 +121,14 @@ public partial class App : Application
     {
         _instance?.Dispose();
         base.OnExit(e);
+    }
+
+    internal static void Restart(string root, string? verification = null)
+    {
+        var start = new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, CreateNoWindow = true };
+        if (string.Equals(Path.GetFileNameWithoutExtension(Environment.ProcessPath), "dotnet", StringComparison.OrdinalIgnoreCase)) { start.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, typeof(App).Assembly.GetName().Name + ".dll")); }
+        start.ArgumentList.Add("--data-dir"); start.ArgumentList.Add(root); start.ArgumentList.Add("--wait-for-exit"); start.ArgumentList.Add(Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (verification is not null) { start.ArgumentList.Add("--verify-restored"); start.ArgumentList.Add(verification); }
+        System.Diagnostics.Process.Start(start)?.Dispose();
     }
 }

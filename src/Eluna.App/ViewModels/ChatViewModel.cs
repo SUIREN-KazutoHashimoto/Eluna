@@ -78,7 +78,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     public string HistoryEmptyHint => HistorySearch.Length > 0 ? "この範囲に一致する会話はありません。検索語を変えてください。" : "会話はまだありません。新しいチャットから始めましょう。";
     public string SendTip => _settings.ControlEnterToSend ? "送信（Ctrl+Enter）" : "送信（Enter、Shift+Enterで改行）";
     public bool IsReady => _ready;
-    public bool CanChange => !IsBusy && !_submitting;
+    public bool CanChange => !IsBusy && !_submitting && !_dataMaintenance;
     public bool HasModel => SelectedModel is not null;
     public string EditConversationHint => CanEditConversation ? "別の回答として保存します" : "この会話の推論と予約が終わると編集・再生成できます。別のチャットは利用できます。";
     public bool CanGenerate => CanCompose && !_submitting && HasModel && Inferences.Items.Count(j => j.IsPending) < 100;
@@ -556,10 +556,30 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         try { await Task.Delay(400, token); await PersistSafelyAsync(); } catch (OperationCanceledException) { }
     }
     public AppState CaptureState() => new(Skills.Count > 0 || Conversations.Any(c => c.SkillsMode is not null) || _store.UsesSkillsState ? 3 : Projects.Count > 0 || _commonMemories.Count > 0 || Inferences.Items.Any(j => j.IsPending) || _store.UsesKnowledgeState ? 2 : 1, _settings, Conversations.Select(c => c.Save()).ToList(), [.. Projects], [.. _commonMemories], Inferences.Items.Where(j => j.IsPending).Select(j => j.Request).ToList(), [.. Skills]);
-    public async Task PersistSafelyAsync()
+    private TaskCompletionSource? _pendingPersistence;
+    private bool _persisting;
+    public Task PersistSafelyAsync()
     {
-        try { await _store.SaveAsync(CaptureState()); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _lastError = ex; Error = "履歴を保存できませんでした。空き容量とアクセス権を確認してください。"; }
+        // Mutations run on the UI dispatcher. Requests arriving during a write share the
+        // next snapshot, whose completion is still awaited by every requesting caller.
+        TaskCompletionSource completion = _pendingPersistence ??= new(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_persisting) { _persisting = true; _ = PersistLoopAsync(); }
+        return completion.Task;
+    }
+    private async Task PersistLoopAsync()
+    {
+        try
+        {
+            while (_pendingPersistence is { } completion)
+            {
+                _pendingPersistence = null;
+                try { await _store.SaveAsync(CaptureState()); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _lastError = ex; Error = "履歴を保存できませんでした。空き容量とアクセス権を確認してください。"; }
+                catch (Exception ex) { completion.TrySetException(ex); continue; }
+                completion.TrySetResult();
+            }
+        }
+        finally { _persisting = false; }
     }
     public Task ExportHistoryAsync(string path) => _store.ExportAsync(CaptureState(), path);
     public async Task ImportHistoryAsync(string path, bool includeCommonMemories = false)

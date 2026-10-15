@@ -92,7 +92,7 @@ internal static class SkillChecks
             (_, _) => { revoked = true; return Task.FromResult(true); }, false, _ => { }, _ => { }, token);
         Check(!revoked && revokedUses.Single().Executions.Single().Status == "拒否", "A queued job ignored a revoked execution policy.");
 
-        SkillPackage sleeping = Package("cancel-test", "test", new() { ["scripts/sleep.ps1"] = "param([string]$InputJson,[string]$OutputDirectory)\n[IO.File]::WriteAllText((Join-Path $OutputDirectory 'started.txt'),[string]$PID)\nStart-Sleep -Seconds 60\n" });
+        SkillPackage sleeping = Package("cancel-test", "test", new() { ["scripts/sleep.ps1"] = "param([string]$InputJson,[string]$OutputDirectory)\n[IO.File]::WriteAllText((Join-Path $OutputDirectory 'started.tmp'),[string]$PID)\n[IO.File]::Move((Join-Path $OutputDirectory 'started.tmp'),(Join-Path $OutputDirectory 'started.txt'))\nStart-Sleep -Seconds 60\n" });
         SkillRegistration sleepingSkill = await files.SaveAsync(sleeping, null, null, token);
         using var cancel = CancellationTokenSource.CreateLinkedTokenSource(token); string? marker = null;
         Task<SkillExecution> running = scriptRunner.RunAsync(sleepingSkill, "scripts/sleep.ps1", "{}", (request, _) => { marker = Path.Combine(request.OutputDirectory, "started.txt"); return Task.FromResult(true); }, false, cancel.Token);

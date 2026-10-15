@@ -32,6 +32,8 @@ internal static class Program
             CheckInferenceModes();
             CheckMarkdown();
             WindowPlacementChecks.Run();
+            await BackupChecks.RunAsync(Path.Combine(root, "backup-" + Guid.NewGuid().ToString("N")));
+            await QueueStabilityChecks.RunAsync();
             await RemainingFeatureChecks.RunAsync(Path.Combine(root, "remaining-" + Guid.NewGuid().ToString("N")));
             await CheckBranchesAndBackupsAsync(Path.Combine(root, "branches-" + Guid.NewGuid().ToString("N")));
             CheckWebParsers();

@@ -33,7 +33,7 @@ public sealed partial class ChatViewModel
     { CheckMediaCapacity(); var job = new MediaJob(title, operation, token); AddMediaJob(job); PumpMedia(); return job.Finished; }
     private void CheckMediaCapacity()
     {
-        if (!_ready || _modelsChanging || _shuttingDown) { throw new InvalidOperationException("起動の準備・モデル管理・終了処理が終わってから予約してください。"); }
+        if (!_ready || _modelsChanging || _shuttingDown || _dataMaintenance) { throw new InvalidOperationException("起動の準備・モデル管理・バックアップ・終了処理が終わってから予約してください。"); }
         if (MediaJobs.Count(j => j.IsPending || j.CanResume) >= 20) { throw new InvalidOperationException("作成処理の予約は20件までです。処理リストで整理してください。"); }
     }
     private void AddMediaJob(MediaJob job)
@@ -65,7 +65,7 @@ public sealed partial class ChatViewModel
     public async Task ResumeMediaAsync(MediaJob job)
     {
         if (_shuttingDown || !job.CanResume || !MediaJobs.Contains(job)) { return; }
-        if (!_ready || _modelsChanging) { throw new InvalidOperationException("起動の準備・モデル管理が終わってから再開してください。"); }
+        if (!_ready || _modelsChanging || _dataMaintenance) { throw new InvalidOperationException("起動の準備・モデル管理・バックアップが終わってから再開してください。"); }
         ValidateMediaRequest(job.Request!); job.IsCommitted = false; job.Cancellation.Dispose(); job.Cancellation = new(); job.Completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         _ = ObserveMediaAsync(job); _ = AwaitMediaCancellationAsync(job); job.State = "queued"; job.Detail = "保存した依頼を最初から再実行します";
         try { await SaveMediaJobsAsync(true); job.IsCommitted = true; PumpMedia(); } catch { job.State = "paused"; job.Completion.TrySetCanceled(); throw; }
@@ -73,7 +73,7 @@ public sealed partial class ChatViewModel
     private void PumpMedia()
     {
         Notify(nameof(ProcessSummary)); Notify(nameof(IsBusy)); RefreshCommands();
-        if (_pumpingMedia || _shuttingDown) { return; }
+        if (_pumpingMedia || _shuttingDown || _dataMaintenance) { return; }
         _pumpingMedia = true;
         try
         {

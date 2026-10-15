@@ -25,6 +25,8 @@ public sealed class AppStore
     {
         Root = root ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Eluna");
         Directory.CreateDirectory(Root);
+        // Roll back an interrupted multi-file restore before reading any application state.
+        BackupArchive.Recover(Root);
         string location = Path.Combine(Root, "model-location.json");
         if (File.Exists(location))
         {

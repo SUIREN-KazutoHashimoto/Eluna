@@ -21,6 +21,8 @@ public partial class MainWindow : Window
     private ScrollViewer? _messagesScroll;
     private string? _scrollKey;
     private readonly ReadingPositions _readingPositions;
+    private PreparedBackup? _restoreBackup;
+    private string? _restoreVerification;
     private readonly DispatcherTimer _readingSave = new() { Interval = TimeSpan.FromSeconds(1) };
     public ChatViewModel ViewModel => _viewModel;
     public MainWindow(AppStore store, DownloadQueue? downloads = null)
@@ -53,6 +55,7 @@ public partial class MainWindow : Window
             InputBox.Focus();
         };
         SourceInitialized += (_, _) => WindowPlacement.Restore(this, store.Root);
+        _viewModel.BackupStarting += async () => { _readingSave.Stop(); RememberReadingPosition(); await _readingPositions.SaveAsync(); await WindowPlacement.SaveAsync(this, store.Root); };
         Closing += OnClosing; PreviewKeyDown += Window_KeyDown; Appearance.Attach(this);
     }
     private static T? FindChild<T>(DependencyObject parent) where T : DependencyObject
@@ -101,7 +104,8 @@ public partial class MainWindow : Window
     private void ProcessPopup_Opened(object? sender, EventArgs e) => ((ProcessListPanel)ProcessContent.Content).Refresh();
     internal void OpenModels() => Models_Click(this, new RoutedEventArgs());
     internal void OpenModelManager() => ManageModels_Click(this, new RoutedEventArgs());
-    internal void OpenData() => ShowUnique(() => new DataWindow(_viewModel) { Owner = this });
+    internal void OpenData() => new DataWindow(_viewModel) { Owner = this }.ShowDialog();
+    internal void RestorePreparedBackup(PreparedBackup backup, string? verification = null) { _restoreBackup = backup; _restoreVerification = verification; Close(); }
     internal void OpenDownloads() => ShowUnique(() => new DownloadsWindow(_viewModel.Downloads, _viewModel) { Owner = this });
     private void OpenMedia(string tab = "document", string? initial = null)
     {
@@ -393,9 +397,34 @@ public partial class MainWindow : Window
     {
         if (_closing) { return; }
         e.Cancel = true; if (_shutdownStarted) { return; }
-        foreach (Window child in OwnedWindows.Cast<Window>().ToArray()) { child.Close(); bool closed = child is MediaWindow media ? await media.PendingClose : await UnsavedChanges.PendingClose(child); if (!closed || child.IsVisible) { return; } }
+        foreach (Window child in OwnedWindows.Cast<Window>().ToArray())
+        {
+            child.Close(); bool closed = child is MediaWindow media ? await media.PendingClose : child is DataWindow data ? await data.PendingClose : await UnsavedChanges.PendingClose(child);
+            if (!closed || child.IsVisible)
+            {
+                if (_restoreBackup is { } canceled) { _restoreBackup = null; await Task.Run(() => BackupArchive.DeleteStage(canceled.Directory, _store.BackupsDirectory)); }
+                return;
+            }
+        }
         _shutdownStarted = true; IsEnabled = false;
         _readingSave.Stop(); RememberReadingPosition(); await _readingPositions.SaveAsync();
-        await _viewModel.ShutdownAsync(); await WindowPlacement.SaveAsync(this, _store.Root); _viewModel.Dispose(); _closing = true; Close();
+        await _viewModel.ShutdownAsync(); await WindowPlacement.SaveAsync(this, _store.Root); _viewModel.Dispose();
+        if (_restoreBackup is { } restore)
+        {
+            Title = "バックアップを復元しています · Eluna";
+            try { await BackupArchive.ApplyAsync(_store, restore, new Progress<BackupProgress>(p => Title = $"復元前のデータを退避中 {p.Percent:N0}% · Eluna")); }
+            catch (Exception ex)
+            {
+                if (_restoreVerification is not null) { await File.WriteAllTextAsync(Path.Combine(_restoreVerification, "restore-error.txt"), ex.ToString()); }
+                else { MessageBox.Show(this, "復元を完了できませんでした。起動時にも復元記録から元のデータへの回復を試みます。\n" + ex.Message, "バックアップの復元", MessageBoxButton.OK, MessageBoxImage.Error); }
+            }
+            try { App.Restart(_store.Root, _restoreVerification); }
+            catch (Exception ex)
+            {
+                if (_restoreVerification is not null) { await File.WriteAllTextAsync(Path.Combine(_restoreVerification, "restart-error.txt"), ex.ToString()); }
+                else { MessageBox.Show(this, "再起動できませんでした。Eluna.exeをもう一度起動してください。\n" + ex.Message, "再起動", MessageBoxButton.OK, MessageBoxImage.Error); }
+            }
+        }
+        _closing = true; Close();
     }
 }

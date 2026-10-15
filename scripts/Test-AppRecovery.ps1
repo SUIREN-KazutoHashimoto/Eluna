@@ -10,7 +10,7 @@ Assert-Windows
 $appExe = (Resolve-Path -LiteralPath $ExePath).Path
 $modelFile = (Resolve-Path -LiteralPath $ModelMetadata).Path
 $testRoot = [IO.Path]::GetFullPath($OutputDirectory)
-if (Test-Path -LiteralPath (Join-Path $testRoot 'state.json')) { throw 'Choose a fresh test directory; existing history is preserved.' }
+if (@('state.json', 'state-knowledge.json', 'state-skills.json') | Where-Object { Test-Path -LiteralPath (Join-Path $testRoot $_) }) { throw 'Choose a fresh test directory; existing history is preserved.' }
 New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
 $launchedApp = $null
 $recoveryApp = $null
@@ -20,8 +20,8 @@ try {
     $state = $null
     do {
         if ($launchedApp.HasExited) { throw 'The app exited before a streaming checkpoint was available.' }
-        $statePath = Join-Path $testRoot 'state.json'
-        if (Test-Path -LiteralPath $statePath) {
+        $statePath = @('state-skills.json', 'state-knowledge.json', 'state.json') | ForEach-Object { Join-Path $testRoot $_ } | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+        if ($statePath -and (Test-Path -LiteralPath $statePath)) {
             try { $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json } catch { $state = $null }
         }
         $partial = @()

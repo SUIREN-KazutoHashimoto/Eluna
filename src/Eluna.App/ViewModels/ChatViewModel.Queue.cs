@@ -11,8 +11,8 @@ public sealed partial class ChatViewModel
     public InferenceQueue Inferences { get; }
     internal IReadOnlyList<string> ActiveComputeLabels => _busyEngines.Select(e => e.ComputeLabel).ToArray();
     private long EngineMemoryBytes => _llama.MemoryUsageBytes + _busyEngines.Sum(e => e.MemoryUsageBytes) + _idleEngines.Sum(e => e.MemoryUsageBytes) + _mediaEngines.Values.Sum(e => e.MemoryUsageBytes);
-    public bool CanNavigate => !_shuttingDown;
-    public bool CanCompose => _ready && !_shuttingDown && !_modelsChanging;
+    public bool CanNavigate => !_shuttingDown && !_dataMaintenance;
+    public bool CanCompose => _ready && !_shuttingDown && !_modelsChanging && !_dataMaintenance;
     public bool CanEditConversation => CanGenerate && !_submitting && SelectedConversation is not null && !Inferences.Contains(SelectedConversation.Id);
     public string QueueLabel => $"推論 · 実行 {Inferences.ActiveCount} / 予約 {Inferences.WaitingCount}" + (Inferences.Items.Any(j => j.CanResume) ? " · 再開待ちあり" : "");
     private InferenceJob? SelectedJob => Inferences.Items.LastOrDefault(j => j.Request.ConversationId == SelectedConversation?.Id && j.Request.BranchId == SelectedBranch?.Id && j.State == "active") ??

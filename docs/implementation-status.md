@@ -1,6 +1,8 @@
 # 完成版に向けた実装・検証の台帳
 
-残機能R01〜R06・R08〜R10は`codex/remaining-features`で実装した。空きVRAM・予約の必要量予測、能力フィルター、画像モデルのギャラリー、スキル差分、メディア予約と読書位置の再起動復元、Markdownの背景・末尾解析、取得と画像／文書生成の並列化を追加した。配布先は`artifacts/release-remaining-features/Eluna.exe`。操作と検証・制約は[残機能の実装記録](remaining-features.md)。R07はその後`codex/multi-monitor-restore`で実装した。現在の配布先は`artifacts/release-multi-monitor/Eluna.exe`。複数モニターの復元規則と確認範囲は[ウィンドウ復元](window-placement.md)を参照。
+全体バックアップ・復元と安定性の仕上げは`codex/backup-stability-release`で実装した。最新の配布候補は`artifacts/release-backup-stability/Eluna.exe`。全体ZIP、復元前の退避・中断回復・再起動、モデル本体がない取得の再開、960件のキュー負荷検証を追加した。操作は[バックアップ](backup.md)、実モデル・配布・Git統合の記録は[今回の作業記録](backup-stability-release.md)を参照。追加の物理操作・別PCの検証はオーナー指定により今回の対象外。以下は各機能を追加した時点の記録。
+
+残機能R01〜R06・R08〜R10は`codex/remaining-features`で実装した。空きVRAM・予約の必要量予測、能力フィルター、画像モデルのギャラリー、スキル差分、メディア予約と読書位置の再起動復元、Markdownの背景・末尾解析、取得と画像／文書生成の並列化を追加した。配布先は`artifacts/release-remaining-features/Eluna.exe`。操作と検証・制約は[残機能の実装記録](remaining-features.md)。R07はその後`codex/multi-monitor-restore`で実装した。この時点の配布先は`artifacts/release-multi-monitor/Eluna.exe`。複数モニターの復元規則と確認範囲は[ウィンドウ復元](window-placement.md)を参照。
 
 2026-10-15のUI改善は`codex/ui-ux-polish`で実装した。管理操作を設定へ集約、進捗と予約を「処理リスト」へ統合し、表示密度・編集保護・読書位置・生成中の選択・モデル準備・スキル編集を改善した。開発版exeは`artifacts/release-ui-ux-polish/Eluna.exe`。監査U01〜U35への対応、実モデルと画面検証、残る制約は[UI / UXの改善記録](ui-ux-polish.md)を参照。以下は各機能を追加した時点の記録として保持する。
 
