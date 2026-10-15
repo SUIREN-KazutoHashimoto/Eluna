@@ -1,0 +1,58 @@
+<Window x:Class="Eluna.App.ProjectWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:controls="clr-namespace:Eluna.App.Controls"
+        Style="{StaticResource {x:Type Window}}" Title="プロジェクト · Eluna" Width="960" Height="760" MinWidth="720" MinHeight="560" WindowStartupLocation="CenterOwner">
+  <Grid Margin="24">
+    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+    <TextBlock x:Name="Heading" Text="プロジェクト" FontSize="26" FontWeight="SemiBold" Margin="0,0,0,20" />
+    <TabControl x:Name="ProjectTabs" Grid.Row="1" Background="Transparent" Foreground="{DynamicResource TextBrush}" BorderThickness="0" Padding="0" AutomationProperties.Name="プロジェクトの設定項目">
+      <TabItem Header="概要" Style="{StaticResource WorkOptionsTab}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Margin="0,0,10,0">
+            <TextBlock Text="プロジェクト名" Margin="0,0,0,8" /><TextBox x:Name="NameBox" MaxLength="80" AutomationProperties.Name="プロジェクト名" />
+            <TextBlock Text="メモリの参照範囲（作成後は固定）" Margin="0,20,0,8" />
+            <ComboBox x:Name="ScopeBox" AutomationProperties.Name="プロジェクトのメモリ範囲" SelectionChanged="Scope_Changed" />
+            <TextBlock x:Name="ScopeText" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,8,0,12" />
+            <CheckBox x:Name="ReferenceChatsBox" Content="同じプロジェクトの他の会話も、必要に応じて参照する" IsChecked="True" Margin="0,0,0,20" />
+            <TextBlock Text="このプロジェクト専用の指示" Margin="0,0,0,8" />
+            <TextBox x:Name="InstructionBox" MaxLength="8000" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top" Height="170" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="プロジェクト専用の指示" />
+            <TextBlock Text="目的・前提・回答の形式を記入します。資料の本文や覚えておく事実は「資料」「メモリ」で管理できます。Web検索の有無は入力欄で選べます。" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,10,0,0" />
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+      <TabItem Header="資料" Style="{StaticResource WorkOptionsTab}">
+        <Grid>
+          <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition /></Grid.RowDefinitions>
+          <TextBlock Text="このプロジェクトだけで使う資料です。画像・PDFの読み取り結果は、本文を確認してから参照を有効にしてください。元ファイルの変更は自動反映しません。" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,12" />
+          <WrapPanel Grid.Row="1" Margin="0,0,0,8">
+            <Button Content="＋ 資料を追加" Click="AddDocuments_Click" BorderBrush="{DynamicResource StrokeBrush}" Margin="0,0,8,8" />
+            <Button x:Name="EditDocumentButton" Content="本文を修正" Click="EditDocument_Click" IsEnabled="False" Margin="0,0,8,8" />
+            <Button x:Name="ToggleDocumentButton" Content="参照を有効にする" Click="ToggleDocument_Click" IsEnabled="False" Margin="0,0,8,8" />
+            <Button x:Name="RemoveDocumentButton" Content="削除" Click="RemoveDocument_Click" IsEnabled="False" Margin="0,0,0,8" />
+          </WrapPanel>
+          <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="240" /><ColumnDefinition Width="16" /><ColumnDefinition /></Grid.ColumnDefinitions>
+            <ListBox x:Name="DocumentsList" SelectionChanged="Document_Changed" AutomationProperties.Name="プロジェクトの資料一覧">
+              <ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}" /><TextBlock Text="{Binding Detail}" TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,6,0,0" /></StackPanel></DataTemplate></ListBox.ItemTemplate>
+            </ListBox>
+            <TextBox x:Name="DocumentText" Grid.Column="2" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="資料の読み取り本文" />
+          </Grid>
+        </Grid>
+      </TabItem>
+      <TabItem Header="メモリ" Style="{StaticResource WorkOptionsTab}">
+        <DockPanel>
+          <TextBlock DockPanel.Dock="Top" Text="このプロジェクトだけで覚えておく事実や決定事項を登録します。別のプロジェクトや通常のチャットには渡しません。" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,0,0,16" />
+          <controls:MemoryEditor x:Name="ProjectMemoryEditor" />
+        </DockPanel>
+      </TabItem>
+    </TabControl>
+    <TextBlock x:Name="StatusText" Grid.Row="2" Text="変更は「保存」で反映します。" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,14,0,0" AutomationProperties.LiveSetting="Polite" />
+    <Grid Grid.Row="3" Margin="0,16,0,0">
+      <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+      <Button x:Name="DeleteButton" Content="プロジェクトを削除" Click="Delete_Click" HorizontalAlignment="Left" />
+      <StackPanel Grid.Column="1" Orientation="Horizontal">
+        <Button x:Name="StopButton" Content="読み取りを停止" Click="Stop_Click" Visibility="Collapsed" Margin="0,0,8,0" />
+        <Button Content="キャンセル" IsCancel="True" Margin="0,0,8,0" />
+        <Button x:Name="SaveButton" Content="保存" Click="Save_Click" Style="{StaticResource PrimaryButton}" Padding="28,10" />
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Window>

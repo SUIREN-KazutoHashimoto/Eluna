@@ -1,0 +1,11 @@
+<Project>
+  <Target Name="EnforceDependencyPolicy" BeforeTargets="CollectPackageReferences;PrepareForBuild">
+    <ItemGroup>
+      <UnapprovedPackageReference Include="@(PackageReference)"
+                                  Condition="'%(PackageReference.IsImplicitlyDefined)' != 'true'" />
+    </ItemGroup>
+    <Error Condition="'@(UnapprovedPackageReference)' != ''"
+           Code="ELUNA001"
+           Text="External packages require owner approval. See docs/dependencies.md. Found: @(UnapprovedPackageReference, ', ')." />
+  </Target>
+</Project>

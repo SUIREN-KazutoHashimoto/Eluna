@@ -1,0 +1,279 @@
+using System.ComponentModel;
+using System.IO;
+using System.Text.Json;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using Eluna.App.Models;
+using Eluna.App.Services;
+using Eluna.App.ViewModels;
+using Microsoft.Win32;
+
+namespace Eluna.App;
+
+public sealed class MediaWindow : Window
+{
+    private readonly AppStore _store;
+    private readonly ChatViewModel _chat;
+    private readonly CancellationTokenSource _lifetime = new();
+    private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, Margin = new(0, 10, 0, 0) };
+    private readonly TabControl _tabs = new();
+    private bool _busy, _closeRequested, _runningThis, _closeSaved, _savingClose;
+    private readonly SemaphoreSlim _draftGate = new(1, 1);
+    private readonly TextBlock _draftState = new() { FontSize = 11, Margin = new(0, 3, 0, 5), TextWrapping = TextWrapping.Wrap };
+    private string _savedDraft = "", _exportPath = "";
+    private CancellationTokenSource? _operationCancellation, _autoSave;
+    private TaskCompletionSource<bool>? _pendingClose;
+    internal Task<bool> PendingClose => _pendingClose?.Task ?? Task.FromResult(!IsVisible);
+    private string Status { get => _status.Text; set { _status.Text = value; if (_runningThis) { _chat.ReportMediaProgress(value); } } }
+    private readonly TextBox _document = new();
+    private readonly TextBox _imagePrompt;
+    private string? _imageOutput;
+    private Button? _saveImageButton, _attachImageButton, _stopButton;
+    private Guid? _selectedImageDownload;
+    private List<KnowledgeReference> _documentKnowledge = [];
+    private List<AppliedSkill> _documentSkills = [];
+    private readonly Guid? _projectId;
+    private readonly string _draftPath;
+    internal Guid? ScopeId => _projectId;
+    internal void SelectTab(string tab, string? initial = null) { _tabs.SelectedIndex = tab switch { "image" => 1, "vision" => 2, _ => 0 }; if (initial is not null && MessageBox.Show(this, "編集中の本文を直前の回答で置き換えますか？", "文書本文", MessageBoxButton.YesNo) == MessageBoxResult.Yes) { _document.Text = initial; } }
+    internal string DraftPathForVerification => _draftPath;
+    internal string DraftText => _document.Text;
+    internal bool ScopeMatches => _chat.Settings.SelectedProjectId == _projectId;
+    internal string OperationStatus => Status;
+
+    public MediaWindow(AppStore store, ChatViewModel chat, string tab = "document", string? initialText = null)
+    {
+        _store = store; _chat = chat; Title = "画像とドキュメント · Eluna"; Width = 1020; Height = 780; MinWidth = 720; MinHeight = 600;
+        _projectId = chat.Settings.SelectedProjectId;
+        string primaryDraft = store.DocumentDraftPath(_projectId);
+        _draftPath = Application.Current.Windows.OfType<MediaWindow>().Any(w => !ReferenceEquals(w, this) && w.ScopeId == _projectId && w._store.Root == store.Root) ? Path.Combine(Path.GetDirectoryName(primaryDraft)!, Path.GetFileNameWithoutExtension(primaryDraft) + "-" + Guid.NewGuid().ToString("N") + ".md") : primaryDraft;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner; Appearance.Attach(this);
+        _tabs.Background = Brushes.Transparent; _tabs.BorderThickness = new(0); _tabs.Padding = new(0); _tabs.SetResourceReference(ForegroundProperty, "TextBrush");
+        var root = new Grid { Margin = new(22) }; root.RowDefinitions.Add(new() { Height = GridLength.Auto }); root.RowDefinitions.Add(new()); root.RowDefinitions.Add(new() { Height = GridLength.Auto }); Content = root;
+        root.Children.Add(new TextBlock { Text = "画像とドキュメント", FontSize = 26, FontWeight = FontWeights.SemiBold, Margin = new(0, 0, 0, 18) });
+        Grid.SetRow(_tabs, 1); root.Children.Add(_tabs);
+        var bottom = new DockPanel(); Grid.SetRow(bottom, 2); root.Children.Add(bottom);
+        var cancel = _stopButton = new Button { Content = "処理を停止", Margin = new(12, 10, 0, 0), HorizontalAlignment = HorizontalAlignment.Right };
+        cancel.IsEnabled = false; cancel.Click += (_, _) => { if (_trackedMedia is { IsPending: true }) { _trackedMedia.Cancel(); } else { _operationCancellation?.Cancel(); } }; DockPanel.SetDock(cancel, Dock.Right); bottom.Children.Add(cancel); bottom.Children.Add(_status);
+        var docPanel = Panel("ドキュメント生成");
+        Note(docPanel, "参照範囲: " + chat.ProjectContextLabel + "\n依頼に関連する一部の資料を抜粋します。生成後に参照内容を確認できます。");
+        Button(Row(docPanel), "対象のプロジェクトへ戻る", () => { chat.SelectedProjectChoice = chat.ProjectChoices.FirstOrDefault(p => p.Id == _projectId); return Task.CompletedTask; });
+        TextBox request = Field(docPanel, "作成する内容・目的・読み手", ""); request.ToolTip = "例：新入社員向けにローカルAIの使い方を1ページで説明する"; request.AcceptsReturn = true; request.MinHeight = 58; request.VerticalContentAlignment = VerticalAlignment.Top;
+        var docButtons = Row(docPanel);
+        Button(docButtons, "下書きを開く…", async () => { var picker = new OpenFileDialog { Filter = "文書下書き (*.md)|*.md", InitialDirectory = Path.GetDirectoryName(_draftPath) }; if (picker.ShowDialog(this) == true) { await SaveDraftAsync(); _document.Text = await File.ReadAllTextAsync(picker.FileName, _lifetime.Token); } });
+        Button generateDoc = Button(docButtons, "AIで作成", async () =>
+        {
+            if (!CheckScope()) { return; }
+            if (string.IsNullOrWhiteSpace(request.Text)) { throw new InvalidOperationException("作成する内容を入力してください。"); }
+            string prompt = request.Text; ArtifactContext captured = chat.CaptureArtifactContext(prompt);
+            MediaJob job = await chat.EnqueueMediaAsync("文書生成 · " + prompt[..Math.Min(40, prompt.Length)], new("document", prompt, "依頼に合う文書の本文を日本語のMarkdownで作成してください。見出し・段落・必要な表を使い、架空の出典・固有情報を捏造しないでください。挨拶やコードフェンスを付けず、文書本文だけを書いてください。", _projectId, chat.NewMediaOutput(".md"), captured));
+            TrackMedia(job, value => { _document.Text = value.Text; _documentKnowledge = [.. value.Knowledge]; _documentSkills = [.. value.Skills]; });
+        });
+        generateDoc.SetResourceReference(StyleProperty, "PrimaryButton");
+        Button(docButtons, "使用スキル", () => { new SkillUseWindow(_documentSkills, chat.DataDirectory) { Owner = this }.Show(); return Task.CompletedTask; });
+        Button(docButtons, "プレビュー", () => { ShowDocumentPreview(); return Task.CompletedTask; });
+        Button(docButtons, "保存…", SaveDocumentAsync);
+        Button(docButtons, "生成時のナレッジ", () => { new KnowledgeWindow(_documentKnowledge) { Owner = this }.Show(); return Task.CompletedTask; });
+        _document = Field(docPanel, "文書本文（Markdown・編集できます）", ""); _document.AcceptsReturn = true; _document.AcceptsTab = true; _document.TextWrapping = TextWrapping.Wrap; _document.VerticalScrollBarVisibility = ScrollBarVisibility.Auto; _document.Height = 350; _document.VerticalContentAlignment = VerticalAlignment.Top;
+        _document.Text = initialText ?? (File.Exists(_draftPath) ? File.ReadAllText(_draftPath) : "# 文書タイトル\n\nここで文書を作成・編集できます。");
+        docPanel.Children.Add(_draftState);
+        _document.TextChanged += async (_, _) =>
+        {
+            _draftState.Text = "編集中 · " + (_exportPath.Length == 0 ? "指定ファイルへは未保存" : "書き出し先: " + _exportPath);
+            _autoSave?.Cancel(); _autoSave?.Dispose(); _autoSave = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); CancellationToken token = _autoSave.Token;
+            try { await Task.Delay(400, token); await SaveDraftAsync(); } catch (OperationCanceledException) { } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _draftState.Text = "下書きを保存できませんでした。本文は保持しています。"; }
+        };
+        _document.LostKeyboardFocus += async (_, _) => { try { await SaveDraftAsync(); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Status = "下書きを保存できませんでした。保存先を指定して書き出してください。"; } };
+        Note(docPanel, "DOCXは見出し・表付きの編集可能な文書です。PDFは日本語の見た目を保つ画像PDFで、文字選択には対応しません。");
+
+        var imagePanel = Panel("画像生成");
+        Note(imagePanel, "Stable Diffusion 1.5 / SDXLの一体型GGUFを使用します。分離したFLUX等の複数ファイル構成はこの画面では扱いません。初期の動作確認はSD 1.5です。");
+        TextBox model = Field(imagePanel, "画像生成モデル", ReadImageModel());
+        var modelButtons = Row(imagePanel);
+        Button(modelButtons, "モデルのギャラリー", () => { new ImageModelGalleryWindow(store, chat.Downloads, path => { model.Text = path; SaveImageModel(path); }) { Owner = this }.Show(); return Task.CompletedTask; });
+        Button(modelButtons, "手元のGGUFを選ぶ", () => { var picker = new OpenFileDialog { Filter = "GGUF|*.gguf" }; if (picker.ShowDialog(this) == true) { model.Text = picker.FileName; SaveImageModel(model.Text); } return Task.CompletedTask; });
+        TextBox repository = Field(imagePanel, "Hugging Faceの公開GGUFリポジトリ", "second-state/stable-diffusion-v1-5-GGUF");
+        var files = new ComboBox { DisplayMemberPath = "Filename", Margin = new(0, 6, 0, 0) }; imagePanel.Children.Add(files);
+        var downloadRow = Row(imagePanel);
+        Button(downloadRow, "モデルを探す", async () => await Run(async token => { using var catalog = new ModelCatalog(store); files.ItemsSource = await catalog.GetFilesAsync(repository.Text.Trim(), token); files.SelectedIndex = 0; Status = "形式・容量・ライセンスを確認して取得してください。"; }));
+        Button(downloadRow, "配布元・利用条件", () => { new ModelInfoWindow(store, repository.Text.Trim(), (files.SelectedItem as ModelFile)?.Revision ?? "main", "画像生成モデル", (files.SelectedItem as ModelFile)?.License ?? "配布元の条件を確認してください") { Owner = this }.Show(); return Task.CompletedTask; });
+        var license = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new(0, 7, 0, 0) }; imagePanel.Children.Add(license);
+        files.SelectionChanged += (_, _) => { if (files.SelectedItem is ModelFile file) { license.Text = file.SizeLabel + " · " + file.License + " · 利用条件は配布元のモデルカードを確認してください。"; } };
+        Button(downloadRow, "ダウンロード・使用", () =>
+        {
+            if (files.SelectedItem is not ModelFile file) { throw new InvalidOperationException("取得するGGUFを選んでください。"); }
+            DownloadItem item = chat.Downloads.EnqueueImage(file);
+            _selectedImageDownload = item.Id; bool applied = false;
+            void Update(object? sender, PropertyChangedEventArgs e) { if (_selectedImageDownload != item.Id) { return; } if (item is { Status: "complete", ResultPath: not null }) { if (!applied) { applied = true; model.Text = item.ResultPath; SaveImageModel(item.ResultPath); } Status = "画像生成モデルの取得・選択が完了しました。"; } else { Status = item.Label + " · " + item.Detail; } }
+            item.PropertyChanged += Update; Closed += (_, _) => item.PropertyChanged -= Update; Update(null, new("Status")); return Task.CompletedTask;
+        });
+        _imagePrompt = Field(imagePanel, "画像の説明（英語を推奨）", "A small cabin beside a lake, soft morning light, detailed illustration"); _imagePrompt.AcceptsReturn = true; _imagePrompt.MinHeight = 60;
+        Button(Row(imagePanel), "英語に変換・予約", async () => { if (!CheckScope()) { return; } string prompt = _imagePrompt.Text; ArtifactContext captured = chat.CaptureArtifactContext(prompt); MediaJob job = await chat.EnqueueMediaAsync("画像説明を英語に変換", new("translation", prompt, "Translate this image description into concise English for a text-to-image model. Preserve the user's meaning. Output only the English description, no quotes, no explanation.", _projectId, chat.NewMediaOutput(".txt"), captured)); TrackMedia(job, value => _imagePrompt.Text = value.Text); });
+        TextBox negative = Field(imagePanel, "除外する内容（任意）", "blurry, low quality, text, watermark");
+        var options = new WrapPanel { Margin = new(0, 8, 0, 0) }; imagePanel.Children.Add(options);
+        var size = new ComboBox { ItemsSource = new[] { "512×512", "768×512", "512×768", "768×768", "1024×1024" }, SelectedIndex = 0, Width = 140 }; LabeledOption(options, "画像サイズ", size);
+        var steps = new ComboBox { ItemsSource = new[] { 1, 4, 10, 20, 30, 40, 50 }, SelectedItem = 20, Width = 90, Margin = new(8, 0, 8, 0), ToolTip = "ステップ数" }; LabeledOption(options, "ステップ数", steps);
+        var seed = new TextBox { Text = "-1", Width = 120, ToolTip = "シード（-1はランダム）" }; LabeledOption(options, "シード（-1は毎回変更）", seed);
+        var compute = new ComboBox { ItemsSource = new[] { "自動（GPU優先）", "CPU" }, SelectedIndex = 0, Width = 170, Margin = new(8, 0, 0, 0) }; LabeledOption(options, "実行先", compute);
+        var preview = new Image { MaxHeight = 450, Stretch = Stretch.Uniform, Margin = new(0, 14, 0, 0) };
+        Button(Row(imagePanel), "画像を生成", async () =>
+        {
+            if (!long.TryParse(seed.Text, out long value)) { throw new InvalidDataException("シードには整数を入力してください。"); }
+            string[] dimensions = ((string)size.SelectedItem).Split('×');
+            if (!CheckScope()) { return; }
+            var options = new ImageGenerationOptions(model.Text, _imagePrompt.Text.Trim(), negative.Text, int.Parse(dimensions[0]), int.Parse(dimensions[1]), (int)steps.SelectedItem, value, Compute: compute.SelectedIndex == 1 ? "cpu" : "auto");
+            string output = chat.NewMediaOutput(".png");
+            MediaJob queued = await chat.EnqueueMediaAsync("画像生成 · " + options.Prompt[..Math.Min(40, options.Prompt.Length)], new("image", options.Prompt, "", _projectId, output, Image: options));
+            TrackMedia(queued, job => { if (job.State != "complete" || !File.Exists(output)) { return; } _imageOutput = output; preview.Source = LoadImage(output); if (_saveImageButton is not null) { _saveImageButton.IsEnabled = true; } if (_attachImageButton is not null) { _attachImageButton.IsEnabled = true; } });
+            SaveImageModel(model.Text);
+        }).SetResourceReference(StyleProperty, "PrimaryButton");
+        var saveRow = Row(imagePanel);
+        Button saveImage = _saveImageButton = Button(saveRow, "PNGを保存…", () => { if (_imageOutput is null) { throw new InvalidOperationException("先に画像を生成してください。"); } var picker = new SaveFileDialog { Filter = "PNG画像|*.png", FileName = "Eluna-image.png" }; if (picker.ShowDialog(this) == true) { File.Copy(_imageOutput, picker.FileName, true); } return Task.CompletedTask; });
+        Button attachImage = _attachImageButton = Button(saveRow, "画像を会話に添付", async () => { if (!CheckScope()) { return; } if (_imageOutput is null) { throw new InvalidOperationException("先に画像を生成してください。"); } await chat.AttachFilesAsync([_imageOutput]); });
+        saveImage.IsEnabled = attachImage.IsEnabled = false; saveImage.ToolTip = attachImage.ToolTip = "先に画像を生成してください。";
+        imagePanel.Children.Add(preview);
+
+        var visionPanel = Panel("画像認識の設定");
+        Note(visionPanel, "左上で選んだ会話モデルと同じ系列・サイズのmmproj GGUFが必要です。設定後に画像やPDFを添付してください。認識・OCRは4B以上を推奨します。小さいモデルでは読み間違いが増えます。");
+        string? visionModelId = chat.SelectedModel?.Id;
+        LocalModel VisionTarget() => chat.Models.FirstOrDefault(m => m.Id == visionModelId) is LocalModel current ? current : throw new InvalidOperationException("対象モデルが変わりました。会話モデルを選んで画像認識設定を開き直してください。");
+        var selected = new TextBlock { Text = "対象: " + (chat.SelectedModel?.DisplayName ?? "会話モデルを選んでください"), FontSize = 18, TextWrapping = TextWrapping.Wrap, Margin = new(0, 16, 0, 8) }; visionPanel.Children.Add(selected);
+        var projectorStatus = new TextBlock { Text = chat.SelectedModel?.Projector?.FilePath ?? "projectorは未設定です", TextWrapping = TextWrapping.Wrap }; visionPanel.Children.Add(projectorStatus);
+        TextBox visionRepo = Field(visionPanel, "対応projectorを含むリポジトリ", chat.SelectedModel?.Repository is string r && r.Contains('/') ? r : "bartowski/Qwen_Qwen3.5-0.8B-GGUF");
+        var projectors = new ComboBox { DisplayMemberPath = "Filename", Margin = new(0, 10, 0, 0) }; visionPanel.Children.Add(projectors);
+        var projectorInfo = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new(0, 8, 0, 0) }; visionPanel.Children.Add(projectorInfo);
+        projectors.SelectionChanged += (_, _) => { if (projectors.SelectedItem is ModelFile f) { projectorInfo.Text = f.SizeLabel + " · " + f.License; } };
+        var projectorButtons = Row(visionPanel);
+        Button(projectorButtons, "対応ファイルを自動検出して設定", async () => await Run(async token =>
+        {
+            LocalModel target = VisionTarget(); string repo = visionRepo.Text.Trim(); using var catalog = new ModelCatalog(store);
+            List<ModelFile> candidates = await catalog.GetFilesAsync(repo, token, true); projectors.ItemsSource = candidates;
+            ModelFile file = candidates.FirstOrDefault(f => f.Filename.Contains("f16", StringComparison.OrdinalIgnoreCase)) ?? candidates.FirstOrDefault() ?? throw new InvalidDataException("この配布元に対応ファイルがありません。別の配布元か、手元の補助ファイルを指定してください。");
+            projectors.SelectedItem = file;
+            if (MessageBox.Show(this, $"対象: {target.DisplayName}\n補助ファイル: {file.Filename}\n容量: {file.SizeLabel}\n利用条件: {file.License}\n取得して画像認識を設定しますか？", "画像認識を準備", MessageBoxButton.YesNo) != MessageBoxResult.Yes) { return; }
+            await new ModelsService(store).InstallProjectorAsync(target, file, new Progress<DownloadProgress>(p => Status = p.Label), token); await chat.RefreshModelsAsync();
+            projectorStatus.Text = "画像認識の設定が完了しました。画像を添付して利用できます。"; Status = "対応ファイルを取得し、モデルとの互換性を確認して保存しました。";
+        }));
+        Button(projectorButtons, "projectorを探す", async () => await Run(async token => { using var catalog = new ModelCatalog(store); projectors.ItemsSource = await catalog.GetFilesAsync(visionRepo.Text.Trim(), token, true); projectors.SelectedIndex = 0; }));
+        Button(projectorButtons, "ダウンロード・設定", async () => await Run(async token =>
+        {
+            LocalModel target = VisionTarget();
+            if (projectors.SelectedItem is not ModelFile file) { throw new InvalidOperationException("projectorを選んでください。"); }
+            chat.ReleaseModel(); await new ModelsService(store).InstallProjectorAsync(target, file, new Progress<DownloadProgress>(p => Status = p.Label), token);
+            await chat.RefreshModelsAsync(); projectorStatus.Text = chat.SelectedModel?.Projector?.FilePath; Status = "画像認識の設定を保存しました。画像・PDFを会話へ添付できます。";
+        }));
+        Button(Row(visionPanel), "手元のprojectorを追加", async () =>
+        {
+            var picker = new OpenFileDialog { Filter = "Projector GGUF|*.gguf" }; if (picker.ShowDialog(this) != true) { return; }
+            await Run(async token => { LocalModel target = VisionTarget(); chat.ReleaseModel(); await new ModelsService(store).ImportProjectorAsync(target, picker.FileName, token); await chat.RefreshModelsAsync(); projectorStatus.Text = chat.SelectedModel?.Projector?.FilePath; });
+        });
+        Button(Row(visionPanel), "テスト画像を会話に添付…", async () =>
+        {
+            if (!CheckScope()) { return; }
+            var picker = new OpenFileDialog { Filter = "画像|*.png;*.jpg;*.jpeg;*.webp;*.bmp" }; if (picker.ShowDialog(this) != true) { return; }
+            chat.SelectedModel = VisionTarget(); await chat.AttachFilesAsync([picker.FileName]); Status = "会話にテスト画像を追加しました。質問を入力して認識を確認できます。";
+        });
+        System.Windows.Automation.AutomationProperties.SetName(files, "取得する画像生成モデルのファイル");
+        System.Windows.Automation.AutomationProperties.SetName(projectors, "画像認識の補助ファイル");
+        _tabs.SelectedIndex = tab switch { "image" => 1, "vision" => 2, _ => 0 };
+        Closing += async (_, e) =>
+        {
+            if (_busy) { e.Cancel = true; _pendingClose ??= new(TaskCreationOptions.RunContinuationsAsynchronously); _closeRequested = true; _lifetime.Cancel(); return; }
+            if (_closeSaved) { return; }
+            e.Cancel = true; if (_savingClose) { return; }
+            _pendingClose ??= new(TaskCreationOptions.RunContinuationsAsynchronously); _savingClose = true;
+            try { await SaveDraftAsync(); _closeSaved = true; await Dispatcher.InvokeAsync(() => { if (IsVisible) { Close(); } }); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Status = "下書きを保存できませんでした。本文を別の場所へ保存してください。"; if (UnsavedChanges.Choose(this) == false) { _closeSaved = true; await Dispatcher.InvokeAsync(() => { if (IsVisible) { Close(); } }); } else { _pendingClose.TrySetResult(false); _pendingClose = null; _closeRequested = false; } }
+            finally { _savingClose = false; }
+        };
+
+        Closed += (_, _) => { _pendingClose?.TrySetResult(true); _autoSave?.Cancel(); _autoSave?.Dispose(); _lifetime.Cancel(); _lifetime.Dispose(); };
+    }
+    private StackPanel Panel(string name)
+    {
+        var panel = new StackPanel { Margin = new(4, 0, 4, 0) };
+        var tab = new TabItem { Header = name, Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+        tab.SetResourceReference(StyleProperty, "WorkOptionsTab"); _tabs.Items.Add(tab); return panel;
+    }
+    private static void LabeledOption(Panel panel, string label, Control control)
+    { var column = new StackPanel { Margin = new(0, 0, 8, 8) }; column.Children.Add(new TextBlock { Text = label, FontSize = 11, Margin = new(0, 0, 0, 5) }); System.Windows.Automation.AutomationProperties.SetName(control, label); column.Children.Add(control); panel.Children.Add(column); }
+    private static void Note(Panel panel, string text) => panel.Children.Add(new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Margin = new(0, 5, 0, 6) });
+    private static StackPanel Row(Panel panel) { var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(0, 10, 0, 3) }; panel.Children.Add(row); return row; }
+    private static TextBox Field(Panel panel, string label, string text)
+    { Note(panel, label); var box = new TextBox { Text = text, Margin = new(0, 0, 0, 7), TextWrapping = TextWrapping.Wrap }; System.Windows.Automation.AutomationProperties.SetName(box, label); panel.Children.Add(box); return box; }
+    private Button Button(Panel panel, string label, Func<Task> action)
+    {
+        var button = new Button { Content = label, Margin = new(0, 0, 8, 0) }; button.Click += async (_, _) => { try { _operationTitle = label; await action(); } catch (Exception ex) { Status = DiagnosticsService.Explain(ex); } }; panel.Children.Add(button); return button;
+    }
+    private bool CheckScope()
+    {
+        if (ScopeMatches) { return true; }
+        Status = "この画面を開いたプロジェクトに戻すか、現在のプロジェクトで画面を開き直してください。処理は実行していません。"; return false;
+    }
+    private MediaJob? _trackedMedia;
+    private void TrackMedia(MediaJob job, Action<MediaJob> update)
+    {
+        _trackedMedia = job;
+        void Changed(object? sender, PropertyChangedEventArgs e) { if (_trackedMedia != job) { return; } if (e.PropertyName is nameof(MediaJob.Text) or nameof(MediaJob.State)) { update(job); } Status = job.Detail; if (_stopButton is not null) { _stopButton.IsEnabled = job.IsPending; } }
+        job.PropertyChanged += Changed; Closed += (_, _) => job.PropertyChanged -= Changed;
+        update(job); Status = "処理リストに追加しました。画面を閉じても続行します。"; if (_stopButton is not null) { _stopButton.IsEnabled = job.IsPending; }
+    }
+    private string _operationTitle = "作成・準備";
+    private async Task Run(Func<CancellationToken, Task> operation, bool requireScope = true, bool queue = true)
+    {
+        if (_busy) { return; }
+        if (requireScope && !CheckScope()) { return; }
+        _operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        _busy = true; _tabs.IsEnabled = false; if (_stopButton is not null) { _stopButton.IsEnabled = true; }
+        Status = "処理を予約しています。別のチャットを利用できます。";
+        try
+        {
+            async Task Execute(CancellationToken token) { _runningThis = true; try { await operation(token); } finally { _runningThis = false; } }
+            if (queue) { await _chat.QueueMediaOperationAsync(_operationTitle + " · " + (_projectId is Guid id ? _chat.Projects.FirstOrDefault(p => p.Id == id)?.Name : "通常チャット"), Execute, _operationCancellation.Token); }
+            else { await Execute(_operationCancellation.Token); }
+        }
+        catch (OperationCanceledException) { Status = "処理を停止しました。保存済みのファイルは保持しています。"; }
+        catch (Exception ex) { Status = DiagnosticsService.Explain(ex); }
+        finally
+        {
+            try { await SaveDraftAsync(); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Status += " · 下書きの保存に失敗しました。"; }
+            _operationCancellation.Dispose(); _operationCancellation = null; _busy = false; _tabs.IsEnabled = true; if (_stopButton is not null) { _stopButton.IsEnabled = false; }
+            if (_closeRequested) { Close(); }
+        }
+    }
+    internal async Task SaveDraftAsync()
+    {
+        if (_projectId is Guid id && !_chat.Projects.Any(p => p.Id == id)) { return; }
+        string text = _document.Text;
+        await _draftGate.WaitAsync();
+        try
+        {
+            if (_savedDraft == text && File.Exists(_draftPath)) { return; }
+            Directory.CreateDirectory(Path.GetDirectoryName(_draftPath)!); string temporary = _draftPath + ".writing";
+            await File.WriteAllTextAsync(temporary, text); File.Move(temporary, _draftPath, true); _savedDraft = text;
+            _draftState.Text = "下書き保存済み" + (_exportPath.Length == 0 ? " · ファイルへ書き出すには「保存…」" : " · 書き出し先: " + _exportPath);
+        }
+        finally { _draftGate.Release(); }
+    }
+    private async Task SaveDocumentAsync()
+    {
+        var picker = new SaveFileDialog { Filter = "Word文書|*.docx|PDF（画像形式）|*.pdf|Markdown|*.md|テキスト|*.txt", FileName = "Eluna-document", AddExtension = true };
+        if (picker.ShowDialog(this) != true) { return; }
+        string text = _document.Text;
+        await Run(async token =>
+        {
+            // Write to a sibling temporary file so cancellation cannot damage an existing document.
+            string temporary = picker.FileName + ".eluna-" + Guid.NewGuid().ToString("N") + Path.GetExtension(picker.FileName);
+            try { if (Path.GetExtension(picker.FileName).Equals(".pdf", StringComparison.OrdinalIgnoreCase)) { await DocumentService.SavePdfAsync(temporary, text, token); } else { await DocumentService.SaveTextAsync(temporary, text, token); } token.ThrowIfCancellationRequested(); File.Move(temporary, picker.FileName, true); _exportPath = picker.FileName; Status = "文書を保存しました: " + picker.FileName; }
+            finally { if (File.Exists(temporary)) { File.Delete(temporary); } }
+        }, requireScope: false, queue: false);
+    }
+    private void ShowDocumentPreview()
+    { var window = new Window { Title = "文書プレビュー · Eluna", Width = 850, Height = 760, Owner = this, Content = new FlowDocumentScrollViewer { Document = DocumentService.Flow(_document.Text), IsToolBarVisible = true } }; window.Show(); }
+    private string ReadImageModel() { try { return JsonSerializer.Deserialize<string>(File.ReadAllText(Path.Combine(_store.Root, "image-model.json"))) ?? ""; } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return ""; } }
+    private void SaveImageModel(string path) => File.WriteAllText(Path.Combine(_store.Root, "image-model.json"), JsonSerializer.Serialize(path));
+    internal static BitmapImage LoadImage(string path) { var image = new BitmapImage(); image.BeginInit(); image.UriSource = new(Path.GetFullPath(path)); image.CacheOption = BitmapCacheOption.OnLoad; image.EndInit(); image.Freeze(); return image; }
+}

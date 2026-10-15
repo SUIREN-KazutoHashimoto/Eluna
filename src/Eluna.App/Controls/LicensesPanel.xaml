@@ -1,0 +1,37 @@
+<UserControl x:Class="Eluna.App.Controls.LicensesPanel" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Foreground="{DynamicResource TextBrush}">
+  <Grid>
+    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+    <TextBlock x:Name="OverviewText" Text="使用しているソフトウェアの著作権表示と利用条件を確認できます。" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,0,0,16" />
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="190" /><ColumnDefinition Width="16" /><ColumnDefinition /></Grid.ColumnDefinitions>
+      <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition /></Grid.RowDefinitions>
+        <StackPanel>
+          <TextBlock Text="ソフトウェアを絞り込む" FontSize="12" Margin="0,0,0,6" />
+          <TextBox x:Name="FilterBox" AutomationProperties.Name="ライセンスを絞り込む" ToolTip="ソフトウェア名やファイル名で絞り込む" TextChanged="Filter_Changed" Margin="0,0,0,8" IsEnabled="False" />
+        </StackPanel>
+        <ListBox x:Name="NoticesList" Grid.Row="1" AutomationProperties.Name="使用しているソフトウェアと通知" SelectionChanged="Notice_Changed" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+          <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}"><Setter Property="AutomationProperties.Name" Value="{Binding Title}" /></Style></ListBox.ItemContainerStyle>
+          <ListBox.ItemTemplate><DataTemplate>
+            <StackPanel ToolTip="{Binding FileName}">
+              <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" />
+              <TextBlock Text="{Binding Description}" TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" />
+            </StackPanel>
+          </DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
+      <Grid Grid.Column="2">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition /></Grid.RowDefinitions>
+        <TextBlock x:Name="NoticeTitle" Text="ライセンス" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+        <TextBlock x:Name="NoticeDescription" Grid.Row="1" Foreground="{DynamicResource MutedBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,5,0,0" />
+        <TextBlock x:Name="NoticeFile" Grid.Row="2" Foreground="{DynamicResource MutedBrush}" FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,4,0,12" />
+        <TextBox x:Name="NoticeText" Grid.Row="3" AutomationProperties.Name="ライセンス原文" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" FontSize="13" />
+      </Grid>
+    </Grid>
+    <StackPanel Grid.Row="2" Margin="0,12,0,0">
+      <TextBlock x:Name="LoadStatus" Text="同梱のライセンスを読み込んでいます…" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" FontSize="12" AutomationProperties.LiveSetting="Polite" />
+      <TextBlock Text="モデルの利用条件は別です。「モデルを探す」や配布元のモデルページで確認してください。" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,6,0,0" />
+    </StackPanel>
+  </Grid>
+</UserControl>

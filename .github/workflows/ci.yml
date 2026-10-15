@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  branch-policy:
+    name: Branch policy
+    runs-on: windows-2025
+    timeout-minutes: 5
+    steps:
+      - name: Check release PR source
+        if: >-
+          github.event_name == 'pull_request' && github.base_ref == 'main' &&
+          (github.head_ref != 'develop' || github.event.pull_request.head.repo.full_name != github.repository)
+        run: throw 'Release PRs to main must come from develop in this repository.'
+      - name: Confirm branch policy
+        run: Write-Output 'Branch policy passed.'
+
+  managed-build:
+    name: Managed build
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Verify managed solution
+        run: ./scripts/Verify.ps1
+
+  native-build:
+    name: Native CPU build
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - name: Checkout pinned llama.cpp
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Build llama-server and check startup
+        run: ./scripts/Build-Llama.ps1
+
+  vulkan-build:
+    name: Native Vulkan build
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - name: Checkout pinned llama.cpp
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Set up pinned Vulkan SDK
+        run: ./scripts/Setup-VulkanSdk.ps1
+      - name: Build Vulkan server and correctness test executable
+        run: ./scripts/Build-Llama.ps1 -Backend Vulkan -EnableBackendTests
+
+  portable-build:
+    name: Portable prototype build
+    runs-on: windows-2025
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Set up Vulkan SDK
+        run: ./scripts/Setup-VulkanSdk.ps1
+      - name: Publish self-contained single exe
+        run: ./scripts/Publish.ps1

@@ -1,0 +1,78 @@
+<UserControl x:Class="Eluna.App.Controls.DebateParticipantsEditor"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Eluna.App.Controls" x:Name="Editor" Language="ja-JP">
+  <Grid>
+    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+    <StackPanel Margin="0,0,0,16">
+      <TextBlock Text="ディベートの参加者" FontSize="22" FontWeight="SemiBold" />
+      <TextBlock Text="モデルを参加者にドロップして変更。⠿ をドラッグして発言順を変更できます。" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,8,0,0" />
+    </StackPanel>
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="230" /><ColumnDefinition Width="18" /><ColumnDefinition /></Grid.ColumnDefinitions>
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Top">
+          <TextBlock Text="使用できるモデル" FontWeight="SemiBold" Margin="0,0,0,8" />
+          <TextBox x:Name="ModelSearch" TextChanged="Search_Changed" ToolTip="モデル名で絞り込み" AutomationProperties.Name="参加者に使うモデルを検索" Margin="0,0,0,10" />
+        </StackPanel>
+        <Border x:Name="RemoveZone" DockPanel.Dock="Bottom" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,12,0,0" AllowDrop="True" DragOver="Remove_Over" DragLeave="Target_Leave" Drop="Remove_Drop">
+          <TextBlock Text="参加者をここへドロップして外す&#x0a;（2名以上を残します）" Foreground="{DynamicResource MutedBrush}" FontSize="12" TextWrapping="Wrap" TextAlignment="Center" />
+        </Border>
+        <ListBox x:Name="ModelList" AutomationProperties.Name="ドラッグできるモデル">
+          <ListBox.ItemTemplate><DataTemplate>
+            <Border Padding="0,4" Background="Transparent" PreviewMouseLeftButtonDown="Model_Down" PreviewMouseMove="Source_Move" PreviewMouseLeftButtonUp="Source_Up" Cursor="Hand">
+              <Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="32" /></Grid.ColumnDefinitions>
+                <StackPanel><TextBlock Text="{Binding Name}" TextWrapping="Wrap" FontWeight="SemiBold" /><TextBlock Text="{Binding Detail}" FontSize="11" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,5,0,0" /></StackPanel>
+                <Button Grid.Column="1" Content="＋" Padding="4" VerticalAlignment="Center" Click="Add_Click" IsEnabled="{Binding CanAdd, RelativeSource={RelativeSource AncestorType=local:DebateParticipantsEditor}}" ToolTip="このモデルで参加者を追加" AutomationProperties.Name="このモデルで参加者を追加" />
+              </Grid>
+            </Border>
+          </DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+      <Grid Grid.Column="2">
+        <Grid.RowDefinitions><RowDefinition /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+        <ListBox x:Name="ParticipantList" SelectionChanged="Participant_Selected" AllowDrop="True" DragOver="List_Over" Drop="List_Drop" AutomationProperties.Name="ディベートの参加者と発言順">
+          <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}"><Setter Property="Padding" Value="0" /><Setter Property="Margin" Value="0,2" /></Style></ListBox.ItemContainerStyle>
+          <ListBox.ItemTemplate><DataTemplate>
+            <Border x:Name="ParticipantCard" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="10" Padding="10,7" AllowDrop="True" DragOver="Card_Over" DragLeave="Target_Leave" Drop="Card_Drop">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="32" /><ColumnDefinition Width="34" /><ColumnDefinition /><ColumnDefinition Width="46" /></Grid.ColumnDefinitions>
+                <Button Content="⠿" FontSize="22" Padding="0" Cursor="SizeAll" PreviewMouseLeftButtonDown="Participant_Down" PreviewMouseMove="Source_Move" PreviewMouseLeftButtonUp="Source_Up" ToolTip="ドラッグして発言順を変更" AutomationProperties.Name="参加者の並べ替えハンドル" />
+                <TextBlock Grid.Column="1" Text="{Binding OrderLabel}" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center" FontSize="12" />
+                <StackPanel Grid.Column="2"><TextBlock Text="{Binding Name}" ToolTip="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" /><TextBlock Text="{Binding SelectedModel.Name}" ToolTip="{Binding SelectedModel.Name}" Foreground="{DynamicResource AccentBrush}" FontSize="12" TextTrimming="CharacterEllipsis" Margin="0,5,0,0" /></StackPanel>
+                <Button Grid.Column="3" Content="編集" Padding="4,6" VerticalAlignment="Center" Click="Edit_Click" AutomationProperties.Name="この参加者の名前と役割を編集" />
+                <Border x:Name="DropBefore" Grid.ColumnSpan="4" Height="3" Background="{DynamicResource AccentBrush}" VerticalAlignment="Top" Margin="0,-10,0,0" Visibility="Collapsed" IsHitTestVisible="False" />
+                <Border x:Name="DropAfter" Grid.ColumnSpan="4" Height="3" Background="{DynamicResource AccentBrush}" VerticalAlignment="Bottom" Margin="0,0,0,-10" Visibility="Collapsed" IsHitTestVisible="False" />
+              </Grid>
+            </Border>
+          </DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+        <Border Grid.Row="1" x:Name="AddZone" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1" CornerRadius="10" Padding="12,10" Margin="0,8,0,12" AllowDrop="True" DragOver="List_Over" DragLeave="Target_Leave" Drop="List_Drop">
+          <TextBlock x:Name="AddZoneLabel" Text="＋ ここへモデルをドロップして参加者を追加" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource MutedBrush}" TextAlignment="Center" />
+        </Border>
+        <Border Grid.Row="2" Padding="14" CornerRadius="12" Background="{DynamicResource SurfaceBrush}">
+          <Grid DataContext="{Binding SelectedItem, ElementName=ParticipantList}">
+            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+            <Expander x:Name="DetailsExpander" Header="名前・役割・モデルの詳細" IsExpanded="False">
+              <Expander.Template><ControlTemplate TargetType="Expander"><StackPanel>
+                <ToggleButton Style="{StaticResource ModeToggle}" IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}" HorizontalAlignment="Left" Padding="4,4" Content="名前・役割・モデルの詳細  ⌄" />
+                <ContentPresenter Margin="0,10,0,0" Visibility="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource BoolVisibility}}" />
+              </StackPanel></ControlTemplate></Expander.Template>
+              <StackPanel>
+                <TextBox x:Name="ParticipantNameBox" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" ToolTip="参加者名" AutomationProperties.Name="選択した参加者の名前" Padding="8,6" />
+                <ComboBox x:Name="ParticipantModelBox" ItemsSource="{Binding ModelChoices, ElementName=Editor}" SelectedItem="{Binding SelectedModel}" DisplayMemberPath="Name" Margin="0,8,0,8" Padding="8,6" AutomationProperties.Name="選択した参加者のモデル" />
+                <TextBox x:Name="ParticipantInstructionBox" Text="{Binding Instruction, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" Height="60" Padding="8,6" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top" ToolTip="役割と確認してほしいこと" AutomationProperties.Name="選択した参加者の役割指示" />
+              </StackPanel>
+            </Expander>
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
+              <Button Content="↑ 上へ" Click="Up_Click" Padding="8,5" IsEnabled="{Binding CanMoveUp, ElementName=Editor}" />
+              <Button Content="↓ 下へ" Click="Down_Click" Padding="8,5" Margin="4,0,0,0" IsEnabled="{Binding CanMoveDown, ElementName=Editor}" />
+              <Button Content="参加者を外す" Click="Remove_Click" Padding="8,5" Margin="12,0,0,0" IsEnabled="{Binding CanRemove, ElementName=Editor}" />
+            </StackPanel>
+          </Grid>
+        </Border>
+      </Grid>
+    </Grid>
+    <TextBlock Grid.Row="2" Text="{Binding Status, ElementName=Editor}" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,12,0,0" AutomationProperties.LiveSetting="Polite" />
+  </Grid>
+</UserControl>

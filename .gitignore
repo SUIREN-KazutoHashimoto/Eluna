@@ -1,0 +1,41 @@
+# IDE and local tooling
+.vs/
+.vscode/
+.idea/
+.local/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build and verification output
+**/bin/
+**/obj/
+/build/
+/artifacts/
+/TestResults/
+*.binlog
+*.log
+
+# Models, conversations and machine-specific configuration
+/models/
+/data/
+/runtime/
+*.gguf
+*.ggml
+*.safetensors
+*.onnx
+.env
+.env.*
+!.env.example
+appsettings.local.json
+
+# Distribution output and signing material
+*.msix
+*.msixbundle
+*.pfx
+*.p12
+
+# OS metadata
+Thumbs.db
+Desktop.ini
