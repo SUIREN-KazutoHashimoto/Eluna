@@ -20,7 +20,7 @@
 - `--verify-restore-cycle <記録先>`: 主画面の通常終了、データ切り替え、新しいプロセスの起動までを通して確認。再起動後の会話・未送信下書き・生成文書・出力先と、未完了予約が再開待ちになり自動実行しないことを検査する。
 - `scripts/Test-AppRecovery.ps1`: 専用に起動したアプリをストリーム保存後に強制終了し、子エンジンの終了と新しい起動での本文復元を確認する。履歴の保存版1〜3を検出するよう更新した。
 
-バックアップと模擬960件の検証、実モデル0.8Bの文書4件とチャット4件×3ラウンド（11完了・1件取消）は開発ビルドで確認した。GPUはRX 9070 XT。最終の配布exe・反復試験・Git統合の結果は完了後に追記する。
+バックアップと模擬960件の検証、実モデル0.8Bの文書4件とチャット4件×3ラウンド（11完了・1件取消）は開発ビルドで確認した。GPUはRX 9070 XT。最終の配布exe・反復試験・Gitの結果は下記に記載する。
 
 24時間以上の連続運用、実際のRAM／VRAM枯渇、あらゆるストレージ障害や電源断に対する保証は行わない。コード署名用の証明書は指定されていないため、作成する配布候補は未署名。GitHubの保護ルールも、設定済みとは扱わない。
 
@@ -37,4 +37,6 @@
 - `portable-verification.json`: CPU／Vulkanのllama-server・sd-cliの4本の展開・`--version`起動が成功し、各SHA-256は以前のネイティブビルドと一致。エンジンフォルダーの共有DLLは0、通知ファイルは23。ネイティブを変えていないため、ネイティブ再ビルド・GPU演算のCPU照合は再実施していない。
 - まとめは`artifacts/backup-stability/final-verification.json`。終了時に検証用のアプリ・エンジンの残存は0だった。今回除外した物理操作・別PC等の検証は、実施済みとしていない。
 
-GitHubへの認証情報の読み出しと、公開リポジトリへのブランチpushは自動承認レビューで拒否された。認証情報は読み出していない。通常のGit操作とログイン済みのGitHub画面を使う準備はできているが、公開先`SUIREN-KazutoHashimoto/Eluna`への送信は明示承認待ち。外部へのpush・PR作成・developへの統合は未実施で、GitHub CIも未実行として記録する。
+オーナーの明示承認を受け、通常のGit認証で公開先`SUIREN-KazutoHashimoto/Eluna`へ作業ブランチをpushし、[develop向けPR #1](https://github.com/SUIREN-KazutoHashimoto/Eluna/pull/1)を作成した。認証情報を読み出す処理は実行していない。develop / mainへのマージとGitHub Releaseの公開は未実施。
+
+GitHub CIの初回Managed buildは、埋め込みライセンスの参照先であるsubmoduleが未取得のため失敗した。C#ビルドのcheckoutにも`submodules: recursive`を追加し、両エンジンのライセンスを取得する構成へ修正した。修正後のGitHub CIの結果はPRのChecksを参照し、ローカル検証の成功をCI成功として扱わない。
