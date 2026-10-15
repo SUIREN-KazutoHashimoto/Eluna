@@ -23,3 +23,18 @@
 バックアップと模擬960件の検証、実モデル0.8Bの文書4件とチャット4件×3ラウンド（11完了・1件取消）は開発ビルドで確認した。GPUはRX 9070 XT。最終の配布exe・反復試験・Git統合の結果は完了後に追記する。
 
 24時間以上の連続運用、実際のRAM／VRAM枯渇、あらゆるストレージ障害や電源断に対する保証は行わない。コード署名用の証明書は指定されていないため、作成する配布候補は未署名。GitHubの保護ルールも、設定済みとは扱わない。
+
+## 確定した確認結果
+
+- `artifacts/backup-stability-verify.log`: Releaseビルド0警告・0エラー、書式、追加した全体バックアップ・960件のキュー検証と既存チェック一式、Git空白検査が成功。
+- コードのコミットは`db7d5a8fce9bf91c5a85f3bdc54b49a41ee9f88e`。それ以前の未コミットのアプリ一式は`e4b7043`に整理した。モデル・実行ファイル・利用者データを追跡対象へ追加していない。
+- `artifacts/release-backup-stability/Eluna.exe`: 132,962,669 bytes。SHA-256は`8A797B8F0FC38265B0B164248517161D857A0321389673BDDCF20D979802B130`。ProductVersionは`0.1.0-dev+db7d5a8fce9bf91c5a85f3bdc54b49a41ee9f88e`、Authenticodeは未署名。コードのコミット後に`Publish.ps1 -SkipNativeBuild`で作成した。
+- exeだけを`artifacts/backup-stability/portable-final/`へコピーし、インストール済み.NETを参照しない設定で起動した。`soak-check/backup-verification.json`と`stress-progress.json`で601秒・364ラウンド、チャット4並列の1,335件完了・121件取消・失敗0を記録。すべてRX 9070 XTを使用し、文書4件の同時生成も完了した。モデル不在の画像生成1件と、補助処理の模擬メモリ不足3件は意図した失敗として他の処理から分離した。
+- 同じ配布exeで、置き換え不可にした履歴ファイルへ300件の保存要求を送り、全要求の完了後に最後の変更がディスクへ残ることを確認した。最終のGUIプロセスのWorking Setは1,179,111,424 bytes。反復中に会話・履歴も追加している条件の計測であり、固定データでのメモリ漏れの認定や全条件の性能保証ではない。
+- `restart-check/restart-verification.json`: 通常終了・退避ZIP作成・切り替え・新しいプロセスへの再起動が成功。会話・下書き・生成文書・出力先を保持し、画像予約は再開待ち、自動実行なし。
+- `forced-recovery/result.json`: 生成中の自分のアプリを強制終了し、所有する子エンジンが終了することを確認。別のプロセスで463文字の保存済み本文と再開待ちの表示を回復した。
+- `ui-check/verification.json`と`result.txt`: 管理導線、未保存保護、進捗・順序・取消、独立下書き、モデルフィルター、文字拡大、読書位置150 DIP、1,000／10,000会話の検索を確認。最小820×600の会話欄334 DIP・履歴257 DIPを保持。全体バックアップ画面は明暗・最小620×500・文字130%で描画し、本文をスクロールしても保存・復元・中止・閉じるを操作できる構成を確認した。既存画面回帰は`regression/result.txt`。
+- `portable-verification.json`: CPU／Vulkanのllama-server・sd-cliの4本の展開・`--version`起動が成功し、各SHA-256は以前のネイティブビルドと一致。エンジンフォルダーの共有DLLは0、通知ファイルは23。ネイティブを変えていないため、ネイティブ再ビルド・GPU演算のCPU照合は再実施していない。
+- まとめは`artifacts/backup-stability/final-verification.json`。終了時に検証用のアプリ・エンジンの残存は0だった。今回除外した物理操作・別PC等の検証は、実施済みとしていない。
+
+GitHubへの認証情報の読み出しと、公開リポジトリへのブランチpushは自動承認レビューで拒否された。認証情報は読み出していない。通常のGit操作とログイン済みのGitHub画面を使う準備はできているが、公開先`SUIREN-KazutoHashimoto/Eluna`への送信は明示承認待ち。外部へのpush・PR作成・developへの統合は未実施で、GitHub CIも未実行として記録する。
