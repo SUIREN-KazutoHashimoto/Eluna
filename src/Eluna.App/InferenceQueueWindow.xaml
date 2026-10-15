@@ -1,0 +1,30 @@
+<Window x:Class="Eluna.App.InferenceQueueWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Style="{StaticResource {x:Type Window}}"
+        Title="推論の予約と実行 · Eluna" Width="820" Height="650" MinWidth="560" MinHeight="420" WindowStartupLocation="CenterOwner">
+  <Grid Margin="24"><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+    <StackPanel Margin="0,0,0,18">
+      <TextBlock Text="推論の予約と実行" FontSize="24" FontWeight="SemiBold" />
+      <TextBlock Text="{Binding QueueLabel}" Margin="0,10,0,6" />
+      <TextBlock Text="別のチャットを見ながら実行できます。同じ会話は予約順です。終了時の予約・処理は保存し、次の起動では「再開」を待ちます。失敗した予約も再開またはキャンセルしてください。" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" FontSize="12" />
+    </StackPanel>
+    <Grid Grid.Row="1"><ListBox x:Name="QueueList" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="推論の予約一覧">
+      <ListBox.ItemTemplate><DataTemplate>
+        <StackPanel Margin="4,6">
+          <DockPanel><TextBlock DockPanel.Dock="Right" Text="{Binding Label}" FontSize="12" Margin="12,0,0,0" Foreground="{DynamicResource MutedBrush}" /><TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" /></DockPanel>
+          <TextBlock Text="{Binding ModelLabel}" FontSize="12" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
+          <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" MaxHeight="80" Margin="0,6,0,0" />
+          <TextBlock Text="{Binding Metrics}" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" />
+          <WrapPanel Margin="0,10,0,0">
+            <Button Content="会話を開く" Click="Open_Click" Margin="0,0,8,4" />
+            <Button Content="再開・再試行" Click="Resume_Click" IsEnabled="{Binding CanResume}" Margin="0,0,8,4" ToolTip="チャットは予約した質問から再実行し、途中の回答を置き換えます。調査は保存した作業の進捗から再開します。" />
+            <Button Content="停止・キャンセル" Click="Cancel_Click" IsEnabled="{Binding CanCancel}" Margin="0,0,8,4" />
+          </WrapPanel>
+        </StackPanel>
+      </DataTemplate></ListBox.ItemTemplate>
+    </ListBox><TextBlock Text="推論の予約はありません。チャットでメッセージを送ると、ここに実行状況を表示します。" TextWrapping="Wrap" Margin="12" Foreground="{DynamicResource MutedBrush}" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed" /><Style.Triggers><DataTrigger Binding="{Binding HasItems, ElementName=QueueList}" Value="False"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid>
+    <DockPanel Grid.Row="2" Margin="0,16,0,0">
+      <Button DockPanel.Dock="Right" Content="閉じる" Click="Close_Click" />
+      <Button Content="完了・キャンセル済みを外す" Click="Clear_Click" HorizontalAlignment="Left" />
+    </DockPanel>
+  </Grid>
+</Window>

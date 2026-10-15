@@ -1,0 +1,370 @@
+using System.IO;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using Eluna.App.Models;
+
+namespace Eluna.App.Services;
+
+public sealed class ModelCatalog : IDisposable
+{
+    private readonly HttpClient _http;
+    private readonly bool _ownsHttp;
+    private readonly AppStore _store;
+    private readonly TimeSpan _transferTimeout;
+
+    public ModelCatalog(AppStore store, HttpClient? http = null, TimeSpan? transferTimeout = null)
+    {
+        _store = store;
+        _transferTimeout = transferTimeout ?? TimeSpan.FromSeconds(60);
+        if (_transferTimeout <= TimeSpan.Zero) { throw new ArgumentOutOfRangeException(nameof(transferTimeout)); }
+        _ownsHttp = http is null;
+        _http = http ?? new() { Timeout = Timeout.InfiniteTimeSpan };
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd("Eluna/0.1.0");
+    }
+
+    private static string RepoPath(string id) => string.Join('/', id.Split('/').Select(Uri.EscapeDataString));
+
+    public async Task<List<ModelRepository>> SearchAsync(string query, CancellationToken token)
+    {
+        string uri = $"https://huggingface.co/api/models?search={Uri.EscapeDataString(query.Trim())}&filter=gguf&sort=downloads&direction=-1&limit=100&full=true";
+        using JsonDocument document = await GetJsonAsync(uri, token);
+        return document.RootElement.EnumerateArray()
+            .Where(item => !IsGated(item))
+            .Select(RepositoryInfo)
+            .ToList();
+    }
+    internal static ModelRepository RepositoryInfo(JsonElement item)
+    {
+        string[] tags = item.TryGetProperty("tags", out var list) && list.ValueKind == JsonValueKind.Array ? list.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.String).Select(v => v.GetString()!).ToArray() : [];
+        bool? Capability(string property, params string[] signals)
+        {
+            if (item.TryGetProperty("cardData", out var card) && card.ValueKind == JsonValueKind.Object && card.TryGetProperty(property, out var flag) && flag.ValueKind is JsonValueKind.True or JsonValueKind.False) { return flag.GetBoolean(); }
+            return tags.Any(t => signals.Contains(t, StringComparer.OrdinalIgnoreCase)) ? true : null;
+        }
+        bool projector = item.TryGetProperty("siblings", out var files) && files.ValueKind == JsonValueKind.Array && files.EnumerateArray().Any(f => f.TryGetProperty("rfilename", out var name) && (name.GetString() ?? "").Contains("mmproj", StringComparison.OrdinalIgnoreCase));
+        bool imagePipeline = item.TryGetProperty("pipeline_tag", out var pipeline) && pipeline.GetString() is "image-text-to-text" or "visual-question-answering";
+        return new(item.GetProperty("id").GetString()!, License(item), item.TryGetProperty("downloads", out var downloads) ? downloads.GetInt64() : 0, Languages(item),
+            Capability("supports_thinking", "reasoning", "thinking"), projector || imagePipeline ? true : Capability("supports_vision", "vision", "multimodal", "image-text-to-text", "visual-question-answering"));
+    }
+
+    private static string[] Languages(JsonElement item)
+    {
+        if (item.TryGetProperty("cardData", out JsonElement card) && card.ValueKind == JsonValueKind.Object && card.TryGetProperty("language", out JsonElement language))
+        { if (language.ValueKind == JsonValueKind.String) { return [language.GetString()!]; } if (language.ValueKind == JsonValueKind.Array) { return language.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.String).Select(v => v.GetString()!).ToArray(); } }
+        return [];
+    }
+
+    public async Task<List<ModelFile>> GetFilesAsync(string repository, CancellationToken token, bool projectors = false)
+    {
+        using JsonDocument document = await GetJsonAsync($"https://huggingface.co/api/models/{RepoPath(repository)}?blobs=true", token);
+        JsonElement root = document.RootElement;
+        if (IsGated(root))
+        {
+            throw new InvalidOperationException("このモデルはログインが必要です。プロトタイプでは公開モデルを選んでください。");
+        }
+        string revision = root.GetProperty("sha").GetString()!;
+        string license = License(root);
+        var files = new List<ModelFile>();
+        foreach (JsonElement item in root.GetProperty("siblings").EnumerateArray())
+        {
+            string filename = item.GetProperty("rfilename").GetString()!;
+            if (!filename.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase) ||
+                filename.Contains("mmproj", StringComparison.OrdinalIgnoreCase) != projectors ||
+                filename.Contains("imatrix", StringComparison.OrdinalIgnoreCase) ||
+                !item.TryGetProperty("lfs", out JsonElement lfs))
+            {
+                continue;
+            }
+            string hash = lfs.GetProperty("sha256").GetString()!;
+            if (Regex.IsMatch(hash, "^[a-fA-F0-9]{64}$"))
+            {
+                files.Add(new(repository, revision, filename, hash, lfs.GetProperty("size").GetInt64(), license));
+            }
+        }
+        return GroupSplitFiles(files).OrderBy(f => !f.Filename.Contains("Q4_K_M", StringComparison.OrdinalIgnoreCase))
+            .ThenBy(f => f.Size).ToList();
+    }
+    internal static List<ModelFile> GroupSplitFiles(IEnumerable<ModelFile> files)
+    {
+        const string pattern = @"^(?<prefix>.+)-(?<index>\d{5})-of-(?<count>\d{5})\.gguf$";
+        var single = new List<ModelFile>();
+        var groups = new Dictionary<string, List<(ModelFile File, int Index, int Count)>>(StringComparer.Ordinal);
+        foreach (ModelFile file in files)
+        {
+            Match split = Regex.Match(file.Filename, pattern, RegexOptions.IgnoreCase);
+            if (!split.Success) { single.Add(file); continue; }
+            int index = int.Parse(split.Groups["index"].Value, System.Globalization.CultureInfo.InvariantCulture), count = int.Parse(split.Groups["count"].Value, System.Globalization.CultureInfo.InvariantCulture);
+            string key = file.Repository + "/" + file.Revision + "/" + split.Groups["prefix"].Value + "/" + count;
+            if (!groups.TryGetValue(key, out var group)) { group = []; groups.Add(key, group); }
+            group.Add((file, index, count));
+        }
+        foreach (var group in groups.Values)
+        {
+            int count = group[0].Count;
+            if (count < 1 || group.Count != count || group.Select(f => f.Index).Distinct().Count() != count || group.Any(f => f.Index < 1 || f.Index > count)) { continue; }
+            List<ModelFile> ordered = group.OrderBy(f => f.Index).Select(f => f.File).ToList();
+            single.Add(ordered[0] with { Size = ordered.Sum(f => f.Size), Parts = ordered.Select(f => new ModelPart(f.Filename, f.Sha256, f.Size)).ToList() });
+        }
+        return single;
+    }
+
+    public async Task<LocalModel> DownloadAsync(ModelFile file, IProgress<DownloadProgress>? progress, CancellationToken token)
+    {
+        string id = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{file.Repository}/{file.Revision}/{file.Filename}"))).ToLowerInvariant();
+        string directory = Path.Combine(_store.ModelsDirectory, id[..24]);
+        Directory.CreateDirectory(directory);
+        if (file.Files.Sum(f => f.Size) != file.Size || file.Files[0].Filename != file.Filename || file.Files.Any(f => f.Size < 4 || !Regex.IsMatch(f.Sha256, "^[a-fA-F0-9]{64}$")))
+        { throw new InvalidDataException("GGUFファイルの一覧または容量が不正です。"); }
+        long remaining = file.Files.Sum(f =>
+        {
+            string path = Path.Combine(directory, Path.GetFileName(f.Filename));
+            long existing = File.Exists(path) ? new FileInfo(path).Length : File.Exists(path + ".part") ? new FileInfo(path + ".part").Length : 0;
+            return Math.Max(0, f.Size - existing);
+        });
+        if (new DriveInfo(Path.GetPathRoot(directory)!).AvailableFreeSpace < remaining + 32 * 1024 * 1024)
+        { throw new IOException("すべてのGGUFファイルを保存する空き容量がありません。"); }
+        var parts = new List<LocalModelPart>(); long completed = 0;
+        foreach (ModelPart part in file.Files)
+        {
+            token.ThrowIfCancellationRequested(); long prior = completed;
+            IProgress<DownloadProgress> aggregate = new InlineProgress(p => progress?.Report(new(prior + p.Received, file.Size, p.Stage + (file.Files.Count > 1 ? $"（{parts.Count + 1}/{file.Files.Count}）" : ""))));
+            string path = await DownloadFileAsync(file with { Filename = part.Filename, Sha256 = part.Sha256, Size = part.Size, Parts = null }, directory, aggregate, token);
+            parts.Add(new(path, part.Sha256, part.Size)); completed += part.Size;
+        }
+        string name = Regex.Replace(Path.GetFileNameWithoutExtension(file.Filename), @"-\d{5}-of-\d{5}$", "");
+        var model = new LocalModel(id, name, parts[0].FilePath, file.Repository, file.Revision, file.Sha256, file.Size, parts.Count > 1 ? parts : null, License: file.License);
+        model = await WriteMetadataAsync(directory, model, token);
+        progress?.Report(new(file.Size, file.Size, "ダウンロード完了"));
+        return model;
+    }
+    internal async Task<string> DownloadFileAsync(ModelFile file, string directory, IProgress<DownloadProgress>? progress, CancellationToken token)
+    {
+        string finalPath = Path.Combine(directory, Path.GetFileName(file.Filename));
+        string partPath = finalPath + ".part";
+        if (!File.Exists(finalPath))
+        {
+            long offset = File.Exists(partPath) ? new FileInfo(partPath).Length : 0;
+            if (offset > file.Size)
+            {
+                File.Delete(partPath);
+                offset = 0;
+            }
+            var drive = new DriveInfo(Path.GetPathRoot(directory)!);
+            if (drive.AvailableFreeSpace < file.Size - offset + 32 * 1024 * 1024)
+            {
+                throw new IOException("保存先の空き容量が不足しています。");
+            }
+            if (offset < file.Size)
+            {
+                string downloadUri = $"https://huggingface.co/{RepoPath(file.Repository)}/resolve/{Uri.EscapeDataString(file.Revision)}/{RepoPath(file.Filename)}?download=true";
+                using var request = new HttpRequestMessage(HttpMethod.Get, downloadUri);
+                if (offset > 0)
+                {
+                    request.Headers.Range = new RangeHeaderValue(offset, null);
+                }
+                using HttpResponseMessage response = await TransferAsync(t => _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, t), token);
+                response.EnsureSuccessStatusCode();
+                if (response.StatusCode == HttpStatusCode.PartialContent)
+                {
+                    if (response.Content.Headers.ContentRange?.From != offset || response.Content.Headers.ContentRange?.Length != file.Size)
+                    {
+                        throw new InvalidDataException("ダウンロードの再開位置が一致しません。");
+                    }
+                }
+                else
+                {
+                    offset = 0;
+                }
+                await using Stream input = await response.Content.ReadAsStreamAsync(token);
+                await using var output = new FileStream(partPath, offset == 0 ? FileMode.Create : FileMode.Append,
+                    FileAccess.Write, FileShare.None, 1024 * 1024, true);
+                byte[] buffer = new byte[1024 * 1024];
+                long received = offset;
+                long lastReport = 0;
+                int count;
+                while ((count = await TransferAsync(t => input.ReadAsync(buffer.AsMemory(), t).AsTask(), token)) != 0)
+                {
+                    if (received + count > file.Size)
+                    {
+                        throw new InvalidDataException("配布元のファイルサイズと一致しません。");
+                    }
+                    await output.WriteAsync(buffer.AsMemory(0, count), token);
+                    received += count;
+                    if (Environment.TickCount64 - lastReport >= 100)
+                    {
+                        progress?.Report(new(received, file.Size, "ダウンロード中"));
+                        lastReport = Environment.TickCount64;
+                    }
+                }
+                await output.FlushAsync(token);
+                if (received != file.Size)
+                {
+                    throw new InvalidDataException("ダウンロードが途中で終了しました。もう一度実行すると再開できます。");
+                }
+            }
+            progress?.Report(new(file.Size, file.Size, "ファイルを検証中"));
+            try
+            {
+                await VerifyFileAsync(partPath, file, token);
+            }
+            catch (InvalidDataException)
+            {
+                File.Delete(partPath);
+                throw;
+            }
+            File.Move(partPath, finalPath);
+        }
+        else
+        {
+            await VerifyFileAsync(finalPath, file, token);
+        }
+        return finalPath;
+    }
+    private async Task<T> TransferAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken token)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(_transferTimeout);
+        try { return await operation(timeout.Token); }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested)
+        { throw new TimeoutException("モデル配布元からの受信が止まったため、取得を停止しました。キューから再試行すると途中から再開できます。"); }
+    }
+    private sealed class InlineProgress(Action<DownloadProgress> report) : IProgress<DownloadProgress> { public void Report(DownloadProgress value) => report(value); }
+    private async Task<LocalModel> WriteMetadataAsync(string directory, LocalModel model, CancellationToken token)
+    {
+        try { ModelProfile profile = await GgufInspector.ReadAsync(model, token); model = model with { Profile = profile, License = profile.License.Length > 0 ? profile.License : model.License }; }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or OverflowException or DecoderFallbackException) { /* Engine loading remains the authoritative format check. */ }
+        await ModelsService.SaveMetadataAsync(_store, Path.Combine(directory, "model.json"), model, token, true);
+        return JsonSerializer.Deserialize<LocalModel>(await File.ReadAllTextAsync(Path.Combine(directory, "model.json"), token), AppStore.JsonOptions)!;
+    }
+
+    private static async Task VerifyFileAsync(string path, ModelFile file, CancellationToken token)
+    {
+        await using var stream = File.OpenRead(path);
+        byte[] magic = new byte[4];
+        await stream.ReadExactlyAsync(magic, token);
+        if (!magic.AsSpan().SequenceEqual("GGUF"u8) || stream.Length != file.Size)
+        {
+            throw new InvalidDataException("有効なGGUFモデルではありません。");
+        }
+        stream.Position = 0;
+        byte[] hash = await SHA256.HashDataAsync(stream, token);
+        if (!Convert.ToHexString(hash).Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("モデルのSHA-256が一致しません。再度ダウンロードしてください。");
+        }
+    }
+
+    public async Task<LocalModel> ImportAsync(string path, IProgress<DownloadProgress>? progress, CancellationToken token)
+    {
+        Match split = Regex.Match(Path.GetFileName(path), @"^(?<prefix>.+)-(?<index>\d{5})-of-(?<count>\d{5})\.gguf$", RegexOptions.IgnoreCase);
+        if (split.Success)
+        {
+            int count = int.Parse(split.Groups["count"].Value, System.Globalization.CultureInfo.InvariantCulture), index = int.Parse(split.Groups["index"].Value, System.Globalization.CultureInfo.InvariantCulture);
+            if (index < 1 || index > count) { throw new InvalidDataException("分割GGUFのファイル番号が不正です。"); }
+            return await ImportSplitAsync(path, split.Groups["prefix"].Value, count, progress, token);
+        }
+        await using var input = File.OpenRead(path);
+        byte[] magic = new byte[4];
+        await input.ReadExactlyAsync(magic, token);
+        if (!magic.AsSpan().SequenceEqual("GGUF"u8))
+        {
+            throw new InvalidDataException("GGUF形式のモデルを選んでください。");
+        }
+        input.Position = 0;
+        progress?.Report(new(0, input.Length, "ファイルを検証中"));
+        string hash = Convert.ToHexString(await SHA256.HashDataAsync(input, token)).ToLowerInvariant();
+        string directory = Path.Combine(_store.ModelsDirectory, "local-" + hash[..20]);
+        Directory.CreateDirectory(directory);
+        string destination = Path.Combine(directory, Path.GetFileName(path));
+        if (!File.Exists(destination))
+        {
+            input.Position = 0;
+            await using (var output = new FileStream(destination + ".part", FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, true))
+            {
+                await input.CopyToAsync(output, token);
+            }
+            File.Move(destination + ".part", destination);
+        }
+        var model = new LocalModel("local-" + hash, Path.GetFileNameWithoutExtension(path), destination, "local", "local", hash, input.Length);
+        return await WriteMetadataAsync(directory, model, token);
+    }
+    private async Task<LocalModel> ImportSplitAsync(string selected, string prefix, int count, IProgress<DownloadProgress>? progress, CancellationToken token)
+    {
+        if (count < 1) { throw new InvalidDataException("分割GGUFのファイル数が不正です。"); }
+        string sourceDirectory = Path.GetDirectoryName(Path.GetFullPath(selected))!;
+        string[] paths = Enumerable.Range(1, count).Select(index => Path.Combine(sourceDirectory, $"{prefix}-{index:D5}-of-{count:D5}.gguf")).ToArray();
+        foreach (string sourcePath in paths)
+        { if (!File.Exists(sourcePath)) { throw new InvalidDataException($"分割GGUFの {Path.GetFileName(sourcePath)} がありません。同じフォルダに全ファイルを用意してください。"); } }
+        long totalBytes = paths.Sum(p => new FileInfo(p).Length);
+        var sourceParts = new List<(string Path, string Hash, long Size)>();
+        for (int index = 1; index <= count; index++)
+        {
+            token.ThrowIfCancellationRequested();
+            string sourcePath = paths[index - 1];
+            await using var source = File.OpenRead(sourcePath); byte[] magic = new byte[4]; await source.ReadExactlyAsync(magic, token);
+            if (!magic.AsSpan().SequenceEqual("GGUF"u8)) { throw new InvalidDataException("GGUF形式ではない分割ファイルがあります。"); }
+            progress?.Report(new(0, totalBytes, $"SHA-256を検証中（{index}/{count}）"));
+            source.Position = 0; string hash = Convert.ToHexString(await SHA256.HashDataAsync(source, token)).ToLowerInvariant();
+            sourceParts.Add((sourcePath, hash, source.Length));
+        }
+        string combinedHash = count == 1 ? sourceParts[0].Hash : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', sourceParts.Select(p => p.Hash))))).ToLowerInvariant();
+        string directory = Path.Combine(_store.ModelsDirectory, "local-" + combinedHash[..20]); Directory.CreateDirectory(directory);
+        long total = sourceParts.Sum(p => p.Size);
+        long required = sourceParts.Where(p => !File.Exists(Path.Combine(directory, Path.GetFileName(p.Path)))).Sum(p => p.Size);
+        if (new DriveInfo(Path.GetPathRoot(directory)!).AvailableFreeSpace < required + 32 * 1024 * 1024) { throw new IOException("保存先の空き容量が不足しています。"); }
+        var local = new List<LocalModelPart>(); long completed = 0;
+        foreach (var source in sourceParts)
+        {
+            token.ThrowIfCancellationRequested();
+            string destination = Path.Combine(directory, Path.GetFileName(source.Path));
+            if (!File.Exists(destination))
+            {
+                await using (var input = File.OpenRead(source.Path))
+                await using (var output = new FileStream(destination + ".part", FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, true))
+                { await input.CopyToAsync(output, token); }
+                File.Move(destination + ".part", destination);
+            }
+            await VerifyFileAsync(destination, new("local", "local", Path.GetFileName(destination), source.Hash, source.Size, "利用条件は配布元で確認"), token);
+            local.Add(new(destination, source.Hash, source.Size)); completed += source.Size; progress?.Report(new(completed, total, "分割GGUFを追加中"));
+        }
+        var model = new LocalModel("local-" + combinedHash, prefix, local[0].FilePath, "local", "local", local[0].Sha256, total, local);
+        return await WriteMetadataAsync(directory, model, token);
+    }
+    public async Task<string> GetCardAsync(string repository, string revision, CancellationToken token)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        using HttpResponseMessage response = await _http.GetAsync($"https://huggingface.co/{RepoPath(repository)}/raw/{Uri.EscapeDataString(revision)}/README.md", timeout.Token);
+        response.EnsureSuccessStatusCode(); if (response.Content.Headers.ContentLength > 2 * 1024 * 1024) { throw new InvalidDataException("モデルカードが大きすぎます。"); }
+        string text = await response.Content.ReadAsStringAsync(timeout.Token); if (text.Length > 1024 * 1024) { throw new InvalidDataException("モデルカードが大きすぎます。"); }
+        return text;
+    }
+
+    private async Task<JsonDocument> GetJsonAsync(string uri, CancellationToken token)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(40));
+        using HttpResponseMessage response = await _http.GetAsync(uri, timeout.Token);
+        if (response.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            throw new HttpRequestException("検索が混み合っています。少し待ってから再試行してください。");
+        }
+        response.EnsureSuccessStatusCode();
+        return JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
+    }
+
+    private static bool IsGated(JsonElement item) => item.TryGetProperty("gated", out JsonElement gated) &&
+        gated.ValueKind is not (JsonValueKind.False or JsonValueKind.Null);
+
+    private static string License(JsonElement item) => item.TryGetProperty("cardData", out JsonElement card) &&
+        card.ValueKind == JsonValueKind.Object && card.TryGetProperty("license", out JsonElement license) &&
+        license.ValueKind == JsonValueKind.String ? license.GetString()! : "利用条件は配布元で確認";
+
+    public void Dispose()
+    {
+        if (_ownsHttp) { _http.Dispose(); }
+    }
+}

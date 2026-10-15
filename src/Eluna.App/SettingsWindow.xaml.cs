@@ -1,0 +1,85 @@
+using System.Diagnostics;
+using System.Text.Json;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using Eluna.App.Models;
+using Eluna.App.Services;
+using Eluna.App.ViewModels;
+
+namespace Eluna.App;
+
+public partial class SettingsWindow : Window
+{
+    private readonly ChatViewModel _viewModel;
+    private string _baseline = "", _memoryBaseline = "";
+    private bool _saving;
+    public void SelectTab(int tab) => SettingsTabs.SelectedIndex = Math.Clamp(tab, 0, SettingsTabs.Items.Count - 1);
+    public SettingsWindow(ChatViewModel viewModel, int initialTab = 0)
+    {
+        InitializeComponent(); _viewModel = viewModel; Appearance.Attach(this);
+        ComputeBox.ItemsSource = viewModel.ComputeChoices;
+        ComputeBox.SelectedItem = viewModel.ComputeChoices.FirstOrDefault(d => d.Id == viewModel.Settings.Compute) ?? viewModel.ComputeChoices.FirstOrDefault();
+        ContextBox.ItemsSource = new[] { 2048, 4096, 8192, 16384 }; ContextBox.SelectedItem = viewModel.Settings.ContextSize;
+        ConcurrencyBox.ItemsSource = new[] { 1, 2, 3, 4 }; ConcurrencyBox.SelectedItem = viewModel.Settings.MaxConcurrentInferences;
+        DownloadConcurrencyBox.ItemsSource = new[] { 1, 2, 3, 4 }; DownloadConcurrencyBox.SelectedItem = viewModel.Settings.MaxConcurrentDownloads;
+        MediaConcurrencyBox.ItemsSource = new[] { 1, 2, 3, 4 }; MediaConcurrencyBox.SelectedItem = viewModel.Settings.MaxConcurrentMedia;
+        ThemeBox.ItemsSource = new[] { new KeyValuePair<string, string>("dark", "ダーク"), new("light", "ライト") };
+        ThemeBox.SelectedIndex = viewModel.Settings.Theme == "light" ? 1 : 0;
+        FontBox.ItemsSource = new[] { 12.0, 14, 15, 16, 18, 20, 24, 28, viewModel.Settings.ChatFontSize }.Distinct().Order().ToArray(); FontBox.SelectedItem = viewModel.Settings.ChatFontSize;
+        LineBox.ItemsSource = new[] { 18.0, 22, 25, 28, 32, 36, 42, 50, 60, viewModel.Settings.LineHeight }.Distinct().Order().ToArray(); LineBox.SelectedItem = viewModel.Settings.LineHeight;
+        ControlEnterBox.IsChecked = viewModel.Settings.ControlEnterToSend;
+        InstructionBox.Text = viewModel.Settings.SystemInstruction;
+        UiScaleBox.ItemsSource = new[] { new KeyValuePair<double, string>(1, "100%"), new(1.15, "115%"), new(1.3, "130%"), new(1.5, "150%") }; UiScaleBox.SelectedValue = viewModel.Settings.UiScale;
+        CommonMemoryEditor.LoadNotes(viewModel.CommonMemories); SettingsTabs.SelectedIndex = initialTab;
+        _baseline = Snapshot(); _memoryBaseline = JsonSerializer.Serialize(CommonMemoryEditor.GetNotes());
+        AddHandler(TextBoxBase.TextChangedEvent, new TextChangedEventHandler((_, _) => Edited()));
+        AddHandler(Selector.SelectionChangedEvent, new SelectionChangedEventHandler((_, _) => Edited()));
+        ControlEnterBox.Click += (_, _) => Edited(); CommonMemoryEditor.Changed += (_, _) => Edited();
+        UnsavedChanges.Protect(this, () => !_saving && Snapshot() != _baseline, SaveAsync);
+        Closed += (_, _) => LicenseView.Dispose();
+    }
+    private string Snapshot() => JsonSerializer.Serialize(new { ComputeBox.SelectedItem, Context = ContextBox.SelectedItem, Concurrency = ConcurrencyBox.SelectedItem, DownloadConcurrency = DownloadConcurrencyBox.SelectedItem, MediaConcurrency = MediaConcurrencyBox.SelectedItem, Font = FontBox.SelectedItem, Line = LineBox.SelectedItem, Theme = ThemeBox.SelectedIndex, UiScale = UiScaleBox.SelectedValue, ControlEnterBox.IsChecked, InstructionBox.Text, Memories = CommonMemoryEditor.GetNotes() });
+    private void Edited() { bool dirty = Snapshot() != _baseline; SaveStateText.Text = dirty ? "未保存の変更があります" : "保存済み"; Title = dirty ? "設定 · 変更あり · Eluna" : "設定 · Eluna"; }
+    private async void Save_Click(object sender, RoutedEventArgs e) => await SaveAsync();
+    private async Task<bool> SaveAsync()
+    {
+        if (_saving) { return false; }
+        if (ComputeBox.SelectedItem is not ComputeDevice device || ContextBox.SelectedItem is not int context ||
+            ConcurrencyBox.SelectedItem is not int concurrency || DownloadConcurrencyBox.SelectedItem is not int downloadConcurrency || MediaConcurrencyBox.SelectedItem is not int mediaConcurrency || FontBox.SelectedItem is not double font || LineBox.SelectedItem is not double line || ThemeBox.SelectedItem is not KeyValuePair<string, string> theme || UiScaleBox.SelectedValue is not double scale) { return false; }
+        _saving = true; SaveButton.IsEnabled = false;
+        try
+        {
+            await _viewModel.ApplySettingsAsync(_viewModel.Settings with
+            {
+                Compute = device.Id,
+                ContextSize = context,
+                MaxConcurrentInferences = concurrency,
+                MaxConcurrentDownloads = downloadConcurrency,
+                MaxConcurrentMedia = mediaConcurrency,
+                ChatFontSize = font,
+                LineHeight = line,
+                Theme = theme.Key,
+                UiScale = scale,
+                ControlEnterToSend = ControlEnterBox.IsChecked == true,
+                SystemInstruction = InstructionBox.Text
+            }, JsonSerializer.Serialize(CommonMemoryEditor.GetNotes()) == _memoryBaseline ? null : CommonMemoryEditor.GetNotes());
+            _baseline = Snapshot(); _memoryBaseline = JsonSerializer.Serialize(CommonMemoryEditor.GetNotes()); Edited(); return true;
+        }
+        catch (Exception ex) { SaveStateText.Text = "保存できませんでした。変更は画面に保持しています。"; MessageBox.Show(this, ex.Message, "設定を保存できませんでした"); return false; }
+        finally { _saving = false; SaveButton.IsEnabled = true; }
+    }
+    private void Close_Click(object sender, RoutedEventArgs e) => Close();
+    private MainWindow? Main => Owner as MainWindow ?? Application.Current.MainWindow as MainWindow;
+    private void Models_Click(object sender, RoutedEventArgs e) => Main?.OpenModels();
+    private void ManageModels_Click(object sender, RoutedEventArgs e) => Main?.OpenModelManager();
+    private void Downloads_Click(object sender, RoutedEventArgs e) => Main?.OpenDownloads();
+    private void Data_Click(object sender, RoutedEventArgs e) => Main?.OpenData();
+    private void OpenData_Click(object sender, RoutedEventArgs e)
+    {
+        try { Process.Start(new ProcessStartInfo(_viewModel.DataDirectory) { UseShellExecute = true }); }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "保存場所を開けませんでした"); }
+    }
+    private void Updates_Click(object sender, RoutedEventArgs e) => new UpdateWindow { Owner = Main ?? (Window)this }.Show();
+    private void Skills_Click(object sender, RoutedEventArgs e) => new SkillsWindow(_viewModel) { Owner = Main ?? (Window)this }.Show();
+}
