@@ -27,7 +27,7 @@ public sealed class ProcessListPanel : UserControl
         _resources = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 11, Margin = new(0, 8, 0, 0) }; _resources.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush");
         var resources = new Expander { Header = "メモリと予約の見込み", Content = new ScrollViewer { Content = _resources, MaxHeight = 110, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }, Margin = new(0, 6, 0, 0) }; DockPanel.SetDock(resources, Dock.Bottom); root.Children.Add(resources);
         var history = new Button { Content = "推論の履歴", Padding = new(8, 5, 8, 5) }; history.Click += (_, _) => new InferenceQueueWindow(chat) { Owner = Window.GetWindow(this) ?? Application.Current.MainWindow }.Show(); footer.Children.Add(history);
-        var clear = new Button { Content = "完了を片付ける", Padding = new(8, 5, 8, 5) }; clear.Click += async (_, _) => { chat.Inferences.ClearFinished(); foreach (DownloadItem item in chat.Downloads.Items.Where(i => i.Status == "complete").ToArray()) { chat.Downloads.Remove(item); } await chat.ClearFinishedMediaAsync(); if (chat.ComputerActivity is { State: not "active" }) { chat.SetComputerActivity(null); } Refresh(); }; footer.Children.Add(clear);
+        var clear = new Button { Content = "完了を片付ける", Padding = new(8, 5, 8, 5) }; clear.Click += async (_, _) => { chat.Inferences.ClearFinished(); foreach (DownloadItem item in chat.Downloads.Items.Where(i => i.Status == "complete").ToArray()) { chat.Downloads.Remove(item); } await chat.ClearFinishedMediaAsync(); chat.ClearFinishedComputers(); Refresh(); }; footer.Children.Add(clear);
         var grid = new Grid(); root.Children.Add(grid);
         var list = new ListBox { ItemsSource = _rows, MaxHeight = Math.Max(160, Math.Min(360, SystemParameters.WorkArea.Height * 0.45)) };
         System.Windows.Automation.AutomationProperties.SetName(list, "実行中の処理と予約順");
@@ -53,7 +53,7 @@ public sealed class ProcessListPanel : UserControl
     }
     internal void Refresh()
     {
-        object[] jobs = [.. _chat.Inferences.Items.Cast<object>(), .. _chat.Downloads.Items.Cast<object>(), .. _chat.MediaJobs.Cast<object>(), .. _chat.ComputerActivity is { } activity ? new object[] { activity } : []];
+        object[] jobs = [.. _chat.Inferences.Items.Cast<object>(), .. _chat.Downloads.Items.Cast<object>(), .. _chat.MediaJobs.Cast<object>(), .. _chat.ComputerActivities.Cast<object>()];
         foreach (object job in jobs)
         { if (!_rows.Any(r => ReferenceEquals(r.Job, job))) { _rows.Add(new(_chat, job)); } }
         foreach (ProcessRow row in _rows.ToArray()) { if (!jobs.Contains(row.Job)) { _rows.Remove(row); } else { row.Refresh(); } }
@@ -74,7 +74,7 @@ public sealed class ProcessListPanel : UserControl
         public string Title => job switch { InferenceJob i => "推論 · " + i.Title, DownloadItem d => "取得 · " + d.Name, MediaJob m => m.Title, ComputerActivity c => "PC操作 · " + c.Title, _ => "" };
         public string StateLabel => (State switch { "active" => "実行中", "queued" => "予約中", "failed" => "失敗", "paused" when job is ComputerActivity => "停止", "paused" => "再開待ち", "canceled" => "取消済み", _ => "完了" }) + (job is InferenceJob i ? " · " + (chat.Projects.FirstOrDefault(p => p.Id == i.Request.Settings.SelectedProjectId)?.Name ?? "通常チャット") : "");
         public string Detail => job switch { InferenceJob i => i.Detail + (i.Metrics.Length > 0 ? "\n" + i.Metrics : ""), DownloadItem d => d.Detail, MediaJob m => m.Detail, ComputerActivity c => c.Detail, _ => "" };
-        public bool CanCancel => job switch { InferenceJob i => i.CanCancel, DownloadItem d => d.CanPause, MediaJob m => m.IsPending || m.CanResume, ComputerActivity c => c.State == "active", _ => false };
+        public bool CanCancel => job switch { InferenceJob i => i.CanCancel, DownloadItem d => d.CanPause, MediaJob m => m.IsPending || m.CanResume, ComputerActivity c => c.State is "active" or "queued" or "paused", _ => false };
         public bool CanResume => job switch { InferenceJob i => i.CanResume, DownloadItem d => d.CanResume, MediaJob m => m.CanResume, _ => false };
         public bool CanOpen => job is InferenceJob || job is DownloadItem { CanUse: true } || job is MediaJob { Request: not null } || job is ComputerActivity;
         public void Cancel() { if (job is InferenceJob i) { chat.Inferences.Cancel(i); } else if (job is DownloadItem d) { chat.Downloads.Pause(d); } else if (job is MediaJob m) { m.Cancel(); } else if (job is ComputerActivity c) { c.Stop(); } }

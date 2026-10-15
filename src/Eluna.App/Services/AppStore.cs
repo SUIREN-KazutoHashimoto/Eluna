@@ -116,7 +116,7 @@ public sealed class AppStore
             m.Content is not null && m.Role is "user" or "assistant" &&
             ValidAttachments(m.Attachments) &&
             (m.Knowledge is null || m.Knowledge.Count <= 8 && m.Knowledge.All(k => k is not null && k.Number is >= 1 and <= 8 && k.Kind is not null && k.Title is not null && k.Text is not null && k.Title.Length <= 1024 && k.Text.Length <= 700) && m.Knowledge.Select(k => k.Number).Distinct().Count() == m.Knowledge.Count) &&
-            SkillValidation.Uses(m.Skills) && (m.Work is null || ValidWork(m.Work)) &&
+            SkillValidation.Uses(m.Skills) && ComputerActionPolicy.ValidSaved(m.Computer) && (m.Work is null || ValidWork(m.Work)) &&
             (m.ThinkingSeconds is null || double.IsFinite(m.ThinkingSeconds.Value) && m.ThinkingSeconds >= 0));
         static bool ValidWork(SavedWork work)
         {

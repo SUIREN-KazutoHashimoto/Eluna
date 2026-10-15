@@ -20,7 +20,7 @@ public sealed record ComputerObservation(ComputerTarget Target, long Surface, st
     List<ComputerElement> Elements, string ImageBase64, int ImageWidth, int ImageHeight, byte[] Signature, string Notice = "");
 
 public sealed record ComputerAction(string Type, string Reason = "", int Element = 0, int X = 0, int Y = 0,
-    int X2 = 0, int Y2 = 0, string Text = "", string Keys = "", int Amount = 1, int Window = 0)
+    int X2 = 0, int Y2 = 0, string Text = "", string Keys = "", int Amount = 1, int Window = 0, bool Sensitive = false)
 {
     public string Label => Type switch
     {
@@ -36,6 +36,7 @@ public sealed record ComputerAction(string Type, string Reason = "", int Element
         "wait" => "画面の更新を待つ",
         "finish" => "完了報告",
         "ask" => "利用者へ確認",
+        "request_app" => "別のアプリの操作許可",
         _ => "不明な操作"
     };
 }

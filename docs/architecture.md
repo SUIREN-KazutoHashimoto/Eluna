@@ -50,8 +50,10 @@
 
 ## Computer Use
 
-`ComputerUseWindow`が対象選択・画面・提案の確認と文字修正・停止・履歴を扱い、`ComputerUseRunner`が観察→提案→確認→実行の回数・時間・許可範囲を管理する。`ComputerPlanner`は独立した`LlamaService`へ対象画面とUI要素を渡し、JSON schemaで単一操作を生成する。`ComputerActionPolicy`は形式・キー・パスワード欄・実行前の観察の一致を検査する。
+`ChatMessage.Computer`の`ComputerSession`に作業状態を持たせ、会話内の`ComputerTaskPanel`が対象許可・計画・画面・確認・停止・再開・履歴を表示する。専用ウィンドウは使わない。`ChatViewModel.Computer`がチャットの明示的な依頼を振り分け、会話・分岐・プロジェクトと使用モデルを固定する。通常のナレッジ規則で参照を限定し、追加指示はその作業へ渡す。
+
+`ComputerChatController`は一時停止・引き継ぎ・追加指示で進行中の案をキャンセルし、モデルと操作枠を解放する。再開時は完了済みの履歴をモデルへ伝え、再実行せず最新画面から判断する。デスクトップの実行枠は1件で、別の依頼は待機する。`ComputerUseRunner`が観察→提案→必要な確認→実行の回数・時間・許可範囲を管理する。`ComputerPlanner`は独立した`LlamaService`へ画面とUI要素を渡し、JSON schemaで単一操作を生成する。`ComputerActionPolicy`は通常操作の自動実行と重要な操作の確認を判定し、キーの別名を正規化して検査する。
 
 `ComputerDesktop`は同じexeの`--computer-worker`を要求ごとに起動し、標準入出力のJSONで通信する。補助プロセスのMTAスレッドがUI Automation / Win32 / GDIを扱い、12秒の要求期限とWindows Job Objectで終了させる。UIAプロバイダーが応答を止めてもWPFを止めない。前面化の前後で観察を比較し、入力先のフォーカス・マウス位置を検査する。OSの入力制約を回避しない。
 
-デスクトップの同時制御を名前付きmutexで1件に限定し、実行中だけCtrl+Alt+Escを登録する。`ComputerActivity`を処理リストへ表示する。終了・画面を閉じる・キャンセルで推論と補助プロセスを後始末する。画面・依頼・操作履歴は通常の保存状態へ加えず、利用者が選んだ履歴JSONだけを書き出す。詳細は[Computer Use](computer-use.md)。
+デスクトップの同時制御を名前付きmutexでも1件に限定し、実行中だけCtrl+Alt+Escを登録する。複数の`ComputerActivity`を処理リストへ表示する。会話を切り替えても作業を維持し、停止・アプリ終了で推論と補助プロセスを後始末する。依頼と操作履歴は`SavedMessage`の任意フィールドへ保存し、旧形式を読み込める状態を保つ。画像とハンドルと操作許可は保存しない。再起動後の再開には再許可が必要で、プロジェクト変更後は古い参照を使わない。`ComputerApplications`はスタートメニューの登録だけを列挙し、利用者のボタン操作で内容のハッシュを再確認して起動する。詳細は[Computer Use](computer-use.md)。

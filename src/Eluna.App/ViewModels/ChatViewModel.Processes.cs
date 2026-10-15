@@ -23,9 +23,9 @@ public sealed partial class ChatViewModel
     {
         get
         {
-            int active = Inferences.ActiveCount + Downloads.Items.Count(d => d.Status == "active") + MediaJobs.Count(m => m.State == "active") + (ComputerActivity?.State == "active" ? 1 : 0);
-            int waiting = Inferences.WaitingCount + Downloads.Items.Count(d => d.Status == "queued") + MediaJobs.Count(m => m.State == "queued");
-            int attention = Inferences.Items.Count(i => i.State is "paused" or "failed") + Downloads.Items.Count(d => d.Status is "paused" or "failed") + MediaJobs.Count(m => m.CanResume) + (ComputerActivity?.State is "paused" or "failed" ? 1 : 0);
+            int active = Inferences.ActiveCount + Downloads.Items.Count(d => d.Status == "active") + MediaJobs.Count(m => m.State == "active") + ComputerActivities.Count(c => c.State == "active");
+            int waiting = Inferences.WaitingCount + Downloads.Items.Count(d => d.Status == "queued") + MediaJobs.Count(m => m.State == "queued") + ComputerActivities.Count(c => c.State == "queued");
+            int attention = Inferences.Items.Count(i => i.State is "paused" or "failed") + Downloads.Items.Count(d => d.Status is "paused" or "failed") + MediaJobs.Count(m => m.CanResume) + ComputerActivities.Count(c => c.State is "paused" or "failed");
             return active + waiting > 0 ? $"実行 {active} · 予約 {waiting}" : attention > 0 ? $"要確認 {attention}" : "";
         }
     }

@@ -1,5 +1,7 @@
 # 完成版に向けた実装・検証の台帳
 
+Computer Useを会話へ統合した開発版は`artifacts/release-computer-chat/Eluna.exe`。専用ウィンドウを廃止し、チャットからの依頼、アプリ許可、通常のマウス・キー操作の自動実行、重要な操作の確認、追加指示、一時停止・再開・引き継ぎ、会話切り替え、履歴保存と再許可を実装した。使用モデルに左右される操作精度をChatGPTと同等と断定しない。現在の使い方・確認済み／未確認の範囲は[Computer Use](computer-use.md)を参照。以下は機能追加時点の記録として保持する。
+
 Computer Useは`codex/computer-use`で追加した。開発版exeは`artifacts/release-computer-use/Eluna.exe`。対象の複数選択、ローカルモデルによる画面・UI要素の観察、各操作の確認と入力文字修正、入力・クリック・スクロール等、処理リスト、停止と補助プロセスの後始末を実装した。仕様と確認済み・未確認の範囲は[Computer Use](computer-use.md)に記録する。以下は各機能を追加した時点の記録として保持する。
 
 全体バックアップ・復元と安定性の仕上げは`codex/backup-stability-release`で実装した。最新の配布候補は`artifacts/release-backup-stability/Eluna.exe`。全体ZIP、復元前の退避・中断回復・再起動、モデル本体がない取得の再開、960件のキュー負荷検証を追加した。操作は[バックアップ](backup.md)、実モデル・配布・Git統合の記録は[今回の作業記録](backup-stability-release.md)を参照。追加の物理操作・別PCの検証はオーナー指定により今回の対象外。以下は各機能を追加した時点の記録。

@@ -7,7 +7,7 @@ namespace Eluna.App.Services;
 
 internal static class ComputerActionPolicy
 {
-    internal static readonly string[] Types = ["click", "double_click", "right_click", "type_text", "set_value", "key", "drag", "scroll", "switch_window", "wait", "finish", "ask"];
+    internal static readonly string[] Types = ["click", "double_click", "right_click", "type_text", "set_value", "key", "drag", "scroll", "switch_window", "wait", "finish", "ask", "request_app"];
     internal static readonly object Schema = new
     {
         type = "object",
@@ -24,9 +24,10 @@ internal static class ComputerActionPolicy
             text = new { type = "string", maxLength = 8000 },
             keys = new { type = "string", maxLength = 60 },
             amount = new { type = "integer", minimum = -5, maximum = 5 },
-            window = new { type = "integer", minimum = 0, maximum = 8 }
+            window = new { type = "integer", minimum = 0, maximum = 8 },
+            sensitive = new { type = "boolean" }
         },
-        required = new[] { "type", "reason", "element", "x", "y", "x2", "y2", "text", "keys", "amount", "window" }
+        required = new[] { "type", "reason", "element", "x", "y", "x2", "y2", "text", "keys", "amount", "window", "sensitive" }
     };
 
     internal static ComputerAction Parse(string json)
@@ -84,7 +85,7 @@ internal static class ComputerActionPolicy
         }
         if (keys.Distinct().Count() != keys.Count || keys.Take(keys.Count - 1).Any(k => k is not (0x10 or 0x11 or 0x12)) ||
             keys[^1] is 0x10 or 0x11 or 0x12 || keys.Contains((ushort)0x12) && keys.Contains((ushort)0x09) ||
-            keys.Contains((ushort)0x11) && keys[^1] is 0x56 or 0x58 || keys.Contains((ushort)0x11) && keys.Contains((ushort)0x10) && keys[^1] == 0x1B)
+            keys.Contains((ushort)0x11) && keys.Contains((ushort)0x10) && keys[^1] == 0x1B)
         { throw new InvalidDataException("そのキーの組み合わせは対象外です。操作は実行していません。"); }
         return [.. keys];
     }
@@ -102,6 +103,38 @@ internal static class ComputerActionPolicy
         }
         return action.Type is "type_text" or "set_value" ? "表示中のアプリへ次の文字を入力します。送信先や内容を確認してください。" :
             "クリックやキー操作は送信・保存・削除等につながる場合があります。対象と画面を確認してください。";
+    }
+
+    internal static string? AutomaticConfirmation(ComputerAction action, ComputerObservation observation)
+    {
+        // Model flags are combined with local checks; a model flag can require review, never bypass it.
+        _ = Confirmation(action, observation, false);
+        if (action.Type is "finish" or "wait" or "switch_window") { return null; }
+        if (action.Sensitive) { return "送信・削除・購入等に関わる操作です。対象と内容を確認してください。"; }
+        ushort[] chord = action.Type == "key" ? Keys(action.Keys) : [];
+        if (chord.Contains((ushort)0x11) && chord[^1] is 0x56 or 0x58)
+        { return "OSのクリップボードから貼り付け、または切り取りを行います。内容と入力先を確認してください。"; }
+        ComputerElement? element = observation.Elements.FirstOrDefault(e => e.Id == action.Element);
+        string targetText = element?.Name ?? "";
+        if (element is null && action.Type is "click" or "double_click" or "right_click" or "drag")
+        {
+            int x = observation.Bounds.Left + observation.Bounds.Width * action.X / 1000;
+            int y = observation.Bounds.Top + observation.Bounds.Height * action.Y / 1000;
+            targetText = string.Join(' ', observation.Elements.Where(e => e.Bounds.Contains(x, y) && e.Type != "Window").OrderBy(e => (long)e.Bounds.Width * e.Bounds.Height).Take(3).Select(e => e.Name));
+        }
+        if (Regex.IsMatch(targetText, @"送信|投稿|公開|購入|支払|注文確定|削除|消去|退会|解約|上書き|許可|承認|ログイン|サインイン|確定|適用|申込|申し込|予約する|\b(send|submit|post|publish|buy|pay|purchase|delete|remove|overwrite|allow|approve|confirm|apply|sign\s*in|log\s*in)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        { return "送信先や変更内容を確認してから、この操作を実行してください。"; }
+        if (chord.Length > 0 && (chord[^1] is 0x0D or 0x2E || chord.Contains((ushort)0x11) && chord[^1] is 0x53 or 0x44 or 0x57))
+        { return "確定・保存・削除につながるキー操作です。対象の内容を確認してください。"; }
+        return null;
+    }
+
+    internal static bool ValidSaved(SavedComputerTask? saved)
+    {
+        if (saved is null) { return true; }
+        if (saved.Task is null || saved.Task.Length > 8000 || saved.ModelId is null || saved.Stage is not ("selecting" or "running" or "queued" or "review" or "paused" or "takeover" or "interrupted" or "complete" or "stopped" or "failed" or "limit") || saved.Plan is null || saved.Plan.Length > 2400 || saved.Steps is null || saved.Steps.Count > 100 || saved.Instructions is null || saved.Instructions.Count > 40 || saved.Instructions.Any(i => i is null || i.Length > 4000) || saved.MaxSteps is < 1 or > 100 || !double.IsFinite(saved.SecondsUsed) || saved.SecondsUsed is < 0 or > 1300) { return false; }
+        try { foreach (ComputerStep s in saved.Steps) { if (s is null || s.Action is null || s.Window is null || s.Window.Length > 300 || s.Result is null || s.Result.Length > 4000 || s.Number is < 1 or > 100) { return false; } Validate(s.Action); } return true; }
+        catch (InvalidDataException) { return false; }
     }
 
     internal static void RequireFresh(ComputerObservation before, ComputerObservation now, ComputerAction action)

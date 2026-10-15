@@ -5,7 +5,7 @@ namespace Eluna.App.Models;
 public sealed record WorkMode(string Id, string Name);
 public static class WorkModes
 {
-    public static IReadOnlyList<WorkMode> All { get; } = [new("chat", "チャット · 自動検索"), new("search", "Web検索 · 必ず"), new("offline", "検索しない"), new("research", "深掘り調査"), new("debate", "ディベート")];
+    public static IReadOnlyList<WorkMode> All { get; } = [new("chat", "チャット · 自動検索"), new("search", "Web検索 · 必ず"), new("offline", "検索しない"), new("research", "深掘り調査"), new("debate", "ディベート"), new("computer", "Computer Use")];
     public static WorkMode Find(string? id) => All.FirstOrDefault(m => m.Id == id) ?? All[0];
 }
 

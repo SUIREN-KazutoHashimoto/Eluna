@@ -48,7 +48,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
             { _settings = _settings with { WorkMode = value.Id }; Notify(); Notify(nameof(NetworkNotice)); if (_ready) { _ = PersistSafelyAsync(); } }
         }
     }
-    public string NetworkNotice => SelectedWorkMode.Id != "offline" && SkillMode != "off" && AvailableSkills.Count > 0 ?
+    public string NetworkNotice => SelectedWorkMode.Id == "computer" ? "画面の読み取り・判断はPC内で行います。操作するアプリ自体は外部通信する場合があります。重要な操作は確認します。" : SelectedWorkMode.Id != "offline" && SkillMode != "off" && AvailableSkills.Count > 0 ?
         "Web検索では、質問・スキルの資料や実行結果・プロジェクト資料に由来する検索語を外部へ送信する場合があります。補助コードの実行は別に確認します。" : SelectedWorkMode.Id != "offline" && SelectedProject is not null ?
         "Web検索では、質問やプロジェクト資料・メモリに由来する検索語を外部へ送信する場合があります。「検索しない」でローカルのみ利用できます。" : SelectedWorkMode.Id != "offline" && _commonMemories.Count > 0 ?
         "Web検索では、質問・添付・共通の保存メモリに由来する検索語を外部へ送信する場合があります。「検索しない」でローカルのみ利用できます。" : SelectedWorkMode.Id != "offline" && (PendingAttachments.Count > 0 || SelectedConversation?.Messages.Any(m => m.Attachments.Count > 0) == true) ?
@@ -73,7 +73,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     public double ChatFontSize => _settings.ChatFontSize * _settings.UiScale;
     public double ChatLineHeight => _settings.LineHeight * _settings.UiScale;
     public bool SidebarVisible => _settings.SidebarVisible;
-    public string ConnectionNotice => SelectedWorkMode.Id == "offline" ? "検索オフ · PC内で応答" : SelectedWorkMode.Id == "chat" ? "自動Web検索 · 外部通信あり" : "Web検索を使用 · 外部通信あり";
+    public string ConnectionNotice => SelectedWorkMode.Id == "computer" ? "PC内で判断 · アプリを自動操作" : SelectedWorkMode.Id == "offline" ? "検索オフ · PC内で応答" : SelectedWorkMode.Id == "chat" ? "自動Web検索 · 外部通信あり" : "Web検索を使用 · 外部通信あり";
     public bool ShowStatus => IsBusy || HasError || _status.Contains("読み込み済み", StringComparison.Ordinal) || _status.Contains("停止", StringComparison.Ordinal);
     public string HistoryEmptyHint => HistorySearch.Length > 0 ? "この範囲に一致する会話はありません。検索語を変えてください。" : "会話はまだありません。新しいチャットから始めましょう。";
     public string SendTip => _settings.ControlEnterToSend ? "送信（Ctrl+Enter）" : "送信（Enter、Shift+Enterで改行）";
@@ -84,9 +84,9 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     public bool CanGenerate => CanCompose && !_submitting && HasModel && Inferences.Items.Count(j => j.IsPending) < 100;
     public bool IsEmpty => SelectedConversation?.Messages.Count is not > 0;
     public ObservableCollection<ChatAttachment> PendingAttachments => SelectedConversation?.DraftAttachments ?? [];
-    public bool IsBusy { get => _isBusy || _submitting || Inferences.ActiveCount > 0 || MediaJobs.Any(j => j.State == "active") || ComputerActivity?.State == "active"; private set { Set(ref _isBusy, value); Inferences.Suspended = value; RefreshCommands(); if (!value) { PumpMedia(); } } }
-    public string Status { get => !_isBusy && SelectedJob is { IsPending: true } job && job.Request.Model.Id == SelectedModel?.Id ? job.Detail : _status; private set { Set(ref _status, value); Notify(nameof(ShowStatus)); } }
-    public string Metrics { get => !_isBusy && SelectedJob is { } job && job.Request.Model.Id == SelectedModel?.Id ? (job.Metrics.Length > 0 && !job.IsPending ? "直前の回答 · " : "") + job.Metrics : _metrics; private set => Set(ref _metrics, value); }
+    public bool IsBusy { get => _isBusy || _submitting || Inferences.ActiveCount > 0 || MediaJobs.Any(j => j.State == "active") || _computerControllers.Count > 0; private set { Set(ref _isBusy, value); Inferences.Suspended = value; RefreshCommands(); if (!value) { PumpMedia(); } } }
+    public string Status { get => SelectedComputer is { } computer ? computer.Detail : !_isBusy && SelectedJob is { IsPending: true } job && job.Request.Model.Id == SelectedModel?.Id ? job.Detail : _status; private set { Set(ref _status, value); Notify(nameof(ShowStatus)); } }
+    public string Metrics { get => SelectedComputer is { } computer ? $"PC操作 {computer.Steps.Count} / {computer.MaxSteps}" : !_isBusy && SelectedJob is { } job && job.Request.Model.Id == SelectedModel?.Id ? (job.Metrics.Length > 0 && !job.IsPending ? "直前の回答 · " : "") + job.Metrics : _metrics; private set => Set(ref _metrics, value); }
     public string Error { get => _error; set { _retryAction = null; Set(ref _error, value); Notify(nameof(HasError)); Notify(nameof(ShowStatus)); Notify(nameof(CanRetry)); RetryCommand?.Refresh(); } }
     public bool HasError => Error.Length > 0;
     public string HistorySearch { get => _search; set { if (Set(ref _search, value)) { RefreshHistorySearch(); } } }
@@ -240,6 +240,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         _commonMemories = [.. state.CommonMemories ?? []]; RefreshProjectChoices();
         _llama.Stop();
         Conversations.AddRange(state.Conversations.Select(Conversation.Restore));
+        BindComputerSessions();
         SelectedConversation = Conversations.FirstOrDefault(c => c.ProjectId == _settings.SelectedProjectId && !c.IsArchived);
         if (SelectedConversation is null) { NewChat(); }
         RestoreInferences(state.InferenceJobs ?? []);
@@ -269,7 +270,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     public async Task DeleteConversationAsync(Conversation conversation)
     {
-        if (_isBusy || _submitting || Inferences.Contains(conversation.Id)) { Error = "この会話の予約をキャンセルしてから削除してください。"; return; }
+        if (_isBusy || _submitting || Inferences.Contains(conversation.Id) || HasComputerPending(conversation.Id)) { Error = "この会話の処理を停止・キャンセルしてから削除してください。"; return; }
         Conversations.Remove(conversation);
         if (SelectedConversation == conversation)
         {
@@ -302,6 +303,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     private async Task SendAsync()
     {
         if (!SendCommand.CanExecute(null) || SelectedConversation is null) { return; }
+        if (await TrySendComputerAsync()) { return; }
         Conversation conversation = SelectedConversation;
         try { SkillRunner.Capture(Skills, conversation.ProjectId, SelectedProject?.UseCommonSkills == true, SkillMode, conversation.SkillIds, Input); }
         catch (Exception ex) { Error = ex.Message; return; }
@@ -657,7 +659,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     public async Task ShutdownAsync()
     {
-        _shuttingDown = true; ComputerActivity?.Stop(); try { await ComputerCompletion; } catch (OperationCanceledException) { }
+        _shuttingDown = true; StopComputers(); try { await ComputerCompletion; } catch (OperationCanceledException) { }
         _mediaShutdown.Cancel(); foreach (MediaJob job in MediaJobs.Where(j => j.IsPending).ToArray()) { job.Cancel(); if (job.State == "queued") { job.State = job.Request is null ? "canceled" : "paused"; job.Completion.TrySetCanceled(); } }
         RefreshCommands(); _draftSave?.Cancel(); _generation?.Cancel();
         await Inferences.ShutdownAsync();
@@ -669,7 +671,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     public void Dispose()
     {
-        ComputerActivity?.Stop();
+        StopComputers();
         _draftSave?.Cancel(); _draftSave?.Dispose(); _generation?.Cancel();
         foreach (Conversation c in Conversations) { c.PropertyChanged -= ConversationChanged; }
         ReleaseIdleEngines(); foreach (LlamaService engine in _busyEngines) { engine.Dispose(); }

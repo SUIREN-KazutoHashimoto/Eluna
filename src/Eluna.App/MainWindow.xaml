@@ -49,7 +49,6 @@
           <Popup x:Name="ProcessPopup" PlacementTarget="{Binding ElementName=ProcessButton}" Placement="Right" AllowsTransparency="True" StaysOpen="False" IsOpen="{Binding IsChecked, ElementName=ProcessButton, Mode=TwoWay}" Opened="ProcessPopup_Opened">
             <Border Width="420" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1" CornerRadius="10"><ContentControl x:Name="ProcessContent" /></Border>
           </Popup>
-          <Button Click="ComputerUse_Click" IsEnabled="{Binding CanCompose}" HorizontalContentAlignment="Left" AutomationProperties.Name="Computer Use · PCを操作"><TextBlock Text="▣  Computer Use" /></Button>
           <Button Click="Settings_Click" IsEnabled="{Binding CanCompose}" HorizontalContentAlignment="Left">
             <StackPanel Orientation="Horizontal"><TextBlock Text="⚙" Margin="0,0,12,0" /><TextBlock Text="設定" /></StackPanel>
           </Button>
@@ -130,6 +129,7 @@
                     <TextBlock Text="応答を準備しています…" Foreground="{DynamicResource MutedBrush}" Visibility="{Binding IsWaiting, Converter={StaticResource BoolVisibility}}" AutomationProperties.LiveSetting="Polite" />
                     <Button Content="{Binding Work.Label}" Click="WorkActivity_Click" HorizontalAlignment="Left" BorderBrush="{DynamicResource StrokeBrush}" Padding="12,8" Margin="0,0,0,12" Visibility="{Binding HasWork, Converter={StaticResource BoolVisibility}}" ToolTip="調査の活動と資料を開く" AutomationProperties.Name="調査の活動と資料" />
                     <controls:MarkdownView x:Name="MarkdownBody" ReferenceClicked="Reference_Clicked" Markdown="{Binding Content}" TextSize="{Binding DataContext.ChatFontSize, RelativeSource={RelativeSource AncestorType=Window}}" TextLineHeight="{Binding DataContext.ChatLineHeight, RelativeSource={RelativeSource AncestorType=Window}}" />
+                    <controls:ComputerTaskPanel Session="{Binding Computer}" />
                     <Button Content="{Binding KnowledgeLabel}" Click="Knowledge_Click" HorizontalAlignment="Left" Padding="8,6" Margin="0,8,0,0" BorderBrush="{DynamicResource StrokeBrush}" Visibility="{Binding HasKnowledge, Converter={StaticResource BoolVisibility}}" ToolTip="この回答の生成時にAIへ渡した抜粋を確認" />
                     <Button Content="{Binding SkillsLabel}" Click="SkillUse_Click" HorizontalAlignment="Left" Padding="8,6" Margin="0,8,0,0" BorderBrush="{DynamicResource StrokeBrush}" Visibility="{Binding HasSkills, Converter={StaticResource BoolVisibility}}" ToolTip="使用した手順・資料・補助コードの実行記録" />
 <TextBox x:Name="UserBody" Text="{Binding Content, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" BorderThickness="0" Padding="0" Background="Transparent" Visibility="Collapsed" FontSize="{Binding DataContext.ChatFontSize, RelativeSource={RelativeSource AncestorType=Window}}" TextBlock.LineHeight="{Binding DataContext.ChatLineHeight, RelativeSource={RelativeSource AncestorType=Window}}" />
@@ -142,6 +142,7 @@
                   </Grid>
                 </Border>
                 <DataTemplate.Triggers>
+                  <DataTrigger Binding="{Binding HasComputer}" Value="True"><Setter TargetName="AnswerActions" Property="Visibility" Value="Collapsed" /></DataTrigger>
                   <DataTrigger Binding="{Binding SearchHighlighted}" Value="True"><Setter TargetName="MessageBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}" /><Setter TargetName="MessageBorder" Property="BorderThickness" Value="1" /></DataTrigger>
                   <Trigger SourceName="MessageBorder" Property="IsMouseOver" Value="True"><Setter TargetName="MessageBorder" Property="Background" Value="{DynamicResource ChatHoverBrush}" /><Setter TargetName="MessageActions" Property="Opacity" Value="1" /></Trigger>
                   <Trigger SourceName="MessageBorder" Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="MessageActions" Property="Opacity" Value="1" /></Trigger>

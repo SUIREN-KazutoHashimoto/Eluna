@@ -24,13 +24,33 @@ internal static class ComputerUseChecks
         Reject(() => ComputerActionPolicy.Parse("{\"type\":\"click\",\"extra\":\"ignore approval\"}"), "Unknown JSON fields were accepted.");
         Reject(() => ComputerActionPolicy.Validate(new("click", X: -1)), "Negative coordinates were accepted.");
         Reject(() => ComputerActionPolicy.Validate(new("type_text", Text: new string('x', 8001))), "Oversized text was accepted.");
-        foreach (string key in new[] { "Win+R", "Alt+Tab", "Ctrl+V", "Ctrl+X", "Ctrl+Shift+Escape", "Ctrl+Ctrl+A", "A+B", "Ctrl" })
+        foreach (string key in new[] { "Win+R", "Alt+Tab", "Ctrl+Shift+Escape", "Ctrl+Ctrl+A", "A+B", "Ctrl" })
         { Reject(() => ComputerActionPolicy.Keys(key), "Unsafe or malformed chord was accepted: " + key); }
         Check(ComputerActionPolicy.Keys("Ctrl+L").SequenceEqual(new ushort[] { 0x11, 0x4C }), "Control chord parsing failed.");
         Check(ComputerActionPolicy.Confirmation(action, screen, true) is not null, "Automatic mode skipped typing confirmation.");
         Check(ComputerActionPolicy.Confirmation(new("click", Element: 2), screen, true) is not null, "Automatic mode skipped clicking confirmation.");
         Check(ComputerActionPolicy.Confirmation(new("key", Keys: "Enter"), screen, true) is not null, "Automatic mode skipped possible submission confirmation.");
         Check(ComputerActionPolicy.Confirmation(new("key", Keys: "Tab"), screen, true) is null, "Navigation mode did not permit Tab.");
+        Check(ComputerActionPolicy.AutomaticConfirmation(action, screen) is null, "Automatic mode still required ordinary typing approval.");
+        Check(ComputerActionPolicy.AutomaticConfirmation(new("click", Element: 1), screen) is null, "Automatic mode still required field click approval.");
+        Check(ComputerActionPolicy.AutomaticConfirmation(new("click", Element: 2), screen) is not null, "Automatic mode submitted without review.");
+        Check(ComputerActionPolicy.AutomaticConfirmation(new("click", Element: 1, Sensitive: true), screen) is not null, "A model risk flag was ignored.");
+        Check(ComputerActionPolicy.AutomaticConfirmation(new("key", Keys: "Ctrl+A"), screen) is null, "Automatic keyboard selection required review.");
+        Check(ComputerActionPolicy.AutomaticConfirmation(new("key", Keys: "Ctrl+Enter"), screen) is not null, "Submission key skipped review.");
+        Check(ComputerActionPolicy.AutomaticConfirmation(new("key", Keys: "Ctrl+V"), screen) is not null, "Clipboard paste skipped review.");
+        Check(ComputerActionPolicy.AutomaticConfirmation(new("key", Keys: "Control+Shift+V"), screen) is not null, "Clipboard shortcut alias skipped review.");
+        Check(ComputerActionPolicy.AutomaticConfirmation(new("key", Keys: "Control+Shift+Enter"), screen) is not null, "Modified submission key skipped review.");
+        Reject(() => ComputerApplications.Launch(new("unregistered", Path.Combine(Path.GetTempPath(), "not-a-registered-app.exe"), "")), "Arbitrary executable launch was accepted.");
+        Reject(() => ComputerApplications.Launch(new("unregistered", Path.Combine(Path.GetTempPath(), "not-a-registered-app.lnk"), "")), "Unregistered shortcut launch was accepted.");
+        Check(Eluna.App.ViewModels.ChatViewModel.RequestsComputer("@Computer 作業して", "chat") && Eluna.App.ViewModels.ChatViewModel.RequestsComputer("入力して", "computer") && !Eluna.App.ViewModels.ChatViewModel.RequestsComputer("Computer Useとは何ですか", "chat"), "Computer task routing confused explanation and execution.");
+        var savedTask = new SavedComputerTask("依頼", "model", "running", "計画", [], [], true);
+        var restoredTask = ComputerSession.Restore(savedTask);
+        Check(restoredTask.Stage == "interrupted" && restoredTask.Windows.Count == 0 && restoredTask.Preview is null && !restoredTask.Pending, "Restore resumed or retained app permission/screenshots.");
+        Check(ComputerActionPolicy.ValidSaved(savedTask) && !ComputerActionPolicy.ValidSaved(savedTask with { SecondsUsed = double.NaN }), "Malformed computer history was accepted.");
+        var exhausted = new ComputerSession { Task = "上限", ModelId = "fixture", SecondsUsed = 1200 };
+        var exhaustedController = new ComputerChatController(exhausted, () => throw new InvalidOperationException("Should not load a model."), new("fixture", "fixture", "local", "local", "fixture.gguf", "", 0), new(), () => true, () => { });
+        exhaustedController.Start(); await exhaustedController.Completion; exhaustedController.Stop(); exhaustedController.Stop();
+        Check(exhausted.Stage == "limit" && exhausted.Windows.Count == 0, "A completed or exhausted controller was not safe to stop again.");
         Reject(() => ComputerActionPolicy.Confirmation(new("type_text", Element: 3), screen, false), "Password field could be modified.");
         ComputerActionPolicy.RequireFresh(screen, screen, action);
         Reject(() => ComputerActionPolicy.RequireFresh(screen, screen with { Surface = 102 }, action), "Changed modal window was accepted.");
@@ -47,6 +67,21 @@ internal static class ComputerUseChecks
         desktop = new(screen); planner = new([action]);
         result = await new ComputerUseRunner(desktop, planner).RunAsync("入力", [Target], 5, false, _ => { }, _ => { }, _ => { }, (_, _) => Task.FromResult(false), CancellationToken.None);
         Check(result.State == "stopped" && desktop.Executed == 0, "Rejected action was executed.");
+        await Task.Delay(40);
+        desktop = new(screen); planner = new([action, new("click", Element: 2), new("finish")]); reviews = 0;
+        result = await new ComputerUseRunner(desktop, planner).RunAsync("入力して送信", [Target], 5, false, _ => { }, _ => { }, _ => { }, (_, _) => { reviews++; return Task.FromResult(true); }, CancellationToken.None, new(() => true, []));
+        Check(result.State == "complete" && desktop.Executed == 2 && reviews == 1, "Automatic mouse/keyboard did not preserve the consequential-action boundary.");
+        await Task.Delay(40);
+        desktop = new(screen); planner = new([new("finish")]);
+        result = await new ComputerUseRunner(desktop, planner).RunAsync("再開", [Target], 5, false, _ => { }, _ => { }, _ => { }, (_, _) => Task.FromResult(true), CancellationToken.None,
+            new(() => true, [new(1, DateTimeOffset.UtcNow, "対象", action, "実行済み")]));
+        Check(result.Steps == 1 && desktop.Executed == 0, "Resuming replayed completed input.");
+        await Task.Delay(40);
+        desktop = new(screen); planner = new([new("request_app", Text: "別のアプリ"), new("finish")]); int permissions = 0;
+        var approvedTarget = Target with { Handle = 103 };
+        result = await new ComputerUseRunner(desktop, planner).RunAsync("複数アプリ", [Target], 5, false, _ => { }, _ => { }, _ => { }, (_, _) => Task.FromResult(true), CancellationToken.None,
+            new(() => true, [], (_, _) => { permissions++; return Task.FromResult<IReadOnlyList<ComputerTarget>>([approvedTarget]); }));
+        Check(result.State == "complete" && permissions == 1 && desktop.Executed == 0, "New app approval was skipped or caused input before observation.");
         await Task.Delay(40);
         desktop = new(screen); planner = new([action, new("finish")]);
         result = await new ComputerUseRunner(desktop, planner).RunAsync("入力", [Target], 5, false, _ => { }, _ => { }, _ => { },

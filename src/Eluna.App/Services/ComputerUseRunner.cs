@@ -2,26 +2,38 @@ using Eluna.App.Models;
 
 namespace Eluna.App.Services;
 
+internal sealed record ComputerRunOptions(Func<bool> Automatic, IReadOnlyList<ComputerStep> PreviousSteps,
+    Func<string, CancellationToken, Task<IReadOnlyList<ComputerTarget>>>? RequestApps = null, double SecondsRemaining = 1200);
+
 internal sealed class ComputerUseRunner(IComputerDesktop desktop, IComputerPlanner planner)
 {
     internal async Task<ComputerUseResult> RunAsync(string task, IReadOnlyList<ComputerTarget> allowed, int maxSteps, bool navigationOnlyAuto,
         Action<ComputerObservation> observe, Action<ComputerStep> record, Action<string> status,
-        Func<ComputerReview, CancellationToken, Task<bool>> review, CancellationToken token)
+        Func<ComputerReview, CancellationToken, Task<bool>> review, CancellationToken token, ComputerRunOptions? options = null)
     {
         if (string.IsNullOrWhiteSpace(task) || task.Length > 8000 || allowed.Count is < 1 or > 8 || allowed.DistinctBy(t => t.Handle).Count() != allowed.Count || maxSteps is < 1 or > 100)
         { throw new ArgumentException("依頼は8,000文字以内、対象は1〜8アプリ、操作上限は1〜100回にしてください。"); }
         using IDisposable lease = await ComputerUseLease.AcquireAsync(token);
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromMinutes(20));
-        var steps = new List<ComputerStep>(); ComputerTarget target = allowed[0]; int retries = 0;
-        for (int number = 1; number <= maxSteps; number++)
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, options?.SecondsRemaining ?? 1200)));
+        var steps = options?.PreviousSteps.ToList() ?? []; allowed = allowed.ToList(); ComputerTarget target = allowed[0]; int retries = 0;
+        for (int number = steps.Count + 1; number <= maxSteps; number++)
         {
             deadline.Token.ThrowIfCancellationRequested(); status("対象の画面を確認しています…");
             ComputerObservation observation = await desktop.ObserveAsync(target, deadline.Token); observe(observation);
             ComputerAction action = await planner.NextAsync(task, observation, allowed, steps, deadline.Token); ComputerActionPolicy.Validate(action);
             if (action.Type == "finish") { return new("complete", action.Reason, steps.Count); }
             if (action.Type == "ask") { return new("needs_user", action.Reason, steps.Count); }
+            if (action.Type == "request_app")
+            {
+                if (options?.RequestApps is null) { return new("needs_user", "別のアプリの操作許可が必要です。" + action.Text, steps.Count); }
+                IReadOnlyList<ComputerTarget> additions = await options.RequestApps(action.Text, deadline.Token);
+                var combined = allowed.Concat(additions).DistinctBy(w => w.Handle).ToList();
+                if (additions.Count == 0 || combined.Count > 8) { return new("needs_user", "アプリが許可されていません。", steps.Count); }
+                allowed = combined; target = additions[0];
+                var permission = new ComputerStep(number, DateTimeOffset.UtcNow, observation.Title, action, "利用者が対象アプリを許可しました。最新画面を取得します。"); steps.Add(permission); record(permission); continue;
+            }
             if (action.Type == "switch_window" && action.Window > allowed.Count) { throw new InvalidOperationException("許可した対象以外へは切り替えられません。"); }
-            string? confirmation = ComputerActionPolicy.Confirmation(action, observation, navigationOnlyAuto);
+            string? confirmation = options?.Automatic() == true ? ComputerActionPolicy.AutomaticConfirmation(action, observation) : ComputerActionPolicy.Confirmation(action, observation, navigationOnlyAuto);
             if (confirmation is not null)
             {
                 status("操作の確認待ちです");
@@ -66,7 +78,7 @@ internal sealed class ComputerUseLease : IDisposable
             try
             {
                 token.ThrowIfCancellationRequested();
-                try { owned = mutex.WaitOne(0); } catch (AbandonedMutexException) { owned = true; }
+                try { owned = mutex.WaitOne(200); } catch (AbandonedMutexException) { owned = true; }
                 if (!owned) { throw new InvalidOperationException("別のComputer Useが実行中です。同時に操作することはできません。"); }
                 lease._ready.TrySetResult(lease); lease._release.Wait();
             }

@@ -13,13 +13,13 @@ public sealed partial class ChatViewModel
     private long EngineMemoryBytes => _llama.MemoryUsageBytes + _busyEngines.Sum(e => e.MemoryUsageBytes) + _idleEngines.Sum(e => e.MemoryUsageBytes) + _mediaEngines.Values.Sum(e => e.MemoryUsageBytes);
     public bool CanNavigate => !_shuttingDown && !_dataMaintenance;
     public bool CanCompose => _ready && !_shuttingDown && !_modelsChanging && !_dataMaintenance;
-    public bool CanEditConversation => CanGenerate && !_submitting && SelectedConversation is not null && !Inferences.Contains(SelectedConversation.Id);
+    public bool CanEditConversation => CanGenerate && !_submitting && SelectedConversation is not null && !Inferences.Contains(SelectedConversation.Id) && !HasComputerPending(SelectedConversation.Id);
     public string QueueLabel => $"推論 · 実行 {Inferences.ActiveCount} / 予約 {Inferences.WaitingCount}" + (Inferences.Items.Any(j => j.CanResume) ? " · 再開待ちあり" : "");
     private InferenceJob? SelectedJob => Inferences.Items.LastOrDefault(j => j.Request.ConversationId == SelectedConversation?.Id && j.Request.BranchId == SelectedBranch?.Id && j.State == "active") ??
         Inferences.Items.LastOrDefault(j => j.Request.ConversationId == SelectedConversation?.Id && j.Request.BranchId == SelectedBranch?.Id);
-    public bool CanStopSelected => SelectedJob?.State == "active" || _generation is not null;
-    public string StopTip => SelectedJob?.State == "active" ? "表示中の会話の生成を停止" : "画像・文書・モデルの準備を停止";
-    public string SendLabel => !_ready ? "起動の準備中です" : !HasModel ? "設定の「モデルを探す」からモデルを追加してください" : _modelsChanging ? "モデルの準備が終わるまで待っています" : _submitting ? "前の依頼を予約しています" : Inferences.Items.Count(j => j.IsPending) >= 100 ? "予約上限の100件です。処理リストから予約を整理してください" : _isBusy || MediaJobs.Any(j => j.IsPending) || Inferences.ActiveCount >= Inferences.Limit || SelectedConversation is not null && Inferences.Contains(SelectedConversation.Id) ? "予約して送信" : "送信";
+    public bool CanStopSelected => SelectedComputer is not null || SelectedJob?.State == "active" || _generation is not null;
+    public string StopTip => SelectedComputer is not null ? "表示中の会話のPC操作を停止" : SelectedJob?.State == "active" ? "表示中の会話の生成を停止" : "画像・文書・モデルの準備を停止";
+    public string SendLabel => SelectedComputer is not null ? "追加指示を送信" : !_ready ? "起動の準備中です" : !HasModel ? "設定の「モデルを探す」からモデルを追加してください" : _modelsChanging ? "モデルの準備が終わるまで待っています" : _submitting ? "前の依頼を予約しています" : Inferences.Items.Count(j => j.IsPending) >= 100 ? "予約上限の100件です。処理リストから予約を整理してください" : _isBusy || MediaJobs.Any(j => j.IsPending) || Inferences.ActiveCount >= Inferences.Limit || SelectedConversation is not null && Inferences.Contains(SelectedConversation.Id) ? "予約して送信" : "送信";
     private void QueueChanged()
     {
         Notify(nameof(ProcessSummary)); PumpMedia(); Notify(nameof(IsBusy)); Notify(nameof(QueueLabel)); Notify(nameof(Status)); Notify(nameof(Metrics));
@@ -48,6 +48,7 @@ public sealed partial class ChatViewModel
     }
     private void StopSelected()
     {
+        if (SelectedComputer is { } computer) { computer.Invoke("stop"); return; }
         if (SelectedJob is { State: "active" } job) { Inferences.Cancel(job); }
         else { _generation?.Cancel(); }
     }
