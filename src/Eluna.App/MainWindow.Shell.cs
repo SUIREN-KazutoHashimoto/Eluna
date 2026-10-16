@@ -1,6 +1,8 @@
 using System.Windows;
 using System.Windows.Controls;
+using Eluna.App.Controls;
 using Eluna.App.Models;
+using Eluna.App.Services;
 
 namespace Eluna.App;
 
@@ -23,7 +25,7 @@ public partial class MainWindow
     }
     private void InsertMessageText(string text)
     { InputBox.Focus(); int caret = InputBox.SelectionStart; InputBox.SelectedText = text; InputBox.CaretIndex = caret + text.Length; }
-    private static string Mention(AgentAccount account) => account.Name.Any(char.IsWhiteSpace) ? "@{" + account.Name + "} " : "@" + account.Name + " ";
+    private static string Mention(AgentAccount account) => MentionService.Format(account);
     private void Mention_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button button) { return; }
@@ -46,14 +48,22 @@ public partial class MainWindow
         if (sender is FrameworkElement { DataContext: AgentAccount member }) { OpenProfile(member.Id); }
     }
     private void Speaker_Click(object sender, RoutedEventArgs e)
-    { if (sender is FrameworkElement { DataContext: ChatMessage { Identity.AgentId: Guid id } }) { OpenProfile(id); } }
+    { if (sender is FrameworkElement { DataContext: ChatMessage message }) { if (message.Role == "user" && message.Identity?.AgentId is null) { SelfProfile_Click(sender, e); } else if (message.Identity?.AgentId is Guid id) { OpenProfile(id); } } }
     internal void OpenProfile(Guid id)
     {
+        if (id == AgentAccount.LocalId) { SelfProfile_Click(this, new RoutedEventArgs()); return; }
         MembersPopup.IsOpen = false;
         var existing = OwnedWindows.OfType<AgentProfileWindow>().FirstOrDefault(w => w.Tag is Guid current && current == id);
         if (existing is not null) { existing.Activate(); return; }
         new AgentProfileWindow(_viewModel, id) { Owner = this, Tag = id }.Show();
     }
+    private void SelfProfile_Click(object sender, RoutedEventArgs e) => ShowUnique(() => new SelfProfileWindow(_viewModel) { Owner = this });
+    private void InviteMembers_Click(object sender, RoutedEventArgs e)
+    { if (_viewModel.SelectedConversation is { } room) { OpenInvitations(room); } }
+    private void OpenInvitations(Conversation room)
+    { new InviteMembersWindow(_viewModel, room) { Owner = this }.Show(); }
+    private void CreateAccount_Click(object sender, RoutedEventArgs e) { var window = new AgentsWindow(_viewModel) { Owner = this }; window.BeginCreate(); window.Show(); }
+    private void MentionLink_Clicked(object? sender, MentionEventArgs e) { if (e.Account is Guid id) { OpenProfile(id); } else if (e.All) { MembersPopup.IsOpen = true; } }
     internal void OpenMediaTools(string tab = "document", string? initial = null) => OpenMedia(tab, initial);
     private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
     private void Maximize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;

@@ -36,6 +36,7 @@ public sealed class ChatMessage : ObservableObject
     private ComputerSession? _computer;
     public Guid Id { get; init; } = Guid.NewGuid();
     public string Role { get; init; } = "user";
+    public bool IsLocalMessage => Role == "user";
     private MessageIdentity? _identity;
     public MessageIdentity? Identity { get => _identity; set { if (Set(ref _identity, value)) { Notify(nameof(Speaker)); Notify(nameof(Avatar)); Notify(nameof(SpeakerDetail)); Notify(nameof(DisplayTime)); Notify(nameof(HasReply)); } } }
     private string _replyPreview = "返信元の発言へ";
@@ -233,7 +234,7 @@ public sealed record AppSettings(string? ModelId = null, string Compute = "auto"
     string WorkMode = "chat", WorkOptions? WorkOptions = null, Guid? SelectedProjectId = null, int MaxConcurrentInferences = 1, string SkillMode = "auto", double UiScale = 1, int MaxConcurrentDownloads = 1, int MaxConcurrentMedia = 1, bool ComputerUseKeepAwake = true);
 public sealed record AppState(int SchemaVersion, AppSettings Settings, List<SavedConversation> Conversations,
     List<KnowledgeProject>? Projects = null, List<MemoryNote>? CommonMemories = null, List<SavedInferenceJob>? InferenceJobs = null, List<SkillRegistration>? Skills = null,
-    List<AgentAccount>? Agents = null, List<AgentMemory>? AgentMemories = null);
+    List<AgentAccount>? Agents = null, List<AgentMemory>? AgentMemories = null, LocalMember? Self = null);
 public sealed record LocalModelPart(string FilePath, string Sha256, long Size);
 public sealed record LocalModel(string Id, string DisplayName, string FilePath, string Repository, string Revision, string Sha256, long Size,
     List<LocalModelPart>? Parts = null, bool IsFavorite = false, ModelProfile? Profile = null, ModelPreferences? Preferences = null, string License = "利用条件は配布元で確認", LocalModelPart? Projector = null)

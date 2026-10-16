@@ -41,7 +41,7 @@ public sealed record SavedWork(Guid Id, string Mode, string Question, string Mod
     List<WorkActivity> Activities, List<DebateTurn> Turns, string Verification, string Report, bool Expanded,
     int SearchesUsed, int PagesUsed, int TokensUsed, double SecondsUsed, bool PlanApproved = false, List<WorkClaim>? Claims = null, bool AutomaticSearch = false, DebateControlState? Discussion = null, bool? WebEnabled = null);
 
-public sealed record DebateIntervention(Guid Id, string Text, string? Target = null, bool Applied = false);
+public sealed record DebateIntervention(Guid Id, string Text, string? Target = null, bool Applied = false, MessageIdentity? Identity = null);
 public sealed record DebateControlState(bool Automatic = true, string? RequestedSpeaker = null, bool Finish = false,
     List<DebateIntervention>? Inputs = null, List<DebateRole>? PendingParticipants = null, bool SearchSuppressed = false);
 

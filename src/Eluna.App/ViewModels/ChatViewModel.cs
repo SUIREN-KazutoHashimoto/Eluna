@@ -246,7 +246,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         state = WorkspaceService.Upgrade(state);
         foreach (Conversation old in Conversations) { old.PropertyChanged -= ConversationChanged; }
         Inferences.Items.Clear(); ReleaseIdleEngines();
-        Conversations.Clear(); _selectedConversation = null; _selectedModel = null; _settings = state.Settings;
+        Conversations.Clear(); _selectedConversation = null; _selectedModel = null; _settings = state.Settings; _self = state.Self ?? new(); Notify(nameof(Self));
         Agents.Clear(); foreach (AgentAccount agent in state.Agents ?? []) { Agents.Add(agent); }
         AgentMemories.Clear(); foreach (AgentMemory memory in state.AgentMemories ?? []) { AgentMemories.Add(memory); }
         Skills.Clear(); foreach (SkillRegistration skill in state.Skills ?? []) { Skills.Add(skill); }
@@ -323,8 +323,9 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     private async Task SendAsync()
     {
         if (!SendCommand.CanExecute(null) || SelectedConversation is null) { return; }
-        if (await TrySendComputerAsync()) { return; }
-        if (await TrySendDebateAsync()) { return; }
+        bool invitation = ChannelInvitations.Requested(Input);
+        if (!invitation && await TrySendComputerAsync()) { return; }
+        if (!invitation && await TrySendDebateAsync()) { return; }
         Conversation conversation = SelectedConversation;
         try { IReadOnlyList<AgentAccount> allowed = TargetAgents(conversation, Input.Trim()); if (allowed.Count == 0 || SelectedWorkMode.Id == "debate") { ChannelAccess.RequireSpeaker(CaptureState(), conversation.Save(), null); } }
         catch (Exception ex) { Error = ex.Message; return; }
@@ -334,7 +335,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         string prompt = Input.Trim(); if (prompt.Length == 0) { prompt = "添付した画像・文書の内容を説明してください。"; }
         List<ChatAttachment> attachments = [.. PendingAttachments, .. SharedAttachments(conversation)]; PendingAttachments.Clear(); Input = ""; Error = "";
         if (conversation.Messages.Count == 0 && conversation.Title is "新しいチャット" or "新しいチャンネル") { string title = prompt.Replace('\r', ' ').Replace('\n', ' '); conversation.Title = title.Length > 28 ? title[..28] + "…" : title; }
-        conversation.Messages.Add(new() { Role = "user", Content = prompt, Attachments = attachments, Identity = new(null, "あなた", "あ", Time: DateTimeOffset.UtcNow, ReplyTo: _replyTo) });
+        conversation.Messages.Add(new() { Role = "user", Content = prompt, Attachments = attachments, Identity = SelfIdentity(_replyTo) });
         ReplyTo(null);
         try
         {
@@ -358,7 +359,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         int index = SelectedConversation.Messages.IndexOf(message);
         if (index < 0 || message.Role != "user") { return Task.CompletedTask; }
         NavigationStarting?.Invoke(); SelectedConversation.Fork(index, $"編集 {SelectedConversation.Branches.Count}");
-        SelectedConversation.Messages.Add(new() { Role = "user", Content = content.Trim(), Attachments = [.. message.Attachments] }); Notify(nameof(SelectedBranch));
+        SelectedConversation.Messages.Add(new() { Role = "user", Content = content.Trim(), Attachments = [.. message.Attachments], Identity = SelfIdentity() }); Notify(nameof(SelectedBranch));
         return _generationTask = GenerateAnswerAsync(SelectedConversation);
     }
     public Task ContinueAsync(ChatMessage message)
@@ -370,6 +371,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         SelectedConversation.Messages.Add(new()
         {
             Role = "user",
+            Identity = SelfIdentity(),
             Content = message.Work is null ? "直前の回答の続きを、重複を避けて書いてください。" :
             message.Work.Question + "\nさらに詳しく調べ、未確認の点と別の観点について説明してください。"
         });
@@ -377,6 +379,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     private async Task GenerateAnswerCoreAsync(Conversation conversation, ChatMessage answer, InferenceJob job, LlamaService engine, CancellationToken token, WorkSession? previousWork = null, bool allowTeam = true)
     {
+        if (allowTeam && await TryInviteFromChatAsync(conversation, answer, job, engine, token)) { return; }
         if (allowTeam && await TryRunTeamAsync(conversation, answer, job, engine, token)) { return; }
         SavedMessage[] requests = conversation.Messages.Select(m => m.Save()).ToArray();
         AppSettings settings = job.Request.Settings;
@@ -610,7 +613,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         _historySearchCancellation?.Cancel(); _historySearchCancellation?.Dispose(); _draftSave?.Cancel(); _draftSave?.Dispose(); _draftSave = new(); CancellationToken token = _draftSave.Token;
         try { await Task.Delay(400, token); await PersistSafelyAsync(); } catch (OperationCanceledException) { }
     }
-    public AppState CaptureState() => new(4, _settings, Conversations.Select(c => c.Save()).ToList(), [.. Projects], [.. _commonMemories], Inferences.Items.Where(j => j.IsPending).Select(j => j.Request).ToList(), [.. Skills], [.. Agents], [.. AgentMemories]);
+    public AppState CaptureState() => new(4, _settings, Conversations.Select(c => c.Save()).ToList(), [.. Projects], [.. _commonMemories], Inferences.Items.Where(j => j.IsPending).Select(j => j.Request).ToList(), [.. Skills], [.. Agents], [.. AgentMemories], Self);
     private TaskCompletionSource? _pendingPersistence;
     private bool _persisting;
     public Task PersistSafelyAsync()

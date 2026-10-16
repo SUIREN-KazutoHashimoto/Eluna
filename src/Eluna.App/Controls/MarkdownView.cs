@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using System.Windows;
@@ -5,17 +6,23 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Eluna.App.Models;
 using Eluna.App.Services;
 
 namespace Eluna.App.Controls;
 
 public sealed class ReferenceEventArgs(string kind, int number) : EventArgs { public string Kind { get; } = kind; public int Number { get; } = number; }
+public sealed class MentionEventArgs(Guid? account, bool all) : EventArgs { public Guid? Account { get; } = account; public bool All { get; } = all; }
 
 public sealed class MarkdownView : UserControl
 {
     public static readonly DependencyProperty MarkdownProperty = DependencyProperty.Register(nameof(Markdown), typeof(string), typeof(MarkdownView), new PropertyMetadata("", Changed));
     public static readonly DependencyProperty TextSizeProperty = DependencyProperty.Register(nameof(TextSize), typeof(double), typeof(MarkdownView), new PropertyMetadata(15.0, Changed));
     public static readonly DependencyProperty TextLineHeightProperty = DependencyProperty.Register(nameof(TextLineHeight), typeof(double), typeof(MarkdownView), new PropertyMetadata(25.0, Changed));
+    public static readonly DependencyProperty PlainTextProperty = DependencyProperty.Register(nameof(PlainText), typeof(bool), typeof(MarkdownView), new PropertyMetadata(false, Changed));
+    public static readonly DependencyProperty AccountsProperty = DependencyProperty.Register(nameof(Accounts), typeof(IEnumerable<AgentAccount>), typeof(MarkdownView), new PropertyMetadata(null, AccountsChanged));
+    public bool PlainText { get => (bool)GetValue(PlainTextProperty); set => SetValue(PlainTextProperty, value); }
+    public IEnumerable<AgentAccount>? Accounts { get => (IEnumerable<AgentAccount>?)GetValue(AccountsProperty); set => SetValue(AccountsProperty, value); }
     public string Markdown { get => (string)GetValue(MarkdownProperty); set => SetValue(MarkdownProperty, value); }
     public double TextSize { get => (double)GetValue(TextSizeProperty); set => SetValue(TextSizeProperty, value); }
     public double TextLineHeight { get => (double)GetValue(TextLineHeightProperty); set => SetValue(TextLineHeightProperty, value); }
@@ -26,6 +33,7 @@ public sealed class MarkdownView : UserControl
     private bool _dirty = true;
     private double _font, _line;
     public event EventHandler<ReferenceEventArgs>? ReferenceClicked;
+    public event EventHandler<MentionEventArgs>? MentionClicked;
 
     public MarkdownView()
     {
@@ -49,13 +57,22 @@ public sealed class MarkdownView : UserControl
         _reader.SelectionChanged += (_, _) => { if (_dirty && _reader.Selection.IsEmpty) { _renderTimer?.Start(); } };
         _renderTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(150), DispatcherPriority.Background, (_, _) => { _renderTimer!.Stop(); Render(); }, Dispatcher);
         _renderTimer.Stop();
-        Loaded += (_, _) => { if (_parseCancellation.IsCancellationRequested) { _parseCancellation.Dispose(); _parseCancellation = new(); } Render(); };
+        Loaded += (_, _) => { ObserveAccounts(true); if (_parseCancellation.IsCancellationRequested) { _parseCancellation.Dispose(); _parseCancellation = new(); } Render(); };
         DataContextChanged += (_, _) => { _parser = new(); _rendered.Clear(); _reader.Document = new FlowDocument(); _dirty = true; _renderTimer.Start(); };
-        Unloaded += (_, _) => { _renderTimer.Stop(); _parseCancellation.Cancel(); };
+        Unloaded += (_, _) => { ObserveAccounts(false); _renderTimer.Stop(); _parseCancellation.Cancel(); };
     }
 
     private static void Changed(DependencyObject sender, DependencyPropertyChangedEventArgs _)
-    { var view = (MarkdownView)sender; view._dirty = true; view._renderTimer?.Start(); }
+    { var view = (MarkdownView)sender; view._dirty = true; if (_.Property == PlainTextProperty) { view._rendered.Clear(); } view._renderTimer?.Start(); }
+    private static void AccountsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var view = (MarkdownView)d;
+        if (e.OldValue is INotifyCollectionChanged old) { old.CollectionChanged -= view.MembersChanged; }
+        view.ObserveAccounts(view.IsLoaded);
+        view.MembersChanged(null, null!);
+    }
+    private void ObserveAccounts(bool observe) { if (Accounts is INotifyCollectionChanged accounts) { accounts.CollectionChanged -= MembersChanged; if (observe) { accounts.CollectionChanged += MembersChanged; } } }
+    private void MembersChanged(object? sender, NotifyCollectionChangedEventArgs e) { _rendered.Clear(); _dirty = true; _renderTimer?.Start(); }
     private IEnumerable<CodeView> Codes() => _reader.Document.Blocks.OfType<BlockUIContainer>().Select(b => b.Child).OfType<CodeView>();
     private static bool Same(MarkdownBlock a, MarkdownBlock b) => a.Kind == b.Kind && a.Text == b.Text && a.Level == b.Level && a.Language == b.Language &&
         (a.Rows is null && b.Rows is null || a.Rows is not null && b.Rows is not null && a.Rows.Count == b.Rows.Count && a.Rows.Zip(b.Rows).All(pair => pair.First.SequenceEqual(pair.Second)));
@@ -72,7 +89,7 @@ public sealed class MarkdownView : UserControl
         _parsing = true; string markdown = Markdown; StreamingMarkdownParser parser = _parser;
         IReadOnlyList<MarkdownBlock> parsed;
         CancellationToken token = _parseCancellation.Token;
-        try { parsed = await Task.Run(() => parser.Update(markdown, token), token); }
+        try { parsed = PlainText ? [new MarkdownBlock("plain", markdown)] : await Task.Run(() => parser.Update(markdown, token), token); }
         catch (OperationCanceledException) { return; }
         finally { _parsing = false; if (_dirty && IsLoaded) { _renderTimer.Start(); } }
         if (!IsLoaded || parser != _parser || markdown != Markdown) { if (IsLoaded) { _renderTimer.Start(); } return; }
@@ -131,8 +148,8 @@ public sealed class MarkdownView : UserControl
 
     private Paragraph Paragraph(string text)
     {
-        var paragraph = new Paragraph { Margin = new(0, 0, 0, 8) };
-        AddInlines(paragraph.Inlines, text);
+        var paragraph = new Paragraph { Margin = PlainText ? new(0) : new(0, 0, 0, 8) };
+        if (PlainText) { AddText(paragraph.Inlines, text); } else { AddInlines(paragraph.Inlines, text); }
         return paragraph;
     }
 
@@ -172,17 +189,25 @@ public sealed class MarkdownView : UserControl
                 run.SetResourceReference(TextElement.BackgroundProperty, "SurfaceBrush");
                 inlines.Add(run);
             }
-            else if (match.Groups["bold"].Success) { inlines.Add(new Bold(new Run(match.Groups["boldText"].Value))); }
-            else { inlines.Add(new Italic(new Run(match.Groups["italicText"].Value))); }
+            else if (match.Groups["bold"].Success) { var bold = new Bold(); AddText(bold.Inlines, match.Groups["boldText"].Value); inlines.Add(bold); }
+            else { var italic = new Italic(); AddText(italic.Inlines, match.Groups["italicText"].Value); inlines.Add(italic); }
             start = match.Index + match.Length;
         }
         if (start < text.Length) { AddText(inlines, text[start..]); }
     }
 
-    private static void AddText(InlineCollection inlines, string text)
+    private void AddText(InlineCollection inlines, string text)
     {
-        string[] lines = text.Split('\n');
-        for (int i = 0; i < lines.Length; i++) { if (i > 0) { inlines.Add(new LineBreak()); } inlines.Add(new Run(lines[i])); }
+        void Plain(string part) { string[] lines = part.Split('\n'); for (int i = 0; i < lines.Length; i++) { if (i > 0) { inlines.Add(new LineBreak()); } inlines.Add(new Run(lines[i])); } }
+        int at = 0;
+        foreach (MentionToken token in MentionService.Scan(text, Accounts ?? []))
+        {
+            Plain(text[at..token.Start]);
+            var link = new Hyperlink(new Run(token.Text)) { TextDecorations = null, FontWeight = FontWeights.SemiBold, ToolTip = token.All ? "メンバー一覧" : "プロフィールを開く" };
+            link.SetResourceReference(TextElement.ForegroundProperty, "MentionTextBrush"); link.SetResourceReference(TextElement.BackgroundProperty, "MentionBackgroundBrush");
+            link.Click += (_, e) => { MentionClicked?.Invoke(this, new(token.Accounts.Count == 1 ? token.Accounts[0] : null, token.All)); e.Handled = true; }; inlines.Add(link); at = token.Start + token.Length;
+        }
+        Plain(text[at..]);
     }
 }
 

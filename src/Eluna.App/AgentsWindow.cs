@@ -27,13 +27,18 @@ public sealed class AgentsWindow : Window
     private Guid _id, _memoryId = Guid.NewGuid(); private string _baseline = "", _memoryBaseline = ""; private bool _saving, _switching, _loadingMemory;
     private CancellationTokenSource? _historyCancel; private int _page;
     private readonly AgentBehaviorEditor _behavior = new();
+    internal CharacterGeneratorPanel CharacterPanel { get; }
+    private readonly Expander _characterExpander = new() { Header = "キャラクターの案を生成" };
+    private bool _autoCharacter;
     private sealed record Origin(Guid? Id, string Name, Guid? ProjectId);
     private sealed record Entry(Guid RoomId, Guid MessageId, string Place, string Speaker, string Content) { public string Label => Place + " · " + Speaker + "\n" + Content[..Math.Min(180, Content.Length)].Replace('\n', ' '); }
     public AgentsWindow(ChatViewModel chat)
     {
         _chat = chat; Title = "エージェント · Eluna"; Width = 1000; Height = 780; MinWidth = 650; MinHeight = 500; WindowStartupLocation = WindowStartupLocation.CenterOwner; Appearance.Attach(this);
+        Title = "アカウント · Eluna";
+        CharacterPanel = new((brief, token) => chat.GenerateCharacterAsync(brief, string.IsNullOrEmpty((_model.SelectedItem as DebateModelChoice)?.Id) ? null : ((DebateModelChoice)_model.SelectedItem).Id, token, status => CharacterPanel?.Report(status)), draft => { NameBox.Text = draft.Name; IconBox.Text = draft.Icon; _specialty.Text = draft.Specialty; InstructionBox.Text = draft.Instruction + "\n話し方の例: " + draft.Greeting; _behavior.ApplyPersonality(new("roleplay", draft.Role, draft.Setting, draft.Traits)); });
         var root = new Grid { Margin = new(22) }; root.ColumnDefinitions.Add(new() { Width = new(190) }); root.ColumnDefinitions.Add(new() { Width = new(18) }); root.ColumnDefinitions.Add(new()); Content = root;
-        var left = new DockPanel(); root.Children.Add(left); var add = new Button { Content = "＋ エージェントを作成", Margin = new(0, 0, 0, 12) }; DockPanel.SetDock(add, Dock.Top); left.Children.Add(add);
+        var left = new DockPanel(); root.Children.Add(left); var add = new Button { Content = "＋ アカウントを作成", Margin = new(0, 0, 0, 12) }; DockPanel.SetDock(add, Dock.Top); left.Children.Add(add);
         AgentList.ItemsSource = chat.Agents; left.Children.Add(AgentList);
         var right = new DockPanel(); Grid.SetColumn(right, 2); root.Children.Add(right);
         var footer = new StackPanel { Margin = new(0, 12, 0, 0) }; DockPanel.SetDock(footer, Dock.Bottom); right.Children.Add(footer); footer.Children.Add(_status);
@@ -43,6 +48,8 @@ public sealed class AgentsWindow : Window
         StackPanel Tab(string name) { var panel = new StackPanel { Margin = new(0, 12, 8, 8) }; var tab = new TabItem { Header = name, Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } }; tab.SetResourceReference(StyleProperty, "WorkOptionsTab"); tabs.Items.Add(tab); return panel; }
         void Field(StackPanel panel, string label, FrameworkElement control) { panel.Children.Add(new TextBlock { Text = label, Margin = new(0, 10, 0, 6), TextWrapping = TextWrapping.Wrap }); panel.Children.Add(control); System.Windows.Automation.AutomationProperties.SetName(control, label); }
         StackPanel profile = Tab("プロフィール"); Field(profile, "名前", NameBox); Field(profile, "アイコン（文字・絵文字）", IconBox); Field(profile, "使用モデル", _model); Field(profile, "専門分野", _specialty); Field(profile, "基本指示・話し方", InstructionBox); _enabled.Margin = new(0, 14, 0, 0); profile.Children.Add(_enabled);
+        _characterExpander.Content = CharacterPanel; profile.Children.Insert(0, _characterExpander);
+        CharacterPanel.BusyChanged += busy => { foreach (UIElement control in new UIElement[] { AgentList, add, NameBox, IconBox, _model, _specialty, InstructionBox, _enabled, _behavior }) { control.IsEnabled = !busy; } SaveButton.IsEnabled = !busy && !_saving; };
         profile.Children.Add(_behavior);
         profile.Children.Add(new TextBlock { Text = "モデルを変更してもアカウントと記憶は引き継ぎます。過去の発言の名前・モデルは保持します。無効化したエージェントの履歴も残ります。", TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 14, 0, 0) });
         StackPanel history = Tab("全会話履歴"); Field(history, "参加した会話を検索", _query); _history.DisplayMemberPath = nameof(Entry.Label); _history.MinHeight = 160; _history.MaxHeight = 260; _history.Margin = new(0, 12, 0, 8); history.Children.Add(_history); history.Children.Add(_historyText);
@@ -68,7 +75,7 @@ public sealed class AgentsWindow : Window
             _memoryId = m.Id; _memoryText.Text = m.Text; _scope.SelectedValue = m.Scope; _memoryEnabled.IsChecked = m.Enabled; _origin.SelectedItem = _origin.Items.Cast<Origin>().FirstOrDefault(o => o.Id == m.SourceConversationId); _memoryBaseline = MemorySnapshot();
         };
         SaveButton.Click += async (_, _) => await SaveProfile();
-        add.Click += async (_, _) => { if (_saving || !await LeaveDraft()) { return; } _switching = true; AgentList.SelectedItem = null; _switching = false; Fill(new(Guid.NewGuid(), "新しいエージェント")); NameBox.Focus(); };
+        add.Click += async (_, _) => { if (_saving || CharacterPanel.IsBusy || !await LeaveDraft()) { return; } BeginCreate(); };
         AgentList.SelectionChanged += async (_, _) =>
         {
             if (_switching || _saving || AgentList.SelectedItem is not AgentAccount next) { return; }
@@ -76,12 +83,20 @@ public sealed class AgentsWindow : Window
             Fill(next); await SearchHistory();
         };
         UnsavedChanges.Protect(this, () => Snapshot() != _baseline || MemoryDirty, SaveAll);
-        Closed += (_, _) => { _historyCancel?.Cancel(); _historyCancel?.Dispose(); };
+        Closed += (_, _) => { CharacterPanel.Cancel(); _historyCancel?.Cancel(); _historyCancel?.Dispose(); };
+        Loaded += async (_, _) => { if (_autoCharacter && chat.SelectedModel is not null) { _autoCharacter = false; await CharacterPanel.GenerateAsync(); } };
         if (chat.Agents.FirstOrDefault() is { } first) { Fill(first); AgentList.SelectedItem = first; }
+    }
+    internal void BeginCreate(bool automatic = true)
+    {
+        if (CharacterPanel.IsBusy || _saving) { return; }
+        _switching = true; AgentList.SelectedItem = null; _switching = false; Fill(new(Guid.NewGuid(), "新しいアカウント", ModelId: _chat.SelectedModel?.Id)); _characterExpander.IsExpanded = true; _status.Text = "新しいアカウントの下書きです。保存するまで作成しません。"; NameBox.Focus();
+        if (automatic && _chat.SelectedModel is not null) { if (IsLoaded) { Dispatcher.BeginInvoke(async () => await CharacterPanel.GenerateAsync()); } else { _autoCharacter = true; } }
     }
     private string Snapshot() => JsonSerializer.Serialize(new { NameBox.Text, Icon = IconBox.Text, Instruction = InstructionBox.Text, Specialty = _specialty.Text, Model = (_model.SelectedItem as DebateModelChoice)?.Id, Enabled = _enabled.IsChecked, _behavior.Personality, _behavior.Autonomy, _behavior.Connections });
     private void Fill(AgentAccount agent)
     {
+        _characterExpander.IsExpanded = false;
         _id = agent.Id; NameBox.Text = agent.Name; IconBox.Text = agent.Icon; InstructionBox.Text = agent.Instruction; _specialty.Text = agent.Specialty; _enabled.IsChecked = agent.Enabled;
         _behavior.Load(agent, _chat.Agents);
         var models = new List<DebateModelChoice> { new("", "未指定（既存のモデル設定を使用）", "") }; models.AddRange(_chat.Models.Select(m => new DebateModelChoice(m.Id, m.DisplayName, m.SizeLabel)));
@@ -118,7 +133,7 @@ public sealed class AgentsWindow : Window
     {
         if (_saving) { return false; }
         _saving = true; SaveButton.IsEnabled = false; AgentList.IsEnabled = false; string savedSnapshot = Snapshot();
-        try { string? model = (_model.SelectedItem as DebateModelChoice)?.Id; AgentAccount original = _chat.Agents.FirstOrDefault(a => a.Id == _id) ?? new(_id, "新しいエージェント"); await _chat.SaveAgentAsync(original with { Name = NameBox.Text.Trim(), Icon = IconBox.Text.Trim(), Instruction = InstructionBox.Text, Specialty = _specialty.Text, ModelId = string.IsNullOrEmpty(model) ? null : model, Enabled = _enabled.IsChecked == true, Personality = _behavior.Personality, Connections = _behavior.Connections, Autonomy = _behavior.Autonomy }); _baseline = savedSnapshot; _status.Text = Snapshot() == _baseline ? "保存しました" : "保存しました。その後の編集は未保存です。"; return true; }
+        try { string? model = (_model.SelectedItem as DebateModelChoice)?.Id; AgentAccount original = _chat.Agents.FirstOrDefault(a => a.Id == _id) ?? new(_id, "新しいエージェント"); await _chat.SaveAgentAsync(original with { Name = NameBox.Text.Trim(), Icon = IconBox.Text.Trim(), Instruction = InstructionBox.Text, Specialty = _specialty.Text, ModelId = string.IsNullOrEmpty(model) ? null : model, Enabled = _enabled.IsChecked == true, Personality = _behavior.Personality, Connections = _behavior.Connections, Autonomy = _behavior.Autonomy }); _switching = true; AgentList.SelectedItem = _chat.Agents.First(a => a.Id == _id); _switching = false; _baseline = savedSnapshot; _status.Text = Snapshot() == _baseline ? "保存しました" : "保存しました。その後の編集は未保存です。"; return true; }
         catch (Exception ex) { _status.Text = ex.Message; return false; }
         finally { _saving = false; SaveButton.IsEnabled = true; AgentList.IsEnabled = true; }
     }

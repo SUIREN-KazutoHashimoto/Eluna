@@ -33,6 +33,8 @@ internal static class KnowledgeService
             "根拠に使ったローカル資料を [K番号] で示し、過去のAI回答や画像からの読み取りを検証済みの事実に変えないでください。" +
             "資料や会話で確認できないプロジェクト固有の値は推測せず、不明と説明してください。" +
             (taskInstruction is null ? "" : "\n今回の作業の指示:\n" + taskInstruction);
+        LocalMember self = state.Self ?? new();
+        instruction += "\nここはメンバー同士の会話です。全員が対等な参加者として話し、それぞれの名前・考え・立場を尊重します。相手を一律に『ユーザー』『ご主人様』と呼ばず、名前または自然な呼び方を使います。自分の発言として会話に参加し、別の参加者になりすまして発言しません。\nメンバー: " + self.Name + " / " + string.Join(" / ", (state.Agents ?? []).Where(a => conversation.Room?.Members.Contains(a.Id) == true).Select(a => a.Name)) + (self.About.Length > 0 ? "\n" + self.Name + "の自己紹介: " + self.About : "");
         string normalized = Normalize(question);
         string[] terms = Terms(normalized);
         bool overview = Regex.IsMatch(normalized, "要約|概要|全体|資料一覧|summar|overview", RegexOptions.CultureInvariant);

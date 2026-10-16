@@ -40,6 +40,13 @@ public partial class App : Application
                 root = Path.Combine(captureDirectory, "preview-data");
             }
             var store = new AppStore(root);
+            int socialIndex = Array.IndexOf(e.Args, "--verify-social");
+            if (socialIndex >= 0 && socialIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("会話UI検証には専用の --data-dir が必要です。"); }
+                int modelIndex = Array.IndexOf(e.Args, "--model-meta"); string? metadata = modelIndex >= 0 && modelIndex + 1 < e.Args.Length ? e.Args[modelIndex + 1] : null;
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = SocialChatVerification.RunAsync(store, e.Args[socialIndex + 1], metadata); return;
+            }
             int agentsIndex = Array.IndexOf(e.Args, "--verify-agents");
             if (agentsIndex >= 0 && agentsIndex + 1 < e.Args.Length)
             {

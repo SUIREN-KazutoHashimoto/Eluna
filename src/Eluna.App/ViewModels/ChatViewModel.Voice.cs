@@ -120,7 +120,7 @@ public sealed partial class ChatViewModel
                 {
                     await SubmitSharedComputerAsync(room, entry.Text); continue;
                 }
-                room.Messages.Add(new() { Role = "user", Content = entry.Text, Attachments = SharedAttachments(room), Identity = new(null, "あなた", "あ", Time: DateTimeOffset.UtcNow, Detail: "音声入力") });
+                room.Messages.Add(new() { Role = "user", Content = entry.Text, Attachments = SharedAttachments(room), Identity = SelfIdentity(detail: "音声入力") });
                 AgentAccount? agent = Agents.FirstOrDefault(a => a.Id == room.Room?.DefaultAgentId && a.Enabled);
                 await QueueAnswerAsync(room, null, agent: agent);
             }

@@ -140,15 +140,16 @@ internal static class WorkspaceChecks
         Check(!DebateDirector.TryParse("{\"speaker\":\"outside\",\"kind\":\"speech\",\"replyTo\":\"\",\"query\":\"\"}", roles, work.Turns, out _), "Director accepted an unknown participant.");
         Check(!DebateDirector.TryParse("{\"speaker\":\"a\",\"kind\":\"speech\",\"replyTo\":\"" + Guid.NewGuid() + "\",\"query\":\"\"}", roles, work.Turns, out _), "Director accepted a reply to another conversation.");
         using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var manual = new WorkSession { Mode = "debate", ModelId = "fixture", Question = "手動の相談", Options = work.Options with { AutomaticDebate = false }, Discussion = new(false, Inputs: [new(Guid.NewGuid(), "検証役へ質問", "b")]) };
+        var manual = new WorkSession { Mode = "debate", ModelId = "fixture", Question = "手動の相談", Options = work.Options with { AutomaticDebate = false }, Discussion = new(false, Inputs: [new(Guid.NewGuid(), "検証役へ質問", "b", Identity: new(null, "カズト", "月"))]) };
         Task run = runner.RunAsync(manual, (_, _) => Task.FromResult(true), () => Task.CompletedTask, _ => { }, _ => { }, stop.Token);
         async Task Until(Func<bool> condition) { while (!condition()) { await Task.Delay(5, stop.Token); } }
         await Until(() => manual.Stage == "debate-wait");
         Check(manual.Turns.Count(t => t.Kind != "user") == 0, "Manual debate generated a speech before an advance.");
-        manual.Advance(); await Until(() => manual.Turns.Any(t => t.Kind != "user" && !t.Incomplete));
+        manual.Advance(); await Until(() => manual.Stage == "debate-wait" && manual.Turns.Count >= 2);
         Check(manual.Turns.First(t => t.Kind != "user").Role == "b", "A user's targeted question did not choose its recipient.");
         manual.Discussion = manual.Discussion with { Finish = true }; manual.Advance(); await run;
         Check(manual.Stage == "complete" && manual.Turns.Count(t => t.Kind != "user") == 1, "Finish from a manual wait generated an extra speech.");
+        Check(manual.Turns.Single(t => t.Kind == "user") is { Name: "カズト", Icon: "月" }, "A peer's saved identity was replaced by a generic user label.");
         using var cancel = new CancellationTokenSource();
         var partial = new WorkSession { Mode = "debate", ModelId = "fixture", Question = "中断と再開", Options = work.Options with { MaxTurns = 2 } };
         var interrupted = new ResearchRunner(Search, (_, _) => throw new InvalidOperationException(), (prompt, stream, token) =>

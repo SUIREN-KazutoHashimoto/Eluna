@@ -27,7 +27,7 @@ public sealed partial class ChatViewModel
         if (PendingAttachments.Count > 0) { Error = "添付は先にチャットで読み取り、その結果をComputer Useへの依頼に含めてください。"; return true; }
         Input = ""; Error = "";
         if (source.Messages.Count == 0 && source.Title == "新しいチャット") { source.Title = text[..Math.Min(text.Length, 28)]; }
-        branch.Messages.Add(new() { Role = "user", Content = text });
+        branch.Messages.Add(new() { Role = "user", Content = text, Identity = SelfIdentity() });
         if (current is not null)
         {
             ChatMessage? card = branch.Messages.FirstOrDefault(m => m.Computer == current);
@@ -52,7 +52,7 @@ public sealed partial class ChatViewModel
         AgentAccount? agent = Agents.FirstOrDefault(a => a.Id == source.Room?.DefaultAgentId);
         if (agent is { Enabled: false }) { throw new InvalidOperationException("このアカウントは無効です。プロフィールと参加者を確認してください。"); }
         LocalModel model = agent?.ModelId is string id ? Models.FirstOrDefault(m => m.Id == id) ?? throw new InvalidOperationException("アカウントのモデルがありません。") : SelectedModel;
-        source.Messages.Add(new() { Role = "user", Content = text, Identity = new(null, "あなた", "あ", Time: DateTimeOffset.UtcNow, Detail: "音声入力") });
+        source.Messages.Add(new() { Role = "user", Content = text, Identity = SelfIdentity(detail: "音声入力") });
         if (source.Messages.LastOrDefault(m => m.Computer?.Pending == true)?.Computer is { } current)
         {
             if (text is "停止" or "中止" or "stop") { current.Invoke("stop"); } else { current.Steer?.Invoke(text); }

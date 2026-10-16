@@ -168,7 +168,7 @@ public sealed class ResearchRunner
         {
             foreach (DebateIntervention input in (work.Discussion.Inputs ?? []).Where(i => !i.Applied).ToArray())
             {
-                work.Turns.Add(new(Math.Max(1, work.Turns.Count + 1), "user", input.Text, Name: "あなた", Id: input.Id, Icon: "あ", Kind: "user", Time: DateTimeOffset.UtcNow));
+                work.Turns.Add(new(Math.Max(1, work.Turns.Count + 1), "user", input.Text, Name: input.Identity?.Name ?? "あなた", Id: input.Id, Icon: input.Identity?.Icon ?? "あ", Kind: "user", Time: input.Identity?.Time ?? DateTimeOffset.UtcNow));
                 work.Discussion = work.Discussion with { Inputs = work.Discussion.Inputs!.Select(i => i.Id == input.Id ? i with { Applied = true } : i).ToList(), RequestedSpeaker = input.Target ?? work.Discussion.RequestedSpeaker };
                 if (work.Options.DebateSearch == "auto" && SearchRouter.ForbidsSearch(input.Text)) { work.Discussion = work.Discussion with { SearchSuppressed = true }; }
                 else if (work.Options.DebateSearch != "off" && SearchRouter.RequestsSearch(input.Text))

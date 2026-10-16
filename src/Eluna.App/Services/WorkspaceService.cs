@@ -35,7 +35,7 @@ internal static class WorkspaceService
     {
         if (agent is null || history.LastOrDefault()?.Role != "assistant" || history.LastOrDefault(m => m.Role == "user") is not { } question) { return history.ToArray(); }
         // A broadcast's later replies must answer the user, not continue another assistant's completed turn.
-        return [.. history, new("user", "現在の話者は" + agent.Name + "です。他の参加者の返答は参考として扱い、あなた自身の回答を返してください。\n今回の依頼:\n" + question.Content)];
+        return [.. history, new("user", "現在の話者は" + agent.Name + "です。同じ場の参加者の発言を踏まえ、あなた自身の立場で会話を続けてください。他の人の発言を代筆しません。\n今回の話題:\n" + question.Content)];
     }
     internal static bool Participated(SavedConversation source, Guid agent) => source.Room?.Members.Contains(agent) == true ||
         source.Room?.PastMembers?.Contains(agent) == true || Messages(source).Any(m => m.Identity?.AgentId == agent || m.Work?.Turns.Any(t => t.AgentId == agent) == true);
@@ -134,9 +134,10 @@ internal static class WorkspaceService
     }
     internal static void Validate(AppState state)
     {
+        if (state.Self is { } self && (string.IsNullOrWhiteSpace(self.Name) || self.Name.Length > 80 || self.Icon is null || self.Icon.Length > 16 || self.About is null || self.About.Length > 2000)) { throw new InvalidDataException("自分のプロフィールの形式を確認してください。"); }
         if (state.Agents is null)
         { if (state.Conversations.Any(c => c.Room is not null) || state.AgentMemories is { Count: > 0 }) { throw new InvalidDataException("エージェント情報がありません。"); } return; }
-        if (state.Agents.Count > 500 || state.Agents.Any(a => a is null || a.Id == Guid.Empty || string.IsNullOrWhiteSpace(a.Name) || a.Name.Length > 80 ||
+        if (state.Agents.Count > 500 || state.Agents.Any(a => a is null || a.Id == Guid.Empty || a.Id == AgentAccount.LocalId || string.IsNullOrWhiteSpace(a.Name) || a.Name.Length > 80 ||
             a.Icon is null || a.Icon.Length > 16 || a.Instruction is null || a.Instruction.Length > 8000 || a.Specialty is null || a.Specialty.Length > 1000 || a.VoiceId?.Length > 2048 || a.SpeechRate is < -10 or > 10) ||
             state.Agents.Select(a => a.Id).Distinct().Count() != state.Agents.Count) { throw new InvalidDataException("エージェントの形式を確認してください。"); }
         HashSet<Guid> agents = state.Agents.Select(a => a.Id).ToHashSet();

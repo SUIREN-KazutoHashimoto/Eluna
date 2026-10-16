@@ -45,6 +45,8 @@ public partial class SettingsWindow
     private void Account_Click(object sender, RoutedEventArgs e) { if (sender is FrameworkElement { DataContext: AgentAccount account }) { new AgentProfileWindow(_viewModel, account.Id) { Owner = this }.Show(); } }
     private void SkillSelection_Click(object sender, RoutedEventArgs e) { if (CheckRoom()) { new SkillPickerWindow(_viewModel) { Owner = this }.Show(); } }
     private void WorkOptions_Click(object sender, RoutedEventArgs e) { if (CheckRoom()) { new WorkOptionsWindow(_viewModel) { Owner = this }.ShowDialog(); } }
+    private void SelfProfile_Click(object sender, RoutedEventArgs e) => new SelfProfileWindow(_viewModel) { Owner = this }.Show();
+    private void InviteMembers_Click(object sender, RoutedEventArgs e) { if (CheckRoom() && _room is not null) { new InviteMembersWindow(_viewModel, _room) { Owner = this }.Show(); } }
     private void RoomSettings_Click(object sender, RoutedEventArgs e) { if (CheckRoom()) { new RoomWindow(_viewModel, _room) { Owner = this }.Show(); } }
     private void Permissions_Click(object sender, RoutedEventArgs e) { if (CheckRoom() && _room is not null) { new RoomPermissionsWindow(_viewModel, _room) { Owner = this }.Show(); } }
     private void ProjectSettings_Click(object sender, RoutedEventArgs e)

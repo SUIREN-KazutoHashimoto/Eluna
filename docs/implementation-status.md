@@ -1,5 +1,7 @@
 # 完成版に向けた実装・検証の台帳
 
+2026-10-17: `codex/social-chat-ux`でキャラクターの自動生成、本人のプロフィール、会話の対等な参加者表示、既存チャンネルへのUI／AI招待、入力候補・複数宛先・色付きメンション、プロフィールからDM、参加通知の表示密度を改善。今回のexeは`artifacts/release-social/Eluna.exe`。[仕様と確認範囲](social-chat-ux.md)を参照。
+
 2026-10-16: `codex/agent-permissions-autonomy`でチャンネルACL、性格・ロールプレイ、つながりと招待許可、AIによるサーバー・チャンネル作成と担当別の実行・報告、入力中表示を追加。開発版exeは`artifacts/release-agents/Eluna.exe`。[仕様と確認範囲](agent-permissions-autonomy.md)を参照。
 
 プロフィール編集、プロジェクト＝サーバー、ボイスチャンネル、ウィンドウ共有とComputer Useの入口、および重なり対策を追加しました。[現行の仕様・操作と検証範囲](voice-channels.md)を参照してください。

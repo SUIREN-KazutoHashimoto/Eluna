@@ -6,6 +6,8 @@
   <SolidColorBrush x:Key="HoverBrush" Color="#3B3B3B" />
   <SolidColorBrush x:Key="StrokeBrush" Color="#424242" />
   <SolidColorBrush x:Key="TextBrush" Color="#ECECEC" />
+  <SolidColorBrush x:Key="MentionTextBrush" Color="#DEE0FF" />
+  <SolidColorBrush x:Key="MentionBackgroundBrush" Color="#4B4B77" />
   <SolidColorBrush x:Key="MutedBrush" Color="#A5A5A5" />
   <SolidColorBrush x:Key="AccentBrush" Color="#B3EBCB" />
   <SolidColorBrush x:Key="OnAccentBrush" Color="#10291B" />
@@ -42,6 +44,7 @@
     <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
     <Setter Property="TextOptions.TextRenderingMode" Value="Grayscale" />
   </Style>
+  <Style TargetType="Expander"><Setter Property="Foreground" Value="{DynamicResource TextBrush}" /></Style>
   <Style TargetType="Button">
     <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
     <Setter Property="Background" Value="Transparent" />

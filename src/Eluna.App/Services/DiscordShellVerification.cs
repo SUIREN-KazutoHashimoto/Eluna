@@ -41,7 +41,7 @@ internal static class DiscordShellVerification
             chat.SelectedConversation = room; chat.Input = ""; main.Width = 1280; main.Height = 900; await Capture(main, "channel-dark");
             Check(!Find<ComboBox>(main).Any() && !Find<TextBlock>(main).Any(t => t.Text.Contains(model.DisplayName, StringComparison.Ordinal)), "Model/AI selectors or model metadata leaked into the shell.");
             Check(main.FindName("ModeButton") is null && main.FindName("WorkModeSelector") is null && main.FindName("ModelSelector") is null, "Removed AI controls remain in the main window.");
-            Check(((Border)main.FindName("MembersPane")).IsVisible && chat.RoomMembers.Count == 2, "Wide member list was missing.");
+            Check(((Border)main.FindName("MembersPane")).IsVisible && chat.RoomMembers.Count == 3, "Wide member list was missing.");
             main.Width = 820; main.Height = 600; await Capture(main, "channel-minimum"); Check(((ListBox)main.FindName("MessagesList")).ActualHeight >= 300 && !((Border)main.FindName("MembersPane")).IsVisible, "Compact shell lost message space or kept the member column.");
             Click((Button)main.FindName("MembersButton")); Check(((Popup)main.FindName("MembersPopup")).IsOpen, "Member list was inaccessible at minimum width."); ((Popup)main.FindName("MembersPopup")).IsOpen = false;
             TextBox input = (TextBox)main.FindName("InputBox"); chat.Input = "質問です。"; input.CaretIndex = 0;

@@ -32,6 +32,7 @@ internal sealed class AgentBehaviorEditor : StackPanel
         foreach (AgentAccount other in agents.Where(a => a.Id != account.Id)) { _connections.Children.Add(new CheckBox { Content = new TextBlock { Text = other.Label, TextWrapping = TextWrapping.Wrap }, Tag = other.Id, IsChecked = account.Connections?.Contains(other.Id) == true, Margin = new(0, 5, 0, 5) }); }
     }
     internal AgentPersonality Personality => new(Preset.SelectedValue as string ?? "default", Role.Text.Trim(), _setting.Text.Trim(), _traits.Text.Trim());
+    internal void ApplyPersonality(AgentPersonality p) { Preset.SelectedValue = p.Preset; Role.Text = p.Role; _setting.Text = p.Setting; _traits.Text = p.Traits; }
     internal AgentAutonomy Autonomy => new(Automatic.IsChecked == true, _servers.IsChecked == true, _channels.IsChecked == true, _invite.IsChecked == true, _accept.IsChecked == true);
     internal List<Guid> Connections => _connections.Children.OfType<CheckBox>().Where(b => b.IsChecked == true).Select(b => (Guid)b.Tag).ToList();
 }

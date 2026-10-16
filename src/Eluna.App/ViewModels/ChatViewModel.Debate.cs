@@ -21,10 +21,11 @@ public sealed partial class ChatViewModel
         Conversation? source = Conversations.FirstOrDefault(c => c.Branches.Any(b => b.Messages.Any(m => m.Work == work)));
         if (source is null || DebateAnswer(work) is not { } answer) { return; }
         List<DebateRole> roles = work.Discussion.PendingParticipants ?? work.Options.Participants.ToList();
-        string? target = roles.FirstOrDefault(r => text.StartsWith("@" + r.Name + " ", StringComparison.OrdinalIgnoreCase) || text.StartsWith("@{" + r.Name + "}", StringComparison.OrdinalIgnoreCase))?.Id;
+        Guid mentioned = MentionService.Scan(text, Agents).SelectMany(m => m.Accounts).FirstOrDefault(id => roles.Any(r => r.AgentId == id));
+        string? target = roles.FirstOrDefault(r => r.AgentId == mentioned || text.StartsWith("@" + r.Name + " ", StringComparison.OrdinalIgnoreCase) || text.StartsWith("@{" + r.Name + "}", StringComparison.OrdinalIgnoreCase))?.Id;
         Guid id = Guid.NewGuid();
-        source.Branches.First(b => b.Messages.Contains(answer)).Messages.Add(new() { Id = id, Role = "user", Content = text, Identity = new(null, "あなた", "あ", Time: DateTimeOffset.UtcNow, ReplyTo: _replyTo) });
-        work.Discussion = work.Discussion with { Inputs = [.. work.Discussion.Inputs ?? [], new(id, text, target)] };
+        source.Branches.First(b => b.Messages.Contains(answer)).Messages.Add(new() { Id = id, Role = "user", Content = text, Identity = SelfIdentity(_replyTo) });
+        work.Discussion = work.Discussion with { Inputs = [.. work.Discussion.Inputs ?? [], new(id, text, target, Identity: SelfIdentity(_replyTo))] };
         Input = ""; ReplyTo(null); work.Advance();
         if (interrupt)
         {

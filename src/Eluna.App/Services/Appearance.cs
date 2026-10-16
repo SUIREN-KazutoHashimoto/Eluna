@@ -32,8 +32,11 @@ public static class Appearance
         Application.Current.Resources["ChatHoverBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(light ? "#F2F3F5" : "#2E3035"));
         Application.Current.Resources["ChatInputBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(light ? "#EBEDEF" : "#383A40"));
         Application.Current.Resources["ErrorBackgroundBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(light ? "#FCE8E6" : "#3A2D2D"));
+        Application.Current.Resources["MentionTextBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(light ? "#4338A8" : "#DEE0FF"));
+        Application.Current.Resources["MentionBackgroundBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(light ? "#E8E7FF" : "#4B4B77"));
         if (highContrastForAudit ?? SystemParameters.HighContrast)
         {
+            Application.Current.Resources["MentionTextBrush"] = SystemColors.HighlightTextBrush; Application.Current.Resources["MentionBackgroundBrush"] = SystemColors.HighlightBrush;
             foreach (string key in new[] { "BackgroundBrush", "SidebarBrush", "SurfaceBrush", "ChatBackgroundBrush", "ChatInputBrush", "ErrorBackgroundBrush" }) { Application.Current.Resources[key] = SystemColors.WindowBrush; }
             foreach (string key in new[] { "TextBrush", "MutedBrush", "StrokeBrush", "CodeKeywordBrush", "CodeStringBrush", "CodeCommentBrush", "CodeNumberBrush" }) { Application.Current.Resources[key] = SystemColors.WindowTextBrush; }
             foreach (string key in new[] { "AccentBrush", "HoverBrush", "ChatHoverBrush" }) { Application.Current.Resources[key] = SystemColors.HighlightBrush; }

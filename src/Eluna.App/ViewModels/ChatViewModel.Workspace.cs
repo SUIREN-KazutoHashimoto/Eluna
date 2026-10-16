@@ -44,7 +44,8 @@ public sealed partial class ChatViewModel
     }
     internal void RefreshRoom()
     {
-        RoomMembers.Clear(); foreach (Guid member in SelectedConversation?.Room?.Members ?? []) { if (Agents.FirstOrDefault(a => a.Id == member) is { } account) { RoomMembers.Add(account); } }
+        RefreshMentionAccounts(); RoomMembers.Clear(); if (SelectedConversation is not null) { RoomMembers.Add(SelfAccount); }
+        foreach (Guid member in SelectedConversation?.Room?.Members ?? []) { if (Agents.FirstOrDefault(a => a.Id == member) is { } account) { RoomMembers.Add(account); } }
         Recipients.Clear();
         foreach (Guid id in SelectedConversation?.Room?.Members ?? [])
         { if (Agents.FirstOrDefault(a => a.Id == id) is { } agent) { Recipients.Add(new(id, agent.Icon + " " + agent.Name + (agent.Enabled ? "" : "（無効）"))); } }
@@ -61,6 +62,7 @@ public sealed partial class ChatViewModel
     { AgentAccount? agent = Agents.FirstOrDefault(a => a.Id == _recipient); return agent is null || agent.ModelId == model.Id ? Task.CompletedTask : SaveAgentAsync(agent with { ModelId = model.Id }); }
     public async Task SaveAgentAsync(AgentAccount agent)
     {
+        if (Agents.Any(a => a.Id != agent.Id && a.Name.Equals(agent.Name.Trim(), StringComparison.OrdinalIgnoreCase)) || Self.Name.Equals(agent.Name.Trim(), StringComparison.OrdinalIgnoreCase)) { throw new InvalidOperationException("メンションで区別できるよう、別の表示名を選んでください。"); }
         var next = Agents.Where(a => a.Id != agent.Id).Append(agent).ToList();
         WorkspaceService.Validate(CaptureState() with { Agents = next });
         AgentAccount? before = Agents.FirstOrDefault(a => a.Id == agent.Id);
@@ -89,7 +91,7 @@ public sealed partial class ChatViewModel
     }
     public async Task DeleteAgentMemoryAsync(AgentMemory memory)
     { CancelWorkspaceRequests(agent: memory.AgentId, memory: memory.Id); AgentMemories.Remove(memory); await PersistSafelyAsync(); }
-    private Task[] CancelWorkspaceRequests(IReadOnlySet<Guid>? rooms = null, Guid? agent = null, Guid? memory = null, Guid? project = null)
+    private Task[] CancelWorkspaceRequests(IReadOnlySet<Guid>? rooms = null, Guid? agent = null, Guid? memory = null, Guid? project = null, Guid? exceptJob = null)
     {
         var tasks = new List<Task>(); bool all = rooms is null && agent is null && memory is null && project is null;
         bool Affects(Guid roomId, Guid? actor, IEnumerable<KnowledgeReference> references, WorkSession? work = null)
@@ -100,6 +102,7 @@ public sealed partial class ChatViewModel
         }
         foreach (InferenceJob job in Inferences.Items.Where(j => j.IsPending).ToArray())
         {
+            if (job.Request.Id == exceptJob) { continue; }
             ChatMessage? answer = FindAnswer(job.Request); WorkSession? work = answer?.Work;
             bool teamAffected = answer?.Team?.Assignments.Any(a => rooms?.Contains(a.RoomId) == true || agent == a.AgentId || project is not null && Conversations.Any(c => c.Id == a.RoomId && c.ProjectId == project)) == true;
             if (!teamAffected && !Affects(job.Request.ConversationId, job.Request.Agent?.Id, job.Request.References.Concat(work?.Turns.SelectMany(t => t.Knowledge ?? []) ?? []), work)) { continue; }
@@ -160,9 +163,13 @@ public sealed partial class ChatViewModel
     {
         List<AgentAccount> members = Agents.Where(a => conversation.Room?.Members.Contains(a.Id) == true).ToList();
         if (members.Count == 0) { return []; }
-        bool all = text.StartsWith("@全員", StringComparison.OrdinalIgnoreCase) || text.StartsWith("@all ", StringComparison.OrdinalIgnoreCase);
-        var mentioned = members.Where(a => text.StartsWith("@" + a.Name + " ", StringComparison.OrdinalIgnoreCase) || text.StartsWith("@{" + a.Name + "}", StringComparison.OrdinalIgnoreCase)).ToList();
-        if (mentioned.Count > 1) { throw new InvalidDataException("同名の参加者がいます。宛先メニューで選択してください。"); }
+        List<MentionToken> mentions = MentionService.Scan(text, MentionAccounts);
+        if (mentions.Any(m => m.Accounts.Count > 1)) { throw new InvalidDataException("同名のメンバーがいます。プロフィールで区別できる名前を設定してください。"); }
+        Guid[] ids = mentions.SelectMany(m => m.Accounts).Where(id => id != AgentAccount.LocalId).Distinct().ToArray();
+        if (!ChannelInvitations.Requested(text) && ids.Any(id => !members.Any(a => a.Id == id))) { throw new InvalidOperationException("未参加のメンバーが含まれています。メンバー一覧の「招待」から参加させてください。"); }
+        bool all = mentions.Any(m => m.All);
+        var mentioned = members.Where(a => ids.Contains(a.Id)).ToList();
+        if (ChannelInvitations.Requested(text)) { all = false; mentioned = members.Where(a => mentions.FirstOrDefault() is { Start: 0 } first && first.Accounts.Contains(a.Id)).Take(1).ToList(); }
         IReadOnlyList<AgentAccount> targets = mentioned.Count > 0 ? mentioned : all || _recipient is null ? members : members.Where(a => a.Id == _recipient).ToList();
         AppState state = CaptureState();
         if (mentioned.Count > 0 || !all && _recipient is not null) { foreach (AgentAccount target in targets) { ChannelAccess.RequireSpeaker(state, conversation.Save(), target.Id); } }

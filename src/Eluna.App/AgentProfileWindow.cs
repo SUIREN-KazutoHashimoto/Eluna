@@ -23,19 +23,25 @@ public sealed class AgentProfileWindow : Window
     private string _baseline = "";
     private bool _saving;
     internal AgentBehaviorEditor Behavior { get; } = new();
+    internal CharacterGeneratorPanel CharacterPanel { get; }
     public AgentProfileWindow(ChatViewModel chat, Guid id)
     {
         _chat = chat; _id = id; AgentAccount account = chat.Agents.First(a => a.Id == id);
+        CharacterPanel = new((brief, token) => chat.GenerateCharacterAsync(brief, string.IsNullOrEmpty((ModelBox.SelectedItem as DebateModelChoice)?.Id) ? null : ((DebateModelChoice)ModelBox.SelectedItem).Id, token, status => CharacterPanel?.Report(status)), draft => { NameBox.Text = draft.Name; _icon.Text = draft.Icon; _specialty.Text = draft.Specialty; _instruction.Text = draft.Instruction + "\n話し方の例: " + draft.Greeting; Behavior.ApplyPersonality(new("roleplay", draft.Role, draft.Setting, draft.Traits)); });
         Title = account.Name + " · プロフィール"; Width = 580; Height = 750; MinWidth = 420; MinHeight = 450; WindowStartupLocation = WindowStartupLocation.CenterOwner; Appearance.Attach(this);
         var root = new DockPanel { Margin = new(24) }; Content = root;
         var footer = new StackPanel(); DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer); footer.Children.Add(_status);
         var actions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right }; footer.Children.Add(actions);
         var history = new Button { Content = "履歴・メモリ", Margin = new(0, 0, 8, 8) }; actions.Children.Add(history);
+        var direct = new Button { Content = "メッセージ", Margin = new(0, 0, 8, 8) }; actions.Children.Insert(0, direct); direct.Click += async (_, _) => { try { await chat.OpenDirectMessageAsync(id); Close(); } catch (Exception ex) { _status.Text = ex.Message; } };
         history.Click += (_, _) => { var manager = new AgentsWindow(chat) { Owner = this }; manager.AgentList.SelectedItem = chat.Agents.First(a => a.Id == id); manager.ShowDialog(); };
         SaveButton.Margin = new(0, 0, 0, 8); SaveButton.SetResourceReference(StyleProperty, "PrimaryButton"); actions.Children.Add(SaveButton);
         var body = new StackPanel(); root.Children.Add(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
         body.Children.Add(new TextBlock { Text = account.Icon, FontSize = 44 });
         body.Children.Add(new TextBlock { Text = account.Name, FontSize = 24, TextWrapping = TextWrapping.Wrap, FontWeight = FontWeights.SemiBold });
+        body.Children.Add(new Expander { Header = "キャラクターの案を生成", Content = CharacterPanel, Margin = new(0, 12, 0, 0) });
+        CharacterPanel.BusyChanged += busy => { foreach (UIElement element in new UIElement[] { NameBox, _icon, _specialty, _instruction, ModelBox, Behavior }) { element.IsEnabled = !busy; } SaveButton.IsEnabled = !busy && !_saving; };
+        Closed += (_, _) => CharacterPanel.Cancel();
         void Field(string label, FrameworkElement element) { body.Children.Add(new TextBlock { Text = label, Margin = new(0, 14, 0, 6), TextWrapping = TextWrapping.Wrap }); body.Children.Add(element); System.Windows.Automation.AutomationProperties.SetName(element, label); }
         Field("名前", NameBox); Field("アイコン", _icon); Field("専門分野", _specialty); Field("使用モデル", ModelBox); Field("基本指示・話し方", _instruction); Field("読み上げ音声", VoiceBox); Field("読み上げ速度", _rate);
         Behavior.Load(account, chat.Agents); body.Children.Add(Behavior);

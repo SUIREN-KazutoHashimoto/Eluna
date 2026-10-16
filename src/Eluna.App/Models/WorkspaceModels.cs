@@ -4,8 +4,11 @@ public sealed record AgentAccount(Guid Id, string Name, string Icon = "✦", str
     string? ModelId = null, bool Enabled = true, string? VoiceId = null, int SpeechRate = 0,
     AgentPersonality? Personality = null, List<Guid>? Connections = null, AgentAutonomy? Autonomy = null)
 {
+    public static readonly Guid LocalId = Guid.Parse("2cfb9681-cb73-4ee4-8793-43e3d20cbd36");
+    public bool IsLocal => Id == LocalId;
     public string Label => Icon + " " + Name + (Enabled ? "" : "（無効）");
 }
+public sealed record LocalMember(string Name = "自分", string Icon = "◉", string About = "");
 public sealed record AgentMemory(Guid Id, Guid AgentId, string Text, string Scope = "room", Guid? SourceConversationId = null,
     Guid? ProjectId = null, bool Enabled = true, DateTimeOffset? UpdatedAt = null);
 public sealed record RoomProfile(string Kind, List<Guid> Members, Guid? DefaultAgentId = null, Guid? ParentId = null,

@@ -30,6 +30,7 @@ public partial class MainWindow : Window
     public MainWindow(AppStore store, DownloadQueue? downloads = null)
     {
         InitializeComponent(); _store = store; _readingPositions = new(store.Root); _viewModel = new(store, downloads); DataContext = _viewModel;
+        InitializeMentions();
         _readingSave.Tick += async (_, _) => { _readingSave.Stop(); RememberReadingPosition(); await _readingPositions.SaveAsync(); };
         RootLayout.SizeChanged += (_, _) => { UpdateComposerHeight(); UpdateShellLayout(); };
         HeaderArea.SizeChanged += (_, _) => UpdateComposerHeight();
@@ -40,8 +41,8 @@ public partial class MainWindow : Window
         _viewModel.PlanReviewRequested += ReviewPlanAsync;
         _viewModel.SkillExecutionReviewRequested += ReviewSkillExecutionAsync;
         _viewModel.AppearanceChanged += () => Appearance.Apply(_viewModel.Settings.Theme, _viewModel.Settings.UiScale);
-        TextCompositionManager.AddPreviewTextInputStartHandler(InputBox, (_, _) => _composing = true);
-        TextCompositionManager.AddPreviewTextInputHandler(InputBox, (_, _) => _composing = false);
+        TextCompositionManager.AddPreviewTextInputStartHandler(InputBox, (_, _) => { _composing = true; MentionPopup.IsOpen = false; RefreshMentionAdornment(); });
+        TextCompositionManager.AddPreviewTextInputHandler(InputBox, (_, _) => { _composing = false; RefreshMentionAdornment(); });
         AllowDrop = true;
         DragOver += (_, e) => { if (e.Data.GetDataPresent(DataFormats.FileDrop)) { e.Effects = _viewModel.CanChange ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; } };
         Drop += async (_, e) => { if (e.Data.GetData(DataFormats.FileDrop) is string[] paths) { e.Handled = true; await _viewModel.AttachFilesAsync(paths); } };
@@ -268,6 +269,7 @@ public partial class MainWindow : Window
         void Item(string label, Action action) { var item = new MenuItem { Header = label }; item.Click += (_, _) => action(); menu.Items.Add(item); }
         Item("名前を変更", async () => { var dialog = new TextPromptWindow("会話の名前", conversation.Title) { Owner = this }; if (dialog.ShowDialog() == true) { await _viewModel.RenameConversationAsync(conversation, dialog.Result); } });
         Item("アクセス権", () => new RoomPermissionsWindow(_viewModel, conversation) { Owner = this }.Show());
+        Item("メンバーを招待", () => OpenInvitations(conversation));
         Item(conversation.IsPinned ? "ピン留めを解除" : "ピン留め", async () => await _viewModel.TogglePinAsync(conversation));
         Item(conversation.IsArchived ? "保管から戻す" : "アーカイブ", async () => await _viewModel.ToggleArchiveAsync(conversation));
         var move = new MenuItem { Header = "プロジェクトへ移動" };
@@ -289,6 +291,7 @@ public partial class MainWindow : Window
         if (sender is not Button button) { return; }
         var menu = new ContextMenu { PlacementTarget = button };
         var settings = new MenuItem { Header = "チャンネル設定" }; settings.Click += (_, _) => OpenSettings(7); menu.Items.Add(settings);
+        var invite = new MenuItem { Header = "メンバーを招待" }; invite.Click += (_, _) => { if (_viewModel.SelectedConversation is { } room) { OpenInvitations(room); } }; menu.Items.Add(invite);
         var permissions = new MenuItem { Header = "アクセス権" }; permissions.Click += (_, _) => { if (_viewModel.SelectedConversation is { } room) { new RoomPermissionsWindow(_viewModel, room) { Owner = this }.Show(); } }; menu.Items.Add(permissions);
         var archive = new MenuItem { Header = "保管済みを表示", IsCheckable = true, IsChecked = _viewModel.ShowArchived }; archive.Click += (_, _) => _viewModel.ShowArchived = archive.IsChecked; menu.Items.Add(archive);
         var export = new MenuItem { Header = "この会話をMarkdownで書き出す" };
@@ -318,6 +321,7 @@ public partial class MainWindow : Window
     }
     private void Input_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (MentionKey(e)) { return; }
         bool control = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
         if (e.Key == Key.Enter && !_composing && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) && (!_viewModel.Settings.ControlEnterToSend || control))
         {
@@ -327,6 +331,7 @@ public partial class MainWindow : Window
     private async void Window_KeyDown(object sender, KeyEventArgs e)
     {
         if (_composing) { return; }
+        if (InputBox.IsKeyboardFocusWithin && MentionKey(e)) { return; }
         if (e.Key == Key.Escape)
         {
             if (MembersPopup.IsOpen) { MembersPopup.IsOpen = false; MembersButton.Focus(); e.Handled = true; return; }

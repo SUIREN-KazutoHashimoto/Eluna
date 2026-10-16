@@ -62,7 +62,8 @@ public sealed partial class ChatViewModel
         if (Inferences.Items.Count(j => j.IsPending) >= 100) { Error = "推論の予約は100件までです。"; return; }
         ConversationBranch branch = conversation.ActiveBranch;
         ChannelAccess.RequireSpeaker(CaptureState(), conversation.Save(), agent?.Id ?? conversation.Room?.DefaultAgentId);
-        if (previousWork is null && (conversation.Room?.WorkMode ?? _settings.WorkMode) == "debate") { EnsureDebateMembers(conversation); }
+        bool invitation = ChannelInvitations.Requested(branch.Messages.LastOrDefault(m => m.Role == "user")?.Content ?? "");
+        if (!invitation && previousWork is null && (conversation.Room?.WorkMode ?? _settings.WorkMode) == "debate") { EnsureDebateMembers(conversation); }
         agent ??= Agents.FirstOrDefault(a => a.Id == (resumeAnswer?.Identity?.AgentId ?? conversation.Room?.DefaultAgentId));
         if (agent is { Enabled: false }) { Error = "このエージェントは無効です。"; return; }
         ChannelAccess.RequireSpeaker(CaptureState(), conversation.Save(), agent?.Id);
