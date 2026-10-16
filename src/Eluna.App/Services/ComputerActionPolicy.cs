@@ -137,6 +137,14 @@ internal static class ComputerActionPolicy
         catch (InvalidDataException) { return false; }
     }
 
+    internal static string? ProposalProblem(ComputerObservation observation, ComputerAction action)
+    {
+        ComputerElement? element = observation.Elements.FirstOrDefault(e => e.Id == action.Element);
+        if (action.Element > 0 && element is null) { return "指定したIDは現在の画面にありません。最新の一覧のIDを使ってください。"; }
+        if (action.Type == "set_value" && (element is null || element.Type is not ("Edit" or "ComboBox") || !element.Patterns.Contains("value") || element.Patterns.Contains("readonly")))
+        { return "set_valueはvalue能力を持つ書き込み可能なEdit/ComboBox専用です。それ以外はクリックとキーで操作してください。"; }
+        return null;
+    }
     internal static void RequireFresh(ComputerObservation before, ComputerObservation now, ComputerAction action)
     {
         if (before.Target != now.Target || before.Surface != now.Surface || before.Bounds != now.Bounds)
@@ -160,3 +168,4 @@ internal static class ComputerActionPolicy
 
 internal sealed class ComputerScreenChangedException(string category = "画面が変化") : InvalidOperationException("確認後に" + category + "しました。最新の画面から操作を考え直します。")
 { internal string Category { get; } = category; }
+internal sealed class ComputerActionUncertainException(string message) : InvalidOperationException(message);

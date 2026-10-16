@@ -16,12 +16,22 @@ internal sealed class ComputerUseRunner(IComputerDesktop desktop, IComputerPlann
         { throw new ArgumentException("依頼は8,000文字以内、対象は1〜8アプリ、操作上限は1〜100回にしてください。"); }
         using IDisposable lease = await ComputerUseLease.AcquireAsync(token);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, options?.SecondsRemaining ?? 1200)));
-        var steps = options?.PreviousSteps.ToList() ?? []; allowed = allowed.ToList(); ComputerTarget target = allowed[0]; int retries = 0;
+        var steps = options?.PreviousSteps.ToList() ?? []; allowed = allowed.ToList(); ComputerTarget target = allowed[0]; int retries = 0, invalidProposals = 0;
         for (int number = steps.Count + 1; number <= maxSteps; number++)
         {
             deadline.Token.ThrowIfCancellationRequested(); status("対象の画面を確認しています…");
             ComputerObservation observation = await desktop.ObserveAsync(target, deadline.Token); observe(observation);
             ComputerAction action = await planner.NextAsync(task, observation, allowed, steps, deadline.Token); ComputerActionPolicy.Validate(action);
+            string? proposalProblem = ComputerActionPolicy.ProposalProblem(observation, action);
+            if (action.Type == "switch_window" && action.Window > 0 && action.Window <= allowed.Count && allowed[action.Window - 1].Handle == target.Handle)
+            { proposalProblem = "すでに現在のウィンドウです。ブラウザ内のタブは観察したTabItemをクリックしてください。"; }
+            if (proposalProblem is { } problem)
+            {
+                var rejected = new ComputerStep(number, DateTimeOffset.UtcNow, observation.Title, action, "未実行 · " + problem); steps.Add(rejected); record(rejected);
+                if (++invalidProposals >= 3) { return new("needs_user", "実行できない操作案が続いたため停止しました。" + problem, steps.Count); }
+                continue;
+            }
+            invalidProposals = 0;
             if (action.Type == "finish") { return new("complete", action.Reason, steps.Count); }
             if (action.Type == "ask") { return new("needs_user", action.Reason, steps.Count); }
             if (action.Type == "request_app")
@@ -58,6 +68,15 @@ internal sealed class ComputerUseRunner(IComputerDesktop desktop, IComputerPlann
             }
             catch (ComputerScreenChangedException ex)
             { result = "未実行 · " + ex.Message; if (++retries >= 3) { return new("needs_user", "画面の変化が続いています。対象アプリの状態を確認して再実行してください。", steps.Count); } }
+            catch (ComputerActionUncertainException ex)
+            {
+                result = "結果未確認 · " + ex.Message;
+                if (confirmation is not null || ++retries >= 3)
+                {
+                    var uncertain = new ComputerStep(number, DateTimeOffset.UtcNow, observation.Title, action, result); steps.Add(uncertain); record(uncertain);
+                    return new("needs_user", "操作を再送せず停止しました。対象アプリで結果を確認してください。", steps.Count);
+                }
+            }
             finally { options?.AfterAction?.Invoke(); }
             var step = new ComputerStep(number, DateTimeOffset.UtcNow, observation.Title, action, result); steps.Add(step); record(step);
             await Task.Delay(450, deadline.Token);

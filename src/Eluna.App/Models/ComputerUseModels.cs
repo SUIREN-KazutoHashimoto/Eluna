@@ -61,4 +61,4 @@ internal static class ComputerJson
 internal sealed record ComputerWorkerRequest(string Operation, int Parent, ComputerTarget? Target = null,
     ComputerObservation? Observation = null, ComputerAction? Action = null);
 internal sealed record ComputerWorkerResponse(List<ComputerTarget>? Targets = null, ComputerObservation? Observation = null,
-    string? Error = null, bool Changed = false);
+    string? Error = null, bool Changed = false, bool Uncertain = false);

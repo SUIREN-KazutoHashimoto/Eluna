@@ -68,13 +68,15 @@ internal static class ComputerDesktopNative
         return handle;
     }
 
-    internal static ComputerObservation Observe(ComputerTarget target, int parent, bool screenCapture = false)
+    internal static ComputerObservation Observe(ComputerTarget target, int parent, bool screenCapture = false, bool activate = false)
     {
         RequireUnlockedDesktop();
         nint surface = Validate(target, parent);
+        if (activate) { Activate(surface); surface = Validate(target, parent); }
         if (!GetWindowRect(surface, out NativeRect rect)) { throw new Win32Exception(); }
         var bounds = new ComputerBounds(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
         (List<ComputerElement> elements, _) = Elements(surface);
+        if (target.App is "msedge" or "chrome" && !elements.Any(e => e.Type == "Document" && e.Name.Length > 0)) { Thread.Sleep(200); (elements, _) = Elements(surface); }
         (string image, int width, int height, byte[] signature) = Capture(surface, bounds, elements, parent, screenCapture);
         return new(target, surface.ToInt64(), Title(surface), bounds, elements, image, width, height, signature,
             elements.Count == 0 ? "UI要素が得られません。画像対応モデルで座標を判断するか、対象アプリを確認してください。" :
@@ -88,8 +90,8 @@ internal static class ComputerDesktopNative
         {
             var pending = new Queue<(AutomationElement Element, int Depth)>();
             pending.Enqueue((AutomationElement.FromHandle(surface), 0));
-            TreeWalker walker = TreeWalker.ControlViewWalker; int visited = 0;
-            while (pending.TryDequeue(out var next) && visited++ < 640 && items.Count < 256)
+            TreeWalker walker = TreeWalker.RawViewWalker; int visited = 0;
+            while (pending.TryDequeue(out var next) && visited++ < 1024 && items.Count < 256)
             {
                 try
                 {
@@ -106,14 +108,18 @@ internal static class ComputerDesktopNative
                             if (e.TryGetCurrentPattern(ValuePattern.Pattern, out object p)) { value = Limit(((ValuePattern)p).Current.Value, 800); }
                             else if (e.TryGetCurrentPattern(TextPattern.Pattern, out p))
                             { value = Limit(string.Join("\n", ((TextPattern)p).GetVisibleRanges().Take(8).Select(t => t.GetText(800))), 1600); }
+                            if (e.TryGetCurrentPattern(TogglePattern.Pattern, out object toggle)) { value = "state=" + ((TogglePattern)toggle).Current.ToggleState; }
+                            else if (e.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object selection)) { value += " selected=" + ((SelectionItemPattern)selection).Current.IsSelected; }
+                            if (e.TryGetCurrentPattern(ValuePattern.Pattern, out object vp) && ((ValuePattern)vp).Current.IsReadOnly) { patterns.Add("readonly"); }
                         }
                         string runtime = string.Join('.', e.GetRuntimeId());
                         var item = new ComputerElement(items.Count + 1, runtime, info.IsPassword ? "［パスワード欄］" : name,
                             info.ControlType.ProgrammaticName.Replace("ControlType.", "", StringComparison.Ordinal), info.IsPassword ? "［非表示］" : value,
                             new((int)r.Left, (int)r.Top, (int)Math.Ceiling(r.Width), (int)Math.Ceiling(r.Height)), info.IsPassword, info.IsEnabled, [.. patterns]);
-                        items.Add(item); live[runtime] = e;
+                        if (info.ControlType != ControlType.Pane || name.Length > 0 || value.Length > 0 || patterns.Count > 0)
+                        { items.Add(item); live[runtime] = e; }
                     }
-                    if (next.Depth < 16)
+                    if (next.Depth < 48)
                     {
                         AutomationElement? child = walker.GetFirstChild(next.Element); int siblings = 0;
                         while (child is not null && siblings++ < 256 && pending.Count < 640)
@@ -154,7 +160,7 @@ internal static class ComputerDesktopNative
         if (action.Type is "click" or "double_click" or "right_click" or "drag" or "scroll")
         {
             if (now.Elements.Any(e => e.Password && e.Bounds.Contains(x, y))) { throw new InvalidOperationException("パスワード欄は操作しません。"); }
-            PointTarget(surface, now.Bounds, x, y);
+            PointTarget(surface, now.Bounds, x, y, expected);
         }
         switch (action.Type)
         {
@@ -167,6 +173,8 @@ internal static class ComputerDesktopNative
             case "click": Move(x, y); Send(Mouse(2), Mouse(4)); break;
             case "double_click": Move(x, y); Send(Mouse(2), Mouse(4), Mouse(2), Mouse(4)); break;
             case "right_click": Move(x, y); Send(Mouse(8), Mouse(16)); break;
+            case "set_value" when element is not null && expected?.Type == "ComboBox":
+                SetComboValue(surface, now, element, expected, action.Text); break;
             case "set_value":
                 if (element is null || !element.TryGetCurrentPattern(ValuePattern.Pattern, out object v) || ((ValuePattern)v).Current.IsReadOnly)
                 { throw new InvalidOperationException("この入力欄は置き換えに対応していません。文字入力を使ってください。"); }
@@ -190,6 +198,36 @@ internal static class ComputerDesktopNative
         }
     }
 
+    private static void SetComboValue(nint surface, ComputerObservation before, AutomationElement combo, ComputerElement expected, string text)
+    {
+        if (!combo.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out object p))
+        {
+            if (!combo.TryGetCurrentPattern(ValuePattern.Pattern, out p) || ((ValuePattern)p).Current.IsReadOnly) { throw new ComputerActionUncertainException("選択欄を変更できません。現在の選択肢を確認してください。"); }
+            ((ValuePattern)p).SetValue(text);
+            if (((ValuePattern)p).Current.Value != text) { throw new ComputerActionUncertainException("選択欄へ指定値が反映されていません。現在の値を確認してください。"); }
+            return;
+        }
+        var expand = (ExpandCollapsePattern)p;
+        if (expand.Current.ExpandCollapseState == ExpandCollapseState.Expanded) { expand.Collapse(); Thread.Sleep(80); }
+        HashSet<string> existing = Elements(surface).Items.Where(e => e.Type == "ListItem").Select(e => e.RuntimeId).ToHashSet(StringComparer.Ordinal);
+        expand.Expand();
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            Thread.Sleep(80); (List<ComputerElement> options, Dictionary<string, AutomationElement> live) = Elements(surface);
+            ComputerElement[] matches = options.Where(e => e.Type == "ListItem" && !existing.Contains(e.RuntimeId) && e.Name == text && e.Enabled && !e.Password &&
+                e.Bounds.Left < expected.Bounds.Left + expected.Bounds.Width && e.Bounds.Left + e.Bounds.Width > expected.Bounds.Left).ToArray();
+            if (matches.Length == 1)
+            {
+                ComputerElement item = matches[0]; int x = item.Bounds.Left + item.Bounds.Width / 2, y = item.Bounds.Top + item.Bounds.Height / 2;
+                PointTarget(surface, before.Bounds, x, y, item);
+                AutomationElement option = live[item.RuntimeId];
+                if (option.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object select)) { ((SelectionItemPattern)select).Select(); return; }
+                if (option.TryGetCurrentPattern(InvokePattern.Pattern, out object invoke)) { ((InvokePattern)invoke).Invoke(); return; }
+            }
+        }
+        throw new ComputerActionUncertainException("選択欄を開きましたが、指定した選択肢を一意に確認できません。最新の選択肢から操作を考え直してください。");
+    }
+
     private static void FocusIsSafe(nint surface, ComputerBounds bounds)
     {
         Foreground(surface); AutomationElement focused = AutomationElement.FocusedElement;
@@ -209,11 +247,28 @@ internal static class ComputerDesktopNative
         for (int i = 0; i < 20 && GetForegroundWindow() != surface; i++) { Thread.Sleep(25); }
         Foreground(surface);
     }
-    private static void PointTarget(nint surface, ComputerBounds bounds, int x, int y)
+    private static void PointTarget(nint surface, ComputerBounds bounds, int x, int y, ComputerElement? expected = null)
     {
         Foreground(surface);
-        if (!bounds.Contains(x, y) || GetAncestor(WindowFromPoint(new(x, y)), 2) != surface)
+        nint hit = GetAncestor(WindowFromPoint(new(x, y)), 2);
+        _ = GetWindowThreadProcessId(hit, out uint hitPid); _ = GetWindowThreadProcessId(surface, out uint surfacePid);
+        bool ownPopup = hitPid == surfacePid && GetAncestor(hit, 3) == GetAncestor(surface, 3);
+        // Chromium menus can have a separate HWND. The observed UIA subtree must contain the hit element.
+        bool verifiedElement = expected is not null && hitPid == surfacePid && PointInElement(x, y, expected);
+        if ((!bounds.Contains(x, y) || hit != surface && !ownPopup) && !verifiedElement)
         { throw new InvalidOperationException("対象の位置が別のウィンドウに隠れています。対象アプリを表示して再実行してください。"); }
+    }
+    private static bool PointInElement(int x, int y, ComputerElement expected)
+    {
+        if (!expected.Bounds.Contains(x, y)) { return false; }
+        try
+        {
+            AutomationElement? element = AutomationElement.FromPoint(new(x, y));
+            for (int i = 0; element is not null && i < 48; i++, element = TreeWalker.RawViewWalker.GetParent(element))
+            { if (string.Join('.', element.GetRuntimeId()) == expected.RuntimeId) { return true; } }
+        }
+        catch (Exception ex) when (ex is ElementNotAvailableException or InvalidOperationException or COMException) { }
+        return false;
     }
     private static string Limit(string? text, int max) => text is null ? "" : text[..Math.Min(max, text.Length)];
     private static string Title(nint handle) { var text = new StringBuilder(Math.Min(4096, GetWindowTextLength(handle) + 1)); GetWindowText(handle, text, text.Capacity); return Limit(text.ToString(), 300); }

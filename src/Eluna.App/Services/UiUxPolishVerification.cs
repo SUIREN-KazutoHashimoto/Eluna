@@ -57,6 +57,8 @@ internal static class UiUxPolishVerification
             var settings = Offscreen(new SettingsWindow(vm, 4) { Owner = window });
             await PrototypePreview.RenderAsync(settings, Path.Combine(output, "settings-management.png"));
             foreach (string label in new[] { "モデルを探す", "モデル管理", "データ・バックアップ", "ダウンロード管理" }) { Check(Find<Button>(settings).Any(b => b.Content is string s && s == label && b.IsVisible), "Missing management route: " + label); }
+            await CheckComputerAwakeAsync(vm, store, output);
+            report["computerUseKeepAwake"] = "default-on, unsaved protection, explicit off/on persistence, dark/light minimum size and 130% text";
             settings.SelectTab(0); ((TextBox)settings.FindName("InstructionBox")).Text += "\n未保存の変更";
             int reviews = 0; UnsavedChanges.Review = _ => { reviews++; return null; }; settings.Close();
             Check(settings.IsVisible && reviews == 1, "Settings discarded an unsaved edit without cancellation.");
@@ -174,6 +176,37 @@ internal static class UiUxPolishVerification
             await Task.Delay(100); window.Close();
         }
     }
+    private static async Task CheckComputerAwakeAsync(ChatViewModel vm, AppStore store, string output)
+    {
+        AppSettings original = vm.Settings;
+        Check(original.ComputerUseKeepAwake, "The default-on setting was not loaded.");
+        var settings = Offscreen(new SettingsWindow(vm));
+        var box = (CheckBox)settings.FindName("ComputerAwakeBox");
+        Check(box.IsChecked == true, "The settings checkbox did not show the enabled value.");
+        box.IsChecked = false; box.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        Check(((TextBlock)settings.FindName("SaveStateText")).Text.Contains("未保存", StringComparison.Ordinal), "The power checkbox did not mark settings dirty.");
+        int reviews = 0; UnsavedChanges.Review = _ => { reviews++; return null; }; settings.Close();
+        Check(settings.IsVisible && reviews == 1 && vm.Settings.ComputerUseKeepAwake, "An unsaved power change escaped the close protection or changed live settings.");
+        Click((Button)settings.FindName("SaveButton")); await Until(() => !vm.Settings.ComputerUseKeepAwake && ((Button)settings.FindName("SaveButton")).IsEnabled);
+        Check(!(await store.LoadAsync()).Settings.ComputerUseKeepAwake, "Saving the power opt-out did not persist.");
+        settings.Close();
+        settings = Offscreen(new SettingsWindow(vm)); box = (CheckBox)settings.FindName("ComputerAwakeBox");
+        Check(box.IsChecked == false, "Reopening settings lost the power opt-out.");
+        box.IsChecked = true; box.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        Click((Button)settings.FindName("SaveButton")); await Until(() => vm.Settings.ComputerUseKeepAwake && ((Button)settings.FindName("SaveButton")).IsEnabled);
+        Check((await store.LoadAsync()).Settings.ComputerUseKeepAwake, "Re-enabling the power setting did not persist.");
+        foreach (string theme in new[] { "dark", "light" })
+        {
+            Appearance.Apply(theme); settings.Width = 860; settings.Height = 740;
+            box.BringIntoView(); await PrototypePreview.RenderAsync(settings, Path.Combine(output, "computer-awake-" + theme + ".png"));
+            settings.Width = settings.MinWidth; settings.Height = settings.MinHeight; Appearance.Apply(theme, 1.3);
+            box.BringIntoView(); await PrototypePreview.RenderAsync(settings, Path.Combine(output, "computer-awake-" + theme + "-small.png"));
+            var label = (TextBlock)box.Content;
+            Check(box.IsVisible && box.ActualWidth > 150 && label.ActualHeight >= 10 && label.ActualWidth <= box.ActualWidth && ((Button)settings.FindName("SaveButton")).ActualWidth > 0, "The power option or Save button was clipped at the minimum settings size.");
+        }
+        settings.Close(); Appearance.Apply(original.Theme, original.UiScale); UnsavedChanges.Review = _ => false;
+    }
+
     private sealed class ModelHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

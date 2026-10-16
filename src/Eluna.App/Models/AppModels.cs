@@ -202,7 +202,7 @@ public sealed record SavedConversation(Guid Id, string Title, List<SavedMessage>
 public sealed record AppSettings(string? ModelId = null, string Compute = "auto", int ContextSize = 4096, string InferenceMode = InferenceModes.DefaultId,
     double ChatFontSize = 14, double LineHeight = 22, string Theme = "dark", bool SidebarVisible = true, bool ControlEnterToSend = false,
     string SystemInstruction = "あなたは親切で正確なアシスタントです。ユーザーの言語で簡潔に答えてください。",
-    string WorkMode = "chat", WorkOptions? WorkOptions = null, Guid? SelectedProjectId = null, int MaxConcurrentInferences = 1, string SkillMode = "auto", double UiScale = 1, int MaxConcurrentDownloads = 1, int MaxConcurrentMedia = 1);
+    string WorkMode = "chat", WorkOptions? WorkOptions = null, Guid? SelectedProjectId = null, int MaxConcurrentInferences = 1, string SkillMode = "auto", double UiScale = 1, int MaxConcurrentDownloads = 1, int MaxConcurrentMedia = 1, bool ComputerUseKeepAwake = true);
 public sealed record AppState(int SchemaVersion, AppSettings Settings, List<SavedConversation> Conversations,
     List<KnowledgeProject>? Projects = null, List<MemoryNote>? CommonMemories = null, List<SavedInferenceJob>? InferenceJobs = null, List<SkillRegistration>? Skills = null);
 public sealed record LocalModelPart(string FilePath, string Sha256, long Size);

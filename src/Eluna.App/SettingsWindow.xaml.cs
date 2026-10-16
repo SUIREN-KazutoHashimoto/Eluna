@@ -29,6 +29,7 @@ public partial class SettingsWindow : Window
         FontBox.ItemsSource = new[] { 12.0, 14, 15, 16, 18, 20, 24, 28, viewModel.Settings.ChatFontSize }.Distinct().Order().ToArray(); FontBox.SelectedItem = viewModel.Settings.ChatFontSize;
         LineBox.ItemsSource = new[] { 18.0, 22, 25, 28, 32, 36, 42, 50, 60, viewModel.Settings.LineHeight }.Distinct().Order().ToArray(); LineBox.SelectedItem = viewModel.Settings.LineHeight;
         ControlEnterBox.IsChecked = viewModel.Settings.ControlEnterToSend;
+        ComputerAwakeBox.IsChecked = viewModel.Settings.ComputerUseKeepAwake;
         InstructionBox.Text = viewModel.Settings.SystemInstruction;
         UiScaleBox.ItemsSource = new[] { new KeyValuePair<double, string>(1, "100%"), new(1.15, "115%"), new(1.3, "130%"), new(1.5, "150%") }; UiScaleBox.SelectedValue = viewModel.Settings.UiScale;
         CommonMemoryEditor.LoadNotes(viewModel.CommonMemories); SettingsTabs.SelectedIndex = initialTab;
@@ -36,10 +37,11 @@ public partial class SettingsWindow : Window
         AddHandler(TextBoxBase.TextChangedEvent, new TextChangedEventHandler((_, _) => Edited()));
         AddHandler(Selector.SelectionChangedEvent, new SelectionChangedEventHandler((_, _) => Edited()));
         ControlEnterBox.Click += (_, _) => Edited(); CommonMemoryEditor.Changed += (_, _) => Edited();
+        ComputerAwakeBox.Click += (_, _) => Edited();
         UnsavedChanges.Protect(this, () => !_saving && Snapshot() != _baseline, SaveAsync);
         Closed += (_, _) => LicenseView.Dispose();
     }
-    private string Snapshot() => JsonSerializer.Serialize(new { ComputeBox.SelectedItem, Context = ContextBox.SelectedItem, Concurrency = ConcurrencyBox.SelectedItem, DownloadConcurrency = DownloadConcurrencyBox.SelectedItem, MediaConcurrency = MediaConcurrencyBox.SelectedItem, Font = FontBox.SelectedItem, Line = LineBox.SelectedItem, Theme = ThemeBox.SelectedIndex, UiScale = UiScaleBox.SelectedValue, ControlEnterBox.IsChecked, InstructionBox.Text, Memories = CommonMemoryEditor.GetNotes() });
+    private string Snapshot() => JsonSerializer.Serialize(new { ComputeBox.SelectedItem, Context = ContextBox.SelectedItem, Concurrency = ConcurrencyBox.SelectedItem, DownloadConcurrency = DownloadConcurrencyBox.SelectedItem, MediaConcurrency = MediaConcurrencyBox.SelectedItem, Font = FontBox.SelectedItem, Line = LineBox.SelectedItem, Theme = ThemeBox.SelectedIndex, UiScale = UiScaleBox.SelectedValue, ControlEnterBox.IsChecked, ComputerUseKeepAwake = ComputerAwakeBox.IsChecked, InstructionBox.Text, Memories = CommonMemoryEditor.GetNotes() });
     private void Edited() { bool dirty = Snapshot() != _baseline; SaveStateText.Text = dirty ? "未保存の変更があります" : "保存済み"; Title = dirty ? "設定 · 変更あり · Eluna" : "設定 · Eluna"; }
     private async void Save_Click(object sender, RoutedEventArgs e) => await SaveAsync();
     private async Task<bool> SaveAsync()
@@ -62,6 +64,7 @@ public partial class SettingsWindow : Window
                 Theme = theme.Key,
                 UiScale = scale,
                 ControlEnterToSend = ControlEnterBox.IsChecked == true,
+                ComputerUseKeepAwake = ComputerAwakeBox.IsChecked == true,
                 SystemInstruction = InstructionBox.Text
             }, JsonSerializer.Serialize(CommonMemoryEditor.GetNotes()) == _memoryBaseline ? null : CommonMemoryEditor.GetNotes());
             _baseline = Snapshot(); _memoryBaseline = JsonSerializer.Serialize(CommonMemoryEditor.GetNotes()); Edited(); return true;

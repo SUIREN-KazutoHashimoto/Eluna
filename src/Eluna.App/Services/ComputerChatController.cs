@@ -120,6 +120,8 @@ internal sealed class ComputerChatController(ComputerSession session, Func<Llama
                     await DesktopGate.WaitAsync(segment.Token); acquired = true;
                     ComputerDesktopNative.RequireUnlockedDesktop();
                     segment.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, 1200 - session.SecondsUsed)));
+                    using var awake = ComputerAwakeRequest.Acquire(settings.ComputerUseKeepAwake);
+                    using CancellationTokenRegistration awakeStop = segment.Token.Register(awake.Dispose);
                     using var hotkey = new ComputerStopHotkey(Application.Current.MainWindow, Stop);
                     using var overlay = new ComputerUseOverlay(() => _ = HandleAsync("pause"), Stop); _overlay = overlay;
                     using LlamaService engine = engineFactory();

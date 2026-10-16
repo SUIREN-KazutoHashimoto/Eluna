@@ -14,6 +14,10 @@
             <TextBlock Text="同時に取得するダウンロードの数" Margin="0,0,0,8" /><ComboBox x:Name="DownloadConcurrencyBox" AutomationProperties.Name="ダウンロードの同時実行数" Margin="0,0,0,16" />
             <TextBlock Text="同時に実行する画像・文書生成の数" Margin="0,0,0,8" /><ComboBox x:Name="MediaConcurrencyBox" AutomationProperties.Name="画像・文書生成の同時実行数" />
             <TextBlock Text="各1〜4件。初期値は1です。チャット推論と独立して実行し、生成ごとにモデルのメモリを使います。実行中の処理は設定を減らしても停止しません。" FontSize="12" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,8,0,20" />
+            <CheckBox x:Name="ComputerAwakeBox" AutomationProperties.Name="Computer Use中の自動スリープを防ぐ">
+              <TextBlock Text="Computer Use中の自動スリープを防ぐ" TextWrapping="Wrap" />
+            </CheckBox>
+            <TextBlock Text="初期値はオンです。実行中と操作の確認待ちは画面とPCを起動状態に保ち、一時停止・終了時に解除します。手動のスリープやロックは防ぎません。変更は次の依頼から適用します。" FontSize="12" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,8,0,20" />
             <TextBlock Text="会話を記憶する長さ（トークン）" Margin="0,0,0,8" /><ComboBox x:Name="ContextBox" AutomationProperties.Name="会話を記憶する長さ（トークン）" />
             <TextBlock Text="長くするとメモリを多く使います。長い会話は元の履歴を残して要約します。" Foreground="{DynamicResource MutedBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,20" />
             <TextBlock Text="表示テーマ" Margin="0,0,0,8" /><ComboBox x:Name="ThemeBox" AutomationProperties.Name="表示テーマ" DisplayMemberPath="Value" Margin="0,0,0,20" />

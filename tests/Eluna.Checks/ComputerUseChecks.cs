@@ -21,6 +21,7 @@ internal static class ComputerUseChecks
 
     internal static async Task RunAsync()
     {
+        await CheckAwakeAsync();
         await CheckBrowserFixtureAsync();
         ComputerObservation screen = Screen();
         Check(ComputerUseOverlay.ActionArea(screen, new("click", X: 1000, Y: 1000)) is { Left: -229, Top: 771 }, "Overlay coordinates lost the negative monitor origin or last pixel.");
@@ -33,6 +34,13 @@ internal static class ComputerUseChecks
         Check(ComputerUseOverlay.BarPlacement(work, 490, 68, work) is null, "Overlay controls covered a drag spanning the monitor.");
         Check(ComputerUseOverlay.BarPlacement(new(0, 0, 200, 100), 490, 68, null) is null, "Overlay controls were clipped on an undersized work area.");
         ComputerAction action = new("set_value", "日本語を入力", 1, Text: "テスト文章");
+        Check(ComputerActionPolicy.ProposalProblem(screen, action) is null, "Writable edit was rejected.");
+        Check(ComputerActionPolicy.ProposalProblem(screen, action with { Element = 99 }) is not null, "Invented element ID reached execution.");
+        Check(ComputerActionPolicy.ProposalProblem(screen, action with { Element = 2 }) is not null, "A button was accepted for set_value.");
+        var readOnly = screen with { Elements = [screen.Elements[0] with { Patterns = ["value", "readonly"] }] };
+        Check(ComputerActionPolicy.ProposalProblem(readOnly, action) is not null, "A read-only field reached execution.");
+        var combo = screen with { Elements = [screen.Elements[0] with { Type = "ComboBox" }] };
+        Check(ComputerActionPolicy.ProposalProblem(combo, action) is null, "A writable combo box was rejected.");
         Check(ComputerActionPolicy.Parse(JsonSerializer.Serialize(action, ComputerJson.Options)) == action, "Action JSON round trip changed Unicode.");
         Reject(() => ComputerActionPolicy.Parse("{\"type\":\"shell\",\"text\":\"run\"}"), "Unrecognized action was accepted.");
         Reject(() => ComputerActionPolicy.Parse("{\"type\":\"click\",\"extra\":\"ignore approval\"}"), "Unknown JSON fields were accepted.");
@@ -89,6 +97,18 @@ internal static class ComputerUseChecks
         Check(result.State == "complete" && desktop.Executed == 2 && reviews == 2 && observations == 3 && log.Count == 2, "Observe / confirm / execute / reobserve loop failed.");
         Check(effectsBefore == 2 && effectsAfter == 2, "Action effects did not bracket execution.");
         await Task.Delay(40);
+        desktop = new(screen); planner = new([action with { Element = 99 }, action, new("finish")]); reviews = 0;
+        result = await new ComputerUseRunner(desktop, planner).RunAsync("誤ったIDから再判断", [Target], 5, false, _ => { }, _ => { }, _ => { }, (_, _) => { reviews++; return Task.FromResult(true); }, CancellationToken.None);
+        Check(result.State == "complete" && result.Steps == 2 && desktop.Executed == 1 && reviews == 1, "A bad proposal caused input, review or prevented recovery.");
+        await Task.Delay(40);
+        desktop = new(screen); planner = new(Enumerable.Repeat(action with { Element = 99 }, 3));
+        result = await new ComputerUseRunner(desktop, planner).RunAsync("誤った提案の上限", [Target], 8, false, _ => { }, _ => { }, _ => { }, (_, _) => throw new InvalidOperationException("Invalid proposals must not reach review."), CancellationToken.None);
+        Check(result.State == "needs_user" && result.Steps == 3 && desktop.Executed == 0, "Invalid proposals repeated without a bounded stop.");
+        await Task.Delay(40);
+        desktop = new(screen); planner = new([new("switch_window", Window: 1), new("finish")]);
+        result = await new ComputerUseRunner(desktop, planner).RunAsync("同じウィンドウへの切替", [Target], 5, true, _ => { }, _ => { }, _ => { }, (_, _) => throw new InvalidOperationException("A no-op must not reach review."), CancellationToken.None);
+        Check(result.State == "complete" && result.Steps == 1 && desktop.Executed == 0, "A current-window switch was reported as an executed operation.");
+        await Task.Delay(40);
         desktop = new(screen); planner = new([action]);
         result = await new ComputerUseRunner(desktop, planner).RunAsync("入力", [Target], 5, false, _ => { }, _ => { }, _ => { }, (_, _) => Task.FromResult(false), CancellationToken.None,
             new(() => false, [], BeforeAction: (_, _) => throw new InvalidOperationException("Declined action displayed execution effects.")));
@@ -97,6 +117,14 @@ internal static class ComputerUseChecks
         desktop = new(screen); planner = new([action, new("click", Element: 2), new("finish")]); reviews = 0;
         result = await new ComputerUseRunner(desktop, planner).RunAsync("入力して送信", [Target], 5, false, _ => { }, _ => { }, _ => { }, (_, _) => { reviews++; return Task.FromResult(true); }, CancellationToken.None, new(() => true, []));
         Check(result.State == "complete" && desktop.Executed == 2 && reviews == 1, "Automatic mouse/keyboard did not preserve the consequential-action boundary.");
+        await Task.Delay(40);
+        desktop = new(screen) { Uncertain = true }; planner = new([action, new("finish")]); log.Clear(); observations = 0;
+        result = await new ComputerUseRunner(desktop, planner).RunAsync("入力結果を再確認", [Target], 5, false, _ => observations++, log.Add, _ => { }, (_, _) => throw new InvalidOperationException("Ordinary automatic input should not need review."), CancellationToken.None, new(() => true, []));
+        Check(result.State == "complete" && desktop.Executed == 1 && observations == 2 && log.Single().Result.Contains("結果未確認", StringComparison.Ordinal), "An uncertain ordinary action was replayed or did not reobserve its result.");
+        await Task.Delay(40);
+        desktop = new(screen) { Uncertain = true }; planner = new([new("click", Element: 2), new("finish")]); log.Clear(); effectsAfter = 0;
+        result = await new ComputerUseRunner(desktop, planner).RunAsync("送信結果が不明", [Target], 5, false, _ => { }, log.Add, _ => { }, (_, _) => Task.FromResult(true), CancellationToken.None, new(() => true, [], AfterAction: () => effectsAfter++));
+        Check(result.State == "needs_user" && desktop.Executed == 1 && result.Steps == 1 && log.Count == 1 && effectsAfter == 1, "An uncertain consequential action was replayed, omitted from history or left effects active.");
         await Task.Delay(40);
         desktop = new(screen); planner = new([new("finish")]);
         result = await new ComputerUseRunner(desktop, planner).RunAsync("再開", [Target], 5, false, _ => { }, _ => { }, _ => { }, (_, _) => Task.FromResult(true), CancellationToken.None,
@@ -157,6 +185,35 @@ internal static class ComputerUseChecks
         Console.WriteLine("Computer Use: action protocol, permission boundaries, stale screen, observe-act loop, denial, cancellation and exclusive input: OK");
     }
 
+    private static async Task CheckAwakeAsync()
+    {
+        Check(new AppSettings().ComputerUseKeepAwake && JsonSerializer.Deserialize<AppSettings>("{}", AppStore.JsonOptions)!.ComputerUseKeepAwake, "New or legacy settings did not enable the Computer Use power request by default.");
+        var store = new AppStore(Path.GetFullPath("artifacts/checks/computer-power-" + Guid.NewGuid().ToString("N")));
+        AppState state = await store.LoadAsync();
+        await store.SaveAsync(state with { Settings = state.Settings with { ComputerUseKeepAwake = false } });
+        Check(!(await store.LoadAsync()).Settings.ComputerUseKeepAwake, "An explicit opt-out was lost on reload.");
+        await store.SaveAsync(state with { Settings = state.Settings with { ComputerUseKeepAwake = true } });
+        Check((await store.LoadAsync()).Settings.ComputerUseKeepAwake, "The enabled power preference was lost on reload.");
+        using var disabled = ComputerAwakeRequest.Acquire(false);
+        Check(!disabled.Active && disabled.IsInvalid, "A disabled preference created a Windows power request.");
+        using var first = ComputerAwakeRequest.Acquire(true);
+        using var second = ComputerAwakeRequest.Acquire(true);
+        Check(first.Active && second.Active, "Windows did not accept both system and display power requests.");
+        await Task.Run(first.Dispose); first.Dispose();
+        Check(!first.Active && first.IsClosed && second.Active, "Cross-thread or repeated cleanup closed another request or retained this one.");
+        using var canceled = new CancellationTokenSource();
+        using CancellationTokenRegistration registration = canceled.Token.Register(second.Dispose);
+        canceled.Cancel();
+        Check(!second.Active && second.IsClosed, "Cancellation retained a power request.");
+        ComputerAwakeRequest? failed = null;
+        try { using var request = ComputerAwakeRequest.Acquire(true); failed = request; throw new InvalidOperationException("Simulated inference failure."); }
+        catch (InvalidOperationException) { }
+        Check(failed is { IsClosed: true, Active: false }, "An inference exception retained its power request.");
+        using var resumed = ComputerAwakeRequest.Acquire(true);
+        Check(resumed.Active, "A later run could not reacquire its power request.");
+        Console.WriteLine("Computer Use power: default/legacy opt-in, opt-out persistence, native system/display requests, cross-thread/canceled/exception cleanup and reacquisition: OK");
+    }
+
     private static async Task CheckBrowserFixtureAsync()
     {
         string output = Path.GetFullPath("artifacts/checks/computer-browser-fixture"); Directory.CreateDirectory(output);
@@ -183,10 +240,10 @@ internal static class ComputerUseChecks
 
     private sealed class FakeDesktop(ComputerObservation screen) : IComputerDesktop
     {
-        internal int Executed; internal bool Changed; internal ComputerAction? LastAction;
+        internal int Executed; internal bool Changed; internal bool Uncertain; internal ComputerAction? LastAction;
         public Task<ComputerObservation> ObserveAsync(ComputerTarget target, CancellationToken token) => Task.FromResult(screen with { Target = target });
         public Task ExecuteAsync(ComputerObservation observation, ComputerAction action, CancellationToken token)
-        { if (Changed) { throw new ComputerScreenChangedException(); } token.ThrowIfCancellationRequested(); LastAction = action; Executed++; return Task.CompletedTask; }
+        { if (Changed) { throw new ComputerScreenChangedException(); } token.ThrowIfCancellationRequested(); LastAction = action; Executed++; if (Uncertain) { throw new ComputerActionUncertainException("UI changed while returning the result."); } return Task.CompletedTask; }
     }
     private sealed class FakePlanner(IEnumerable<ComputerAction> actions) : IComputerPlanner
     {

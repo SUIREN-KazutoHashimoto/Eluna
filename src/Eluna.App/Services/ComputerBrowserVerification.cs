@@ -33,14 +33,23 @@ internal static class ComputerBrowserVerification
             while (target is null) { target = (await desktop.WindowsAsync(token)).FirstOrDefault(w => w.ProcessId == browser.Id && w.Title.Contains("Eluna ブラウザ検証", StringComparison.Ordinal)); if (target is null) { await Task.Delay(200, token); } }
             await File.WriteAllTextAsync(Path.Combine(output, "ready.json"), JsonSerializer.Serialize(new { Url = url, Target = target }, ComputerJson.Options), token);
             await File.WriteAllTextAsync(Path.Combine(output, "desktop-before.txt"), ComputerDesktopNative.DesktopStatus(target), token);
+            // A tool-launched process may not own Windows foreground permission. Activate the isolated
+            // browser normally before starting the model; never bypass the OS foreground restriction.
+            DateTimeOffset activationDeadline = DateTimeOffset.UtcNow.AddSeconds(60);
+            while (!ComputerDesktopNative.TargetInForeground(target))
+            {
+                ComputerDesktopNative.RequireUnlockedDesktop();
+                if (DateTimeOffset.UtcNow >= activationDeadline) { throw new InvalidOperationException("検証用Edgeを前面にできないため、操作を開始せず終了しました。"); }
+                await Task.Delay(100, token);
+            }
             LocalModel model = JsonSerializer.Deserialize<LocalModel>(await File.ReadAllTextAsync(metadata, token), AppStore.JsonOptions)!;
-            model = model with { Preferences = new(ContextSize: 8192, Temperature: 0.1, MaxOutputTokens: 1024, DefaultMode: "fast") };
+            model = model with { Preferences = new(ContextSize: 8192, Temperature: 0.1, MaxOutputTokens: 1024, DefaultMode: "standard") };
             string folder = Path.Combine(store.ModelsDirectory, model.Id); Directory.CreateDirectory(folder);
             await File.WriteAllTextAsync(Path.Combine(folder, "model.json"), JsonSerializer.Serialize(model, AppStore.JsonOptions), token);
-            main = new MainWindow(store) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -20000, Top = -20000 }; main.Show();
+            main = new MainWindow(store) { WindowStartupLocation = WindowStartupLocation.CenterScreen }; main.Show(); main.Activate();
             await Until(() => main.ViewModel.IsReady || main.ViewModel.HasError);
             if (!main.ViewModel.IsReady) { throw new InvalidOperationException(main.ViewModel.Error); }
-            await main.ViewModel.ApplySettingsAsync(main.ViewModel.Settings with { Compute = main.ViewModel.ComputeChoices.Any(d => d.Id == "Vulkan0") ? "Vulkan0" : "cpu", InferenceMode = "fast" });
+            await main.ViewModel.ApplySettingsAsync(main.ViewModel.Settings with { Compute = main.ViewModel.ComputeChoices.Any(d => d.Id == "Vulkan0") ? "Vulkan0" : "cpu", InferenceMode = "standard" });
             await Task.Delay(700, token);
             await File.WriteAllTextAsync(Path.Combine(output, "desktop-ready.txt"), ComputerDesktopNative.DesktopStatus(target), token);
             string task = "開いているEluna ブラウザ検証のページだけを使って、次の作業をしてください。カタログでカテゴリをミニPC、最大価格を120000円、メモリ32GB以上、在庫ありのみに設定し、価格が安い順に並べてください。条件を満たす最安商品の詳細を開き、商品名・税込価格・メモリを確認してください。比較メモを別タブで開き、その商品名・価格（数字だけ）・メモリ（数字だけ）を入力してください。用途は「ローカルAI用」、受け取り方法は「店頭受取」にして「下書きを保存」を押してください。保存済み表示と入力内容を確認してから完了を報告してください。実際の購入や別サイトへの移動は不要です。";
@@ -50,13 +59,13 @@ internal static class ComputerBrowserVerification
             session = main.ViewModel.SelectedConversation!.Messages.Last(m => m.Computer is not null).Computer!;
             await Until(() => session.Selecting && session.Windows.Count > 0);
             session.Windows.Clear(); session.Windows.Add(new(target) { Selected = true }); session.MaxSteps = 60; session.Invoke("allow");
-            int savedSteps = -1, reviews = 0; string lastStage = "";
+            int savedSteps = -1, reviews = 0; string lastStage = "", lastDetail = "";
             while (!session.Completion.IsCompleted)
             {
                 token.ThrowIfCancellationRequested();
-                if (savedSteps != session.Steps.Count || lastStage != session.Stage)
+                if (savedSteps != session.Steps.Count || lastStage != session.Stage || lastDetail != session.Detail)
                 {
-                    savedSteps = session.Steps.Count; lastStage = session.Stage;
+                    savedSteps = session.Steps.Count; lastStage = session.Stage; lastDetail = session.Detail;
                     await File.WriteAllTextAsync(Path.Combine(output, "progress.json"), JsonSerializer.Serialize(new { session.Stage, session.Detail, Steps = session.Steps }, ComputerJson.Options), token);
                     if (session.Observation is { } observation)
                     {
@@ -92,7 +101,7 @@ internal static class ComputerBrowserVerification
             bool displayed = final.Elements.Any(e => (e.Name + e.Value).Contains("下書きを保存しました", StringComparison.Ordinal));
             await File.WriteAllBytesAsync(Path.Combine(output, "final.jpg"), Convert.FromBase64String(final.ImageBase64), token);
             await PrototypePreview.RenderAsync(main, Path.Combine(output, "chat-result.png"));
-            await File.WriteAllTextAsync(Path.Combine(output, "result.json"), JsonSerializer.Serialize(new { Success = correct && displayed && session.Stage == "complete", Saved = saved, Correct = correct, Displayed = displayed, session.Stage, session.Detail, Model = model.DisplayName, Compute = main.ViewModel.Settings.Compute, Reviews = reviews, session.SecondsUsed, Steps = session.Steps }, ComputerJson.Options), token);
+            await File.WriteAllTextAsync(Path.Combine(output, "result.json"), JsonSerializer.Serialize(new { Success = correct && displayed && session.Stage == "complete", Saved = saved, Correct = correct, Displayed = displayed, session.Stage, session.Detail, Model = model.DisplayName, Compute = main.ViewModel.Settings.Compute, InferenceMode = main.ViewModel.Settings.InferenceMode, Reviews = reviews, session.SecondsUsed, Steps = session.Steps }, ComputerJson.Options), token);
         }
         catch (Exception ex)
         {

@@ -3,6 +3,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using System.Windows.Automation;
 using Eluna.App.Models;
 
 namespace Eluna.App.Services;
@@ -36,7 +37,7 @@ internal sealed class ComputerDesktop : IComputerDesktop
         try
         {
             process.Start(); job = new WindowsJob(process);
-            if (request.Operation == "execute") { _ = AllowSetForegroundWindow((uint)process.Id); }
+            if (request.Operation is "execute" or "observe" or "observe-screen") { _ = AllowSetForegroundWindow((uint)process.Id); }
             Task<string> response = process.StandardOutput.ReadToEndAsync(deadline.Token);
             Task<string> errors = process.StandardError.ReadToEndAsync(deadline.Token);
             await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(request, ComputerJson.Options).AsMemory(), deadline.Token);
@@ -45,6 +46,7 @@ internal sealed class ComputerDesktop : IComputerDesktop
             if (json.Length > 8000000 || process.ExitCode != 0) { throw new IOException("画面操作の補助プロセスを完了できませんでした。"); }
             ComputerWorkerResponse result = JsonSerializer.Deserialize<ComputerWorkerResponse>(json, ComputerJson.Options) ?? throw new IOException("画面操作の応答がありません。");
             if (result.Changed) { throw new ComputerScreenChangedException(result.Error ?? "画面が変化"); }
+            if (result.Uncertain) { throw new ComputerActionUncertainException(result.Error ?? "操作の結果を確認できませんでした。"); }
             if (result.Error is not null) { throw new InvalidOperationException(result.Error); }
             return result;
         }
@@ -87,8 +89,8 @@ internal sealed class ComputerDesktop : IComputerDesktop
             result = request.Operation switch
             {
                 "windows" => new(Targets: ComputerDesktopNative.Windows(request.Parent)),
-                "observe" when request.Target is not null => new(Observation: ComputerDesktopNative.Observe(request.Target, request.Parent)),
-                "observe-screen" when request.Target is not null => new(Observation: ComputerDesktopNative.Observe(request.Target, request.Parent, true)),
+                "observe" when request.Target is not null => new(Observation: ComputerDesktopNative.Observe(request.Target, request.Parent, activate: true)),
+                "observe-screen" when request.Target is not null => new(Observation: ComputerDesktopNative.Observe(request.Target, request.Parent, true, true)),
                 "execute" => Execute(request),
                 _ => throw new InvalidDataException("対応していない操作です。")
             };
@@ -97,6 +99,12 @@ internal sealed class ComputerDesktop : IComputerDesktop
         catch (Exception ex) { result = new(Error: ex.Message); }
         await Console.Out.WriteLineAsync(JsonSerializer.Serialize(result, ComputerJson.Options)); return 0;
     }
-    private static ComputerWorkerResponse Execute(ComputerWorkerRequest request) { ComputerDesktopNative.Execute(request); return new(); }
+    private static ComputerWorkerResponse Execute(ComputerWorkerRequest request)
+    {
+        try { ComputerDesktopNative.Execute(request); return new(); }
+        catch (ComputerActionUncertainException ex) { return new(Error: ex.Message, Uncertain: true); }
+        catch (Exception ex) when (ex is COMException or ElementNotAvailableException)
+        { return new(Error: "UI要素が切り替わり、操作の結果を確認できませんでした。画面を取り直して結果を確認してください。", Uncertain: true); }
+    }
     [DllImport("user32.dll")] private static extern bool AllowSetForegroundWindow(uint processId);
 }
