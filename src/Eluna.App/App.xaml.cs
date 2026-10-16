@@ -40,6 +40,13 @@ public partial class App : Application
                 root = Path.Combine(captureDirectory, "preview-data");
             }
             var store = new AppStore(root);
+            int workspaceIndex = Array.IndexOf(e.Args, "--verify-workspace");
+            if (workspaceIndex >= 0 && workspaceIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("ワークスペース検証には専用の --data-dir が必要です。"); }
+                int modelIndex = Array.IndexOf(e.Args, "--model-meta"); string? metadata = modelIndex >= 0 && modelIndex + 1 < e.Args.Length ? e.Args[modelIndex + 1] : null;
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = WorkspaceVerification.RunAsync(store, e.Args[workspaceIndex + 1], metadata); return;
+            }
             int browserIndex = Array.IndexOf(e.Args, "--verify-computer-browser");
             if (browserIndex >= 0 && browserIndex + 1 < e.Args.Length)
             {

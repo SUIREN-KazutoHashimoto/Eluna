@@ -4,7 +4,8 @@ namespace Eluna.App.Models;
 
 public sealed record SavedInferenceJob(Guid Id, Guid ConversationId, Guid BranchId, Guid AnswerId, string Title,
     DateTimeOffset CreatedAt, LocalModel Model, List<LocalModel> Models, AppSettings Settings,
-    string Instruction, List<KnowledgeReference> References, SavedWork? PreviousWork = null, bool ResumeWork = false, SkillRequest? Skills = null);
+    string Instruction, List<KnowledgeReference> References, SavedWork? PreviousWork = null, bool ResumeWork = false, SkillRequest? Skills = null,
+    AgentAccount? Agent = null, string? AccessStamp = null);
 
 public sealed class InferenceJob(SavedInferenceJob request) : ObservableObject
 {

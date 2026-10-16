@@ -35,6 +35,7 @@ public partial class MainWindow : Window
         ComposerArea.SizeChanged += (_, _) => UpdateComposerTools();
         ProcessContent.Content = new ProcessListPanel(_viewModel);
         _viewModel.ScrollRequested += FollowOutput;
+        _viewModel.MessageRequested += message => { MessagesList.ScrollIntoView(message); MessagesList.SelectedItem = message; };
         _viewModel.NavigationStarting += RememberReadingPosition;
         _viewModel.PlanReviewRequested += ReviewPlanAsync;
         _viewModel.SkillExecutionReviewRequested += ReviewSkillExecutionAsync;
@@ -142,6 +143,51 @@ public partial class MainWindow : Window
         if (_viewModel.SelectedProject is KnowledgeProject project) { Item("このプロジェクトを管理", () => new ProjectWindow(_viewModel, project) { Owner = this }.ShowDialog()); }
         Item("共通メモリを管理", () => OpenSettings(2));
         menu.IsOpen = true;
+    }
+    private void Agents_Click(object sender, RoutedEventArgs e) => new AgentsWindow(_viewModel) { Owner = this }.Show();
+    private void NewRoom_Click(object sender, RoutedEventArgs e) => new RoomWindow(_viewModel) { Owner = this }.Show();
+    private void RoomSettings_Click(object sender, RoutedEventArgs e)
+    { if (_viewModel.SelectedConversation is { } room) { new RoomWindow(_viewModel, room) { Owner = this }.Show(); } }
+    private async void AgentModel_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_viewModel is null || sender is not ComboBox { SelectedItem: LocalModel model } box || !(box.IsDropDownOpen || box.IsKeyboardFocusWithin)) { return; }
+        try { await _viewModel.SetRecipientModelAsync(model); } catch (Exception ex) { _viewModel.Error = ex.Message; }
+    }
+    private void ReplyMessage_Click(object sender, RoutedEventArgs e)
+    { if (sender is FrameworkElement { DataContext: ChatMessage message }) { _viewModel.ReplyTo(message); InputBox.Focus(); } }
+    private void ClearReply_Click(object sender, RoutedEventArgs e) => _viewModel.ReplyTo(null);
+    private void JumpReply_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: ChatMessage { Identity.ReplyTo: Guid id } }) { return; }
+        Conversation? room = _viewModel.Conversations.FirstOrDefault(c => c.Branches.Any(b => b.Messages.Any(m => m.Id == id || m.Work?.Turns.Any(t => (t.Id ?? WorkspaceService.StableId(m.Work.Id, t.Round + ":" + t.Role)) == id) == true)));
+        if (room is not null) { _viewModel.OpenMessage(room.Id, id); }
+    }
+    private void MessageMenu_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: ChatMessage message } button || _viewModel.SelectedConversation is not { } room) { return; }
+        var menu = new ContextMenu { PlacementTarget = button };
+        var thread = new MenuItem { Header = "この発言からスレッドを作成", IsEnabled = room.Room?.Kind != "thread" };
+        thread.Click += (_, _) => new RoomWindow(_viewModel, room, origin: message) { Owner = this }.Show(); menu.Items.Add(thread);
+        var memory = new MenuItem { Header = "エージェントの記憶を管理" }; memory.Click += (_, _) => new AgentsWindow(_viewModel) { Owner = this }.Show(); menu.Items.Add(memory);
+        menu.IsOpen = true;
+    }
+    private async void OpenArtifact_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: ChatMessage { Artifact: { } artifact } }) { return; }
+        try
+        {
+            string path = System.IO.Path.GetFullPath(artifact.ResultPath);
+            if (!path.StartsWith(System.IO.Path.Combine(_store.Root, "Generated") + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || !System.IO.File.Exists(path))
+            { throw new System.IO.FileNotFoundException("生成物が見つかりません。バックアップの復元先または保存場所を確認してください。"); }
+            MediaJob? job = _viewModel.MediaJobs.FirstOrDefault(j => j.Id == artifact.JobId);
+            if (job is null)
+            {
+                if (new System.IO.FileInfo(path).Length > 4_000_000 && artifact.Kind != "image") { throw new System.IO.InvalidDataException("本文が大きすぎるため、この画面では開けません。"); }
+                job = new MediaJob(artifact.Title, new(artifact.Kind, "", "", null, path)) { Id = artifact.JobId, State = "complete", Detail = "保存した生成物", Text = artifact.Kind == "image" ? "" : await System.IO.File.ReadAllTextAsync(path) };
+            }
+            new MediaResultWindow(job, _store.Root) { Owner = this }.Show();
+        }
+        catch (Exception ex) { _viewModel.Error = ex.Message; }
     }
     private void Knowledge_Click(object sender, RoutedEventArgs e)
     {

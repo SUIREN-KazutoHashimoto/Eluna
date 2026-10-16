@@ -6,14 +6,14 @@ namespace Eluna.App.Services;
 public static class ContextCompressor
 {
     internal static async Task<SavedMessage[]> PrepareAsync(Conversation conversation, LlamaService llama, AppSettings settings,
-        Action<string> status, CancellationToken token, KnowledgeContext? knowledge = null)
+        Action<string> status, CancellationToken token, KnowledgeContext? knowledge = null, AgentAccount? agent = null)
     {
         SavedMessage[] history = conversation.Messages.Where(m => !m.IsGenerating && (m.Content.Length > 0 || m.Attachments.Count > 0)).Select(m => m.Save()).ToArray();
         string instruction = knowledge?.Instruction ?? settings.SystemInstruction + "\n" + conversation.CustomInstruction;
         int through = string.IsNullOrWhiteSpace(conversation.Summary) ? 0 : Math.Clamp(conversation.SummaryThrough, 0, history.Length);
         SavedMessage[] Build() => (conversation.Summary.Length > 0 ? new[] { new SavedMessage("user", "以前の会話の引き継ぎメモ:\n" + conversation.Summary), new SavedMessage("assistant", "引き継ぎメモを参照します。") } : [])
             .Concat(history.Skip(through)).ToArray();
-        SavedMessage[] WithKnowledge() => knowledge?.Prepend(Build()) ?? Build();
+        SavedMessage[] WithKnowledge() { SavedMessage[] addressed = WorkspaceService.AddressAgent(Build(), agent); return knowledge?.Prepend(addressed) ?? addressed; }
         if (await llama.CountInputTokensAsync(WithKnowledge(), instruction, token) < settings.ContextSize * 0.7) { return WithKnowledge(); }
         int target = Math.Max(0, history.Length - 4);
         while (target < history.Length && history[target].Role != "user") { target++; }

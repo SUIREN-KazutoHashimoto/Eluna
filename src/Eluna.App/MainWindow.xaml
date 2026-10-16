@@ -4,29 +4,31 @@
         Style="{StaticResource {x:Type Window}}" Title="Eluna" Width="1280" Height="900"
         MinWidth="820" MinHeight="600" WindowStartupLocation="CenterScreen" Language="ja-JP">
   <Grid x:Name="RootLayout">
-    <Grid.ColumnDefinitions><ColumnDefinition><ColumnDefinition.Style><Style TargetType="ColumnDefinition"><Setter Property="Width" Value="224" /><Style.Triggers><DataTrigger Binding="{Binding SidebarVisible}" Value="False"><Setter Property="Width" Value="0" /></DataTrigger></Style.Triggers></Style></ColumnDefinition.Style></ColumnDefinition><ColumnDefinition /></Grid.ColumnDefinitions>
-    <Border Background="{DynamicResource SidebarBrush}" Padding="12,12,12,10" Visibility="{Binding SidebarVisible, Converter={StaticResource BoolVisibility}}">
+    <Grid.ColumnDefinitions><ColumnDefinition><ColumnDefinition.Style><Style TargetType="ColumnDefinition"><Setter Property="Width" Value="52" /><Style.Triggers><DataTrigger Binding="{Binding SidebarVisible}" Value="False"><Setter Property="Width" Value="0" /></DataTrigger></Style.Triggers></Style></ColumnDefinition.Style></ColumnDefinition><ColumnDefinition><ColumnDefinition.Style><Style TargetType="ColumnDefinition"><Setter Property="Width" Value="208" /><Style.Triggers><DataTrigger Binding="{Binding SidebarVisible}" Value="False"><Setter Property="Width" Value="0" /></DataTrigger></Style.Triggers></Style></ColumnDefinition.Style></ColumnDefinition><ColumnDefinition /></Grid.ColumnDefinitions>
+    <Border Background="{DynamicResource BackgroundBrush}" Visibility="{Binding SidebarVisible, Converter={StaticResource BoolVisibility}}" Padding="3,10">
+      <DockPanel><Button DockPanel.Dock="Bottom" Content="＋" Click="ProjectMenu_Click" ToolTip="サーバーの作成・管理" AutomationProperties.Name="サーバーの作成・管理" Margin="0,6,0,0" />
+        <ListBox x:Name="ServerList" ItemsSource="{Binding ProjectChoices}" SelectedItem="{Binding SelectedProjectChoice}" AutomationProperties.Name="サーバーとDM">
+          <ListBox.ItemTemplate><DataTemplate><Border Background="{DynamicResource SurfaceBrush}" CornerRadius="12" Width="36" Height="36" ToolTip="{Binding Name}" Margin="0,3"><TextBlock Text="{Binding Icon}" FontWeight="SemiBold" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border></DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+    </Border>
+    <Border Grid.Column="1" Background="{DynamicResource SidebarBrush}" Padding="10,10,10,10" Visibility="{Binding SidebarVisible, Converter={StaticResource BoolVisibility}}">
       <Grid>
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-        <StackPanel Orientation="Horizontal" Margin="8,0,0,14">
-          <Border Width="34" Height="34" CornerRadius="10" Background="{DynamicResource AccentBrush}">
-            <TextBlock Text="e" Foreground="{DynamicResource OnAccentBrush}" FontSize="25" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
-          </Border>
-          <TextBlock Text="Eluna" FontSize="20" FontWeight="SemiBold" Margin="12,0,0,0" VerticalAlignment="Center" />
-        </StackPanel>
+        <DockPanel Margin="4,0,0,8" Height="32"><Button DockPanel.Dock="Right" Content="エージェント" Click="Agents_Click" Padding="6,4" FontSize="11" AutomationProperties.Name="エージェントの管理" /><TextBlock Text="Eluna" FontSize="19" FontWeight="SemiBold" VerticalAlignment="Center" /></DockPanel>
         <StackPanel Grid.Row="1">
-        <Button Command="{Binding NewChatCommand}" HorizontalContentAlignment="Left"
-                BorderBrush="{DynamicResource StrokeBrush}" Margin="0,0,0,8" AutomationProperties.Name="新しいチャット">
-          <StackPanel Orientation="Horizontal"><TextBlock Text="＋" FontSize="18" Margin="0,0,12,0" /><TextBlock Text="新しいチャット" VerticalAlignment="Center" /></StackPanel>
+        <Button Click="NewRoom_Click" IsEnabled="{Binding CanNavigate}" HorizontalContentAlignment="Left"
+                BorderBrush="{DynamicResource StrokeBrush}" Margin="0,0,0,6" AutomationProperties.Name="チャンネルまたはDMを作成">
+          <StackPanel Orientation="Horizontal"><TextBlock Text="＋" FontSize="18" Margin="0,0,8,0" /><TextBlock Text="チャンネル・DM" VerticalAlignment="Center" /></StackPanel>
         </Button>
-        <DockPanel Margin="0,0,0,14">
+        <DockPanel Margin="0,0,0,6">
           <Button DockPanel.Dock="Right" Content="⋯" Click="ProjectMenu_Click" Padding="8,6" Margin="4,0,0,0" IsEnabled="{Binding CanChange}" ToolTip="プロジェクトの作成・管理" AutomationProperties.Name="プロジェクトの作成・管理" />
           <ComboBox x:Name="ProjectSelector" ItemsSource="{Binding ProjectChoices}" SelectedItem="{Binding SelectedProjectChoice}" ItemTemplate="{StaticResource ProjectNameTemplate}" IsEnabled="{Binding CanCompose}" AutomationProperties.Name="表示するプロジェクト" />
         </DockPanel>
         </StackPanel>
         <Grid Grid.Row="2">
           <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition /></Grid.RowDefinitions>
-          <DockPanel Margin="10,0,0,10"><CheckBox DockPanel.Dock="Right" Content="保管済み" IsChecked="{Binding ShowArchived}" FontSize="11" HorizontalAlignment="Right" /><TextBlock Text="チャット" Foreground="{DynamicResource MutedBrush}" FontSize="12" /></DockPanel>
+          <DockPanel Margin="10,0,0,10"><CheckBox DockPanel.Dock="Right" Content="保管済み" IsChecked="{Binding ShowArchived}" FontSize="11" HorizontalAlignment="Right" /><TextBlock Text="チャンネル・DM" Foreground="{DynamicResource MutedBrush}" FontSize="12" /></DockPanel>
           <Grid Grid.Row="1"><TextBox x:Name="HistorySearchBox" Text="{Binding HistorySearch, UpdateSourceTrigger=PropertyChanged}" ToolTip="履歴を全文検索（Ctrl+F）" AutomationProperties.Name="履歴を検索" Margin="0,0,0,12" /><TextBlock Text="履歴を検索" Foreground="{DynamicResource MutedBrush}" Margin="10,9,0,0" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed" /><Style.Triggers><DataTrigger Binding="{Binding HistorySearch}" Value=""><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid><ListBox x:Name="HistoryList" Grid.Row="2" ItemsSource="{Binding HistoryView}" VirtualizingPanel.IsVirtualizingWhenGrouping="True" SelectedItem="{Binding SelectedConversation}"
                    IsEnabled="{Binding CanCompose}" AutomationProperties.Name="会話履歴">
             <ListBox.GroupStyle><GroupStyle><GroupStyle.HeaderTemplate><DataTemplate><TextBlock Text="{Binding Name}" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="8,8,0,3" /></DataTemplate></GroupStyle.HeaderTemplate></GroupStyle></ListBox.GroupStyle>
@@ -34,7 +36,7 @@
               <DataTemplate>
                 <Grid>
                   <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="26" /></Grid.ColumnDefinitions>
-                  <StackPanel ToolTip="{Binding Title}"><TextBlock TextTrimming="CharacterEllipsis" VerticalAlignment="Center" FontSize="13"><Run Text="{Binding PinLabel, Mode=OneWay}" /><Run Text="{Binding Title, Mode=OneWay}" /></TextBlock><TextBlock Text="{Binding HistoryDetail}" FontSize="11" Foreground="{DynamicResource MutedBrush}" /><TextBlock Text="{Binding SearchExcerpt}" FontSize="11" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource MutedBrush}"><TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><DataTrigger Binding="{Binding SearchExcerpt}" Value=""><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></StackPanel>
+                  <StackPanel ToolTip="{Binding Title}"><TextBlock TextTrimming="CharacterEllipsis" VerticalAlignment="Center" FontSize="13"><Run Text="{Binding PinLabel, Mode=OneWay}" /><Run Text="{Binding NavigationLabel, Mode=OneWay}" /></TextBlock><TextBlock Text="{Binding HistoryDetail}" FontSize="11" Foreground="{DynamicResource MutedBrush}" /><TextBlock Text="{Binding SearchExcerpt}" FontSize="11" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource MutedBrush}"><TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><DataTrigger Binding="{Binding SearchExcerpt}" Value=""><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></StackPanel>
                   <Button Grid.Column="1" Content="⋯" Padding="4,0" Foreground="{DynamicResource MutedBrush}" Click="HistoryMenu_Click" ToolTip="会話の操作" AutomationProperties.Name="会話の操作" />
                 </Grid>
               </DataTemplate>
@@ -55,20 +57,21 @@
         </StackPanel>
       </Grid>
     </Border>
-    <Grid Grid.Column="1" Background="{DynamicResource ChatBackgroundBrush}">
+    <Grid Grid.Column="2" Background="{DynamicResource ChatBackgroundBrush}">
       <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
       <Grid x:Name="HeaderArea" Margin="20,10"><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
         <Button Content="☰" Click="Sidebar_Click" Padding="8,7" Margin="0,0,10,0" ToolTip="サイドバーを切り替え" />
-        <ComboBox Grid.Column="1" x:Name="ModelSelector" MinWidth="180" MaxWidth="380" HorizontalAlignment="Left" ItemsSource="{Binding Models}" SelectedItem="{Binding SelectedModel}" ItemTemplate="{StaticResource ModelNameTemplate}" IsEnabled="{Binding CanCompose}" ToolTip="使用するモデル" AutomationProperties.Name="使用するモデル" Visibility="{Binding HasModel, Converter={StaticResource BoolVisibility}}" />
+        <ComboBox Grid.Column="1" x:Name="ModelSelector" MinWidth="160" MaxWidth="380" HorizontalAlignment="Left" ItemsSource="{Binding Models}" SelectedItem="{Binding SelectedModel}" ItemTemplate="{StaticResource ModelNameTemplate}" IsEnabled="{Binding CanCompose}" SelectionChanged="AgentModel_Changed" ToolTip="宛先エージェントの使用モデル" AutomationProperties.Name="使用するモデル" Visibility="{Binding HasModel, Converter={StaticResource BoolVisibility}}" />
         <Button Grid.Column="1" Content="モデルを選ぶ  ⌄" Click="Models_Click" HorizontalAlignment="Left" Foreground="{DynamicResource MutedBrush}" IsEnabled="{Binding CanCompose}">
           <Button.Style><Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Style.Triggers><DataTrigger Binding="{Binding HasModel}" Value="True"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers></Style></Button.Style>
         </Button>
         <Button Grid.Column="3" Content="＋" FontSize="20" Click="Models_Click" IsEnabled="{Binding CanCompose}" Padding="10,4" Margin="10,0,0,0" ToolTip="モデルを追加" AutomationProperties.Name="モデルを追加" />
         <Button Grid.Column="2" Content="⋯" Click="ChatMenu_Click" Padding="10,4" FontSize="20" IsEnabled="{Binding CanCompose}" ToolTip="会話とモデルの操作" /><ComboBox Grid.Row="2" Grid.Column="1" x:Name="BranchSelector" AutomationProperties.Name="会話の分岐" ItemTemplate="{StaticResource BranchNameTemplate}" ItemsSource="{Binding SelectedConversation.Branches}" SelectedItem="{Binding SelectedBranch, Mode=OneWay}" SelectionChanged="Branch_SelectionChanged" MaxWidth="240" HorizontalAlignment="Left" Margin="0,8,0,0" IsEnabled="{Binding CanCompose}"><ComboBox.Style><Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}"><Style.Triggers><DataTrigger Binding="{Binding SelectedConversation.Branches.Count}" Value="1"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers></Style></ComboBox.Style></ComboBox>
-        <Button Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Click="ProjectMenu_Click" HorizontalAlignment="Left" HorizontalContentAlignment="Stretch" Padding="0,7,8,0" MaxWidth="650" IsEnabled="{Binding CanChange}" ToolTipService.ShowOnDisabled="True" ToolTip="{Binding ProjectScopeHint}" AutomationProperties.Name="ナレッジの参照範囲">
-          <TextBlock Text="{Binding ProjectContextLabel}" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource MutedBrush}" FontSize="12" />
-        </Button>
+        <DockPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,5,0,0">
+          <ComboBox x:Name="RecipientSelector" DockPanel.Dock="Right" ItemsSource="{Binding Recipients}" SelectedItem="{Binding SelectedRecipient}" DisplayMemberPath="Name" MaxWidth="180" MinWidth="110" Padding="6,3" FontSize="11" AutomationProperties.Name="メッセージの宛先" />
+          <Button Click="RoomSettings_Click" HorizontalContentAlignment="Left" Padding="0,4,8,0" ToolTip="{Binding ProjectScopeHint}" AutomationProperties.Name="チャンネルと参照範囲"><TextBlock Text="{Binding RoomLabel}" TextTrimming="CharacterEllipsis" FontSize="12" /></Button>
+        </DockPanel>
         <Popup x:Name="ModePopup" PlacementTarget="{Binding ElementName=ModeButton}" Placement="Top" VerticalOffset="-8" AllowsTransparency="True" StaysOpen="False" IsOpen="{Binding IsChecked, ElementName=ModeButton, Mode=TwoWay}">
           <Border Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1" CornerRadius="16" Width="320" Padding="10">
             <StackPanel>
@@ -95,7 +98,7 @@
         </Grid>
       </Border>
       <Grid Grid.Row="2">
-        <ListBox x:Name="MessagesList" ItemsSource="{Binding SelectedConversation.Messages}" Margin="0,8,0,12" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel" VirtualizingPanel.CacheLength="1" ScrollViewer.CanContentScroll="True" HorizontalContentAlignment="Stretch">
+        <ListBox x:Name="MessagesList" ItemsSource="{Binding Timeline}" Margin="0,8,0,12" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel" VirtualizingPanel.CacheLength="1" ScrollViewer.CanContentScroll="True" HorizontalContentAlignment="Stretch">
 <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="Padding" Value="0" /><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><ContentPresenter HorizontalAlignment="Stretch" /></ControlTemplate></Setter.Value></Setter></Style></ListBox.ItemContainerStyle>
 <ListBox.ItemTemplate>
               <DataTemplate>
@@ -103,7 +106,7 @@
                   <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="44" /><ColumnDefinition /></Grid.ColumnDefinitions>
                     <Border x:Name="Avatar" Width="32" Height="32" CornerRadius="16" Background="{DynamicResource AccentBrush}" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,3,0,0">
-                      <TextBlock x:Name="AvatarLetter" Text="e" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource OnAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <TextBlock x:Name="AvatarLetter" Text="{Binding Avatar}" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource OnAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                   <StackPanel Grid.Column="1">
                     <Grid Margin="0,0,0,4">
@@ -112,8 +115,10 @@
                         <TextBlock Text="{Binding Speaker}" FontSize="13" FontWeight="SemiBold" />
                         <Border x:Name="AssistantBadge" Background="#5865F2" CornerRadius="3" Padding="4,1" Margin="7,0,0,0" VerticalAlignment="Center"><TextBlock Text="AI" Foreground="White" FontSize="9" FontWeight="SemiBold" /></Border>
                         <TextBlock Text="{Binding ModeLabel}" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="10,3,0,0" />
+                        <TextBlock Text="{Binding SpeakerDetail}" TextTrimming="CharacterEllipsis" MaxWidth="180" ToolTip="{Binding SpeakerDetail}" FontSize="10" Foreground="{DynamicResource MutedBrush}" Margin="7,3,0,0" />
                       </StackPanel>
                       <StackPanel x:Name="MessageActions" Grid.Column="1" Orientation="Horizontal" Opacity="0">
+                        <Button Content="↩" ToolTip="この発言へ返信" Style="{StaticResource MessageAction}" Click="ReplyMessage_Click" /><Button Content="⋯" ToolTip="スレッドと発言の操作" Style="{StaticResource MessageAction}" Click="MessageMenu_Click" />
                         <Button Content="コピー" Style="{StaticResource MessageAction}" Click="CopyMessage_Click" />
                         <StackPanel x:Name="AnswerActions" Orientation="Horizontal" IsEnabled="{Binding DataContext.CanEditConversation, RelativeSource={RelativeSource AncestorType=Window}}">
                           <Button Content="再生成" ToolTip="{Binding DataContext.EditConversationHint, RelativeSource={RelativeSource AncestorType=Window}}" Style="{StaticResource MessageAction}" Click="Regenerate_Click" />
@@ -122,6 +127,7 @@
                         <Button x:Name="EditAction" Content="編集" Style="{StaticResource MessageAction}" Click="EditMessage_Click" Visibility="Collapsed" IsEnabled="{Binding DataContext.CanEditConversation, RelativeSource={RelativeSource AncestorType=Window}}" />
                       </StackPanel>
                     </Grid>
+                    <Button Content="{Binding ReplyPreview}" Click="JumpReply_Click" HorizontalContentAlignment="Left" Padding="0,3" FontSize="11" MaxHeight="28" Visibility="{Binding HasReply, Converter={StaticResource BoolVisibility}}" />
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,14" Visibility="{Binding HasThought, Converter={StaticResource BoolVisibility}}">
                       <TextBlock Text="◌" FontSize="17" Foreground="{DynamicResource MutedBrush}" Margin="0,0,8,0" />
                       <TextBlock Text="{Binding ThinkingLabel}" Foreground="{DynamicResource MutedBrush}" FontSize="13" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
@@ -130,6 +136,8 @@
                     <Button Content="{Binding Work.Label}" Click="WorkActivity_Click" HorizontalAlignment="Left" BorderBrush="{DynamicResource StrokeBrush}" Padding="12,8" Margin="0,0,0,12" Visibility="{Binding HasWork, Converter={StaticResource BoolVisibility}}" ToolTip="調査の活動と資料を開く" AutomationProperties.Name="調査の活動と資料" />
                     <controls:MarkdownView x:Name="MarkdownBody" ReferenceClicked="Reference_Clicked" Markdown="{Binding Content}" TextSize="{Binding DataContext.ChatFontSize, RelativeSource={RelativeSource AncestorType=Window}}" TextLineHeight="{Binding DataContext.ChatLineHeight, RelativeSource={RelativeSource AncestorType=Window}}" />
                     <controls:ComputerTaskPanel Session="{Binding Computer}" />
+                    <controls:DebateTaskPanel Work="{Binding Work}" Chat="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}" />
+                    <Button Content="{Binding ArtifactLabel}" Click="OpenArtifact_Click" HorizontalAlignment="Left" Margin="0,6,0,0" BorderBrush="{DynamicResource StrokeBrush}" Visibility="{Binding HasArtifact, Converter={StaticResource BoolVisibility}}" />
                     <Button Content="{Binding KnowledgeLabel}" Click="Knowledge_Click" HorizontalAlignment="Left" Padding="8,6" Margin="0,8,0,0" BorderBrush="{DynamicResource StrokeBrush}" Visibility="{Binding HasKnowledge, Converter={StaticResource BoolVisibility}}" ToolTip="この回答の生成時にAIへ渡した抜粋を確認" />
                     <Button Content="{Binding SkillsLabel}" Click="SkillUse_Click" HorizontalAlignment="Left" Padding="8,6" Margin="0,8,0,0" BorderBrush="{DynamicResource StrokeBrush}" Visibility="{Binding HasSkills, Converter={StaticResource BoolVisibility}}" ToolTip="使用した手順・資料・補助コードの実行記録" />
 <TextBox x:Name="UserBody" Text="{Binding Content, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" BorderThickness="0" Padding="0" Background="Transparent" Visibility="Collapsed" FontSize="{Binding DataContext.ChatFontSize, RelativeSource={RelativeSource AncestorType=Window}}" TextBlock.LineHeight="{Binding DataContext.ChatLineHeight, RelativeSource={RelativeSource AncestorType=Window}}" />
@@ -150,6 +158,7 @@
                     <Setter TargetName="Avatar" Property="Background" Value="#5865F2" /><Setter TargetName="AvatarLetter" Property="Text" Value="あ" /><Setter TargetName="AvatarLetter" Property="FontSize" Value="16" /><Setter TargetName="AvatarLetter" Property="Foreground" Value="White" />
                     <Setter TargetName="AssistantBadge" Property="Visibility" Value="Collapsed" /><Setter TargetName="MarkdownBody" Property="Visibility" Value="Collapsed" /><Setter TargetName="UserBody" Property="Visibility" Value="Visible" /><Setter TargetName="AnswerActions" Property="Visibility" Value="Collapsed" /><Setter TargetName="EditAction" Property="Visibility" Value="Visible" />
                   </DataTrigger>
+                  <DataTrigger Binding="{Binding IsProjection}" Value="True"><Setter TargetName="AnswerActions" Property="Visibility" Value="Collapsed" /><Setter TargetName="EditAction" Property="Visibility" Value="Collapsed" /></DataTrigger>
                 </DataTemplate.Triggers>
               </DataTemplate>
             </ListBox.ItemTemplate>
@@ -178,9 +187,11 @@
           <Grid>
             <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition MinHeight="48" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
             <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-            <ScrollViewer Grid.ColumnSpan="2" MaxHeight="48" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <StackPanel Grid.ColumnSpan="2"><Button Content="{Binding ReplyLabel}" Click="ClearReply_Click" Visibility="{Binding HasReplyTarget, Converter={StaticResource BoolVisibility}}" HorizontalAlignment="Left" Padding="0,2" FontSize="11" />
+            <ScrollViewer MaxHeight="48" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
               <ItemsControl ItemsSource="{Binding PendingAttachments}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate><Border BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,8,2" Padding="6,2"><StackPanel Orientation="Horizontal"><Button Click="AttachmentPreview_Click" Padding="4" ToolTip="添付を確認"><TextBlock Text="{Binding Label}" MaxWidth="190" TextTrimming="CharacterEllipsis" /></Button><Button Content="×" Click="RemoveAttachment_Click" Padding="6,2" ToolTip="添付を外す" IsEnabled="{Binding DataContext.CanChange, RelativeSource={RelativeSource AncestorType=Window}}" /></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
             </ScrollViewer>
+            </StackPanel>
             <Grid Grid.Row="1" Grid.ColumnSpan="2">
               <TextBox x:Name="InputBox" Text="{Binding Input, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="40" MaxHeight="160" VerticalScrollBarVisibility="Auto" BorderThickness="0" Background="Transparent" Padding="0,8" FontSize="14" VerticalContentAlignment="Top" PreviewKeyDown="Input_PreviewKeyDown" AutomationProperties.Name="メッセージを入力" />
               <TextBlock Text="メッセージを入力" Foreground="{DynamicResource MutedBrush}" IsHitTestVisible="False" Margin="0,12,0,0">

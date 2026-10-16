@@ -5,7 +5,7 @@ using System.Windows.Media.Imaging;
 namespace Eluna.App.Models;
 
 public sealed record SavedComputerTask(string Task, string ModelId, string Stage, string Plan,
-    List<ComputerStep> Steps, List<string> Instructions, bool Automatic = true, int MaxSteps = 100, double SecondsUsed = 0, Guid? ProjectId = null);
+    List<ComputerStep> Steps, List<string> Instructions, bool Automatic = true, int MaxSteps = 100, double SecondsUsed = 0, Guid? ProjectId = null, string? AccessStamp = null);
 
 public sealed record ComputerInstalledApp(string Name, string Shortcut, string Sha256);
 
@@ -27,6 +27,7 @@ public sealed class ComputerSession : ObservableObject
     public string Task { get; init; } = "";
     public string ModelId { get; init; } = "";
     public Guid? ProjectId { get; init; }
+    public string? AccessStamp { get; init; }
     public string ModelName { get; internal set; } = "";
     public int MaxSteps { get; set; } = 100;
     public double SecondsUsed { get; internal set; }
@@ -66,10 +67,10 @@ public sealed class ComputerSession : ObservableObject
         WindowHint = observation.Title + " · " + DateTime.Now.ToString("HH:mm:ss");
     }
     internal void Changed() { foreach (string p in new[] { nameof(Label), nameof(Selecting), nameof(Reviewing), nameof(Running), nameof(CanPause), nameof(CanResume), nameof(Pending) }) { Notify(p); } }
-    public SavedComputerTask Save() => new(Task, ModelId, Stage, Plan, [.. Steps], [.. Instructions], Automatic, MaxSteps, SecondsUsed, ProjectId);
+    public SavedComputerTask Save() => new(Task, ModelId, Stage, Plan, [.. Steps], [.. Instructions], Automatic, MaxSteps, SecondsUsed, ProjectId, AccessStamp);
     internal static ComputerSession Restore(SavedComputerTask saved)
     {
-        var session = new ComputerSession { Task = saved.Task, ModelId = saved.ModelId, ProjectId = saved.ProjectId, Stage = saved.Stage is "complete" or "limit" or "stopped" ? saved.Stage : "interrupted", Plan = saved.Plan, Automatic = saved.Automatic, MaxSteps = saved.MaxSteps, SecondsUsed = saved.SecondsUsed };
+        var session = new ComputerSession { Task = saved.Task, ModelId = saved.ModelId, ProjectId = saved.ProjectId, AccessStamp = saved.AccessStamp, Stage = saved.Stage is "complete" or "limit" or "stopped" ? saved.Stage : "interrupted", Plan = saved.Plan, Automatic = saved.Automatic, MaxSteps = saved.MaxSteps, SecondsUsed = saved.SecondsUsed };
         foreach (ComputerStep step in saved.Steps) { session.Steps.Add(step); }
         session.Instructions.AddRange(saved.Instructions);
         session.Detail = session.CanResume ? "前回の操作は再送しません。再開するとアプリの許可と最新画面を確認します。" : "保存した操作記録です。画面画像は保存していません。";

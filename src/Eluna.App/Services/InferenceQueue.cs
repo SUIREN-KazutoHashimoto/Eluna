@@ -27,7 +27,7 @@ public sealed class InferenceQueue(Func<InferenceJob, CancellationToken, Task> e
     public void Resume(InferenceJob job)
     {
         if (_closing || !Items.Contains(job) || !job.CanResume) { return; }
-        job.Completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (job.Completion.Task.IsCompleted) { job.Completion = new(TaskCreationOptions.RunContinuationsAsynchronously); }
         job.State = "queued"; job.Detail = "順番を待っています"; Pump();
     }
     public void Cancel(InferenceJob job)

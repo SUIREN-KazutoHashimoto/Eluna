@@ -23,13 +23,16 @@ public sealed record KnowledgeDocument(Guid Id, string Name, string Text, DateTi
 }
 
 public sealed record KnowledgeProject(Guid Id, string Name, string Instruction, string MemoryMode,
-    bool ReferenceChats, List<KnowledgeDocument> Documents, List<MemoryNote> Memories, bool UseCommonSkills = false)
+    bool ReferenceChats, List<KnowledgeDocument> Documents, List<MemoryNote> Memories, bool UseCommonSkills = false, bool AcceptAgentMemory = false)
 {
     [JsonIgnore] public string ScopeLabel => MemoryMode == "project-only" ? "プロジェクト限定メモリ" : "共通メモリも参照";
 }
 
-public sealed record ProjectChoice(Guid? Id, string Name);
-public sealed record KnowledgeReference(int Number, string Kind, string Title, string Text)
+public sealed record ProjectChoice(Guid? Id, string Name)
+{
+    public string Icon => Id is null ? "DM" : System.Globalization.StringInfo.GetNextTextElement(Name);
+}
+public sealed record KnowledgeReference(int Number, string Kind, string Title, string Text, Guid? SourceConversationId = null, Guid? AgentId = null, Guid? MemoryId = null)
 {
     [JsonIgnore] public string Label => $"[K{Number}] {Title}";
 }

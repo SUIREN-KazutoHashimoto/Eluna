@@ -38,7 +38,8 @@ public sealed partial class ChatViewModel
     }
     private void AddMediaJob(MediaJob job)
     {
-        MediaJobs.Add(job); job.PropertyChanged += (_, e) => { Notify(nameof(ProcessSummary)); if (e.PropertyName == nameof(MediaJob.State) && job.Request is not null) { _ = SaveMediaJobsAsync(); } };
+        MediaJobs.Add(job); job.PropertyChanged += (_, e) => { Notify(nameof(ProcessSummary)); SyncMediaMessage(job); if (e.PropertyName == nameof(MediaJob.State) && job.Request is not null) { _ = SaveMediaJobsAsync(); } };
+        SyncMediaMessage(job);
         _ = ObserveMediaAsync(job); _ = AwaitMediaCancellationAsync(job);
     }
     private static async Task ObserveMediaAsync(MediaJob job) { try { await job.Finished; } catch (Exception) { } }
@@ -50,17 +51,50 @@ public sealed partial class ChatViewModel
     }
     internal async Task<MediaJob> EnqueueMediaAsync(string title, MediaRequest request)
     {
+        if (request.ConversationId is null && Conversations.FirstOrDefault(c => c.Id == (request.Context?.Conversation.Id ?? SelectedConversation?.Id) && c.ProjectId == request.ProjectId) is { } source)
+        { request = request with { ConversationId = source.Id, BranchId = request.Context?.Conversation.ActiveBranchId ?? source.ActiveBranch.Id, Agent = Agents.FirstOrDefault(a => a.Id == (request.Context?.AgentId ?? _recipient ?? source.Room?.DefaultAgentId)) }; }
         CheckMediaCapacity(); ValidateMediaRequest(request);
         if (request.Context is { FrozenInstruction: null } context)
         {
-            KnowledgeContext knowledge = await Task.Run(() => KnowledgeService.Build(context.State, Conversation.Restore(context.Conversation), request.Prompt, context.Settings.ContextSize, _mediaShutdown.Token, request.Instruction), _mediaShutdown.Token);
+            KnowledgeContext knowledge = await Task.Run(() => KnowledgeService.Build(context.State, Conversation.Restore(context.Conversation), request.Prompt, context.Settings.ContextSize, _mediaShutdown.Token, request.Instruction, context.AgentId), _mediaShutdown.Token);
             SavedConversation conversation = context.Conversation with { Messages = [], Branches = null, ActiveBranchId = null, Draft = null, DraftAttachments = null, Summary = null };
-            AppState compact = context.State with { Conversations = [conversation], InferenceJobs = null, CommonMemories = [], Projects = context.State.Projects?.Select(p => p with { Documents = [], Memories = [] }).ToList() };
-            request = request with { Context = context with { State = compact, Conversation = conversation, FrozenInstruction = knowledge.Instruction, FrozenReferences = knowledge.References } };
+            SavedConversation compactRoom = conversation with { Room = conversation.Room is null ? null : conversation.Room with { Kind = conversation.Room.Kind == "thread" ? "channel" : conversation.Room.Kind, ParentId = null, OriginMessageId = null } };
+            AppState compact = context.State with { Conversations = [compactRoom], InferenceJobs = null, CommonMemories = [], AgentMemories = [], Agents = context.State.Agents?.Where(a => compactRoom.Room?.Members.Contains(a.Id) == true || compactRoom.Room?.PastMembers?.Contains(a.Id) == true).ToList(), Projects = context.State.Projects?.Where(p => p.Id == conversation.ProjectId).Select(p => p with { Documents = [], Memories = [] }).ToList(), Skills = context.State.Skills?.Where(s => s.ProjectId is null || s.ProjectId == conversation.ProjectId).ToList() };
+            request = request with
+            {
+                Context = context with
+                {
+                    State = compact,
+                    Conversation = conversation,
+                    FrozenInstruction = knowledge.Instruction,
+                    FrozenReferences = knowledge.References,
+                    AccessStamp = WorkspaceService.AccessStamp(context.State, conversation.Id, context.AgentId, knowledge.References)
+                }
+            };
         }
         CheckMediaCapacity(); ValidateMediaRequest(request); var job = new MediaJob(title, request); AddMediaJob(job);
         try { await SaveMediaJobsAsync(true); job.IsCommitted = true; PumpMedia(); return job; }
         catch { job.State = "failed"; job.Completion.TrySetException(new IOException("予約を保存できませんでした。")); throw; }
+    }
+    private void SyncMediaMessage(MediaJob job)
+    {
+        if (job.Request is not { ConversationId: Guid roomId } request) { return; }
+        Conversation? room = Conversations.FirstOrDefault(c => c.Id == roomId && c.ProjectId == request.ProjectId); if (room is null) { return; }
+        ConversationBranch? branch = room.Branches.FirstOrDefault(b => b.Id == request.BranchId); if (branch is null) { return; }
+        Guid id = WorkspaceService.StableId(job.Id, "media-message"); ChatMessage? message = branch.Messages.FirstOrDefault(m => m.Id == id);
+        if (message is null)
+        {
+            message = new()
+            {
+                Id = id,
+                Role = "assistant",
+                Identity = new(request.Agent?.Id, request.Agent?.Name ?? "生成", request.Agent?.Icon ?? "◇",
+                request.Context?.Model.Id, request.Context?.Model.DisplayName, job.CreatedAt, Detail: request.Kind == "image" ? "画像生成" : "文書生成")
+            };
+            branch.Messages.Add(message);
+        }
+        message.Content = job.Title; message.Notice = job.Detail; message.Knowledge = job.Knowledge; message.Skills = job.Skills;
+        if (job.State == "complete" && File.Exists(request.OutputPath)) { message.Artifact = new(job.Id, job.Title, request.Kind, request.OutputPath); }
     }
     public async Task ResumeMediaAsync(MediaJob job)
     {
@@ -117,6 +151,8 @@ public sealed partial class ChatViewModel
         { throw new InvalidDataException("作成予約の形式が不正です。"); }
         if (request.Context is { } context) { AppStore.Validate(context.State); if (context.Conversation.ProjectId != request.ProjectId) { throw new InvalidDataException("作成予約の参照範囲が一致しません。"); } }
         if (requireProject && request.ProjectId is Guid id && !Projects.Any(p => p.Id == id)) { throw new InvalidOperationException("対象のプロジェクトが存在しません。予約を取り消してください。"); }
+        if (requireProject && request.ConversationId is Guid roomId && !Conversations.Any(c => c.Id == roomId && c.ProjectId == request.ProjectId && c.Branches.Any(b => b.Id == request.BranchId)))
+        { throw new InvalidOperationException("作成先のチャンネルまたは分岐が存在しません。予約を取り消してください。"); }
     }
     private async Task ExecuteSavedMediaAsync(MediaJob job, CancellationToken token)
     {

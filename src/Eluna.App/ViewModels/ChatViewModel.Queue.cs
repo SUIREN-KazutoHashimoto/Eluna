@@ -53,15 +53,24 @@ public sealed partial class ChatViewModel
         else { _generation?.Cancel(); }
     }
     private Task GenerateAnswerAsync(Conversation conversation, WorkSession? previousWork = null) => QueueAnswerAsync(conversation, previousWork);
-    private async Task QueueAnswerAsync(Conversation conversation, WorkSession? previousWork, ChatMessage? resumeAnswer = null)
+    private async Task QueueAnswerAsync(Conversation conversation, WorkSession? previousWork, ChatMessage? resumeAnswer = null, AgentAccount? agent = null)
     {
         if (!CanGenerate || SelectedModel is null) { return; }
         if (Inferences.Items.Count(j => j.IsPending) >= 100) { Error = "推論の予約は100件までです。"; return; }
         ConversationBranch branch = conversation.ActiveBranch;
-        LocalModel model = SelectedModel;
-        AppSettings settings = EffectiveSettings with { SelectedProjectId = conversation.ProjectId, WorkOptions = (_settings.WorkOptions ?? new()) with { Roles = [.. (_settings.WorkOptions ?? new()).Participants] } };
+        if (previousWork is null && _settings.WorkMode == "debate") { EnsureDebateMembers(conversation); }
+        agent ??= Agents.FirstOrDefault(a => a.Id == (resumeAnswer?.Identity?.AgentId ?? conversation.Room?.DefaultAgentId));
+        if (agent is { Enabled: false }) { Error = "このエージェントは無効です。"; return; }
+        LocalModel model = agent?.ModelId is string modelId ? Models.FirstOrDefault(m => m.Id == modelId) ?? throw new InvalidOperationException(agent.Name + "のモデルがありません。エージェント設定から選択してください。") : SelectedModel;
+        AppSettings settings = EffectiveSettings with { ModelId = model.Id, ContextSize = model.Options.ContextSize ?? EffectiveSettings.ContextSize, SelectedProjectId = conversation.ProjectId, WorkOptions = RoomWorkOptions(conversation, _settings.WorkOptions ?? new()) };
         List<LocalModel> models = [.. Models];
-        var answer = resumeAnswer ?? new ChatMessage { Role = "assistant", Mode = settings.InferenceMode, Notice = "推論を予約しています…" };
+        var answer = resumeAnswer ?? new ChatMessage
+        {
+            Role = "assistant",
+            Mode = settings.InferenceMode,
+            Notice = "推論を予約しています…",
+            Identity = agent is null ? null : new(agent.Id, agent.Name, agent.Icon, model.Id, model.DisplayName, DateTimeOffset.UtcNow, conversation.Messages.LastOrDefault(m => m.Role == "user")?.Id)
+        };
         if (resumeAnswer is null) { branch.Messages.Add(answer); }
         conversation.UpdatedAt = DateTimeOffset.UtcNow; Notify(nameof(IsEmpty)); ScrollRequested?.Invoke(true);
         SavedMessage? question = branch.Messages.TakeWhile(m => m != answer).LastOrDefault(m => m.Role == "user")?.Save();
@@ -74,10 +83,11 @@ public sealed partial class ChatViewModel
         _submitting = true; RefreshCommands();
         try
         {
-            KnowledgeContext knowledge = await Task.Run(() => KnowledgeService.Build(snapshot, captured, previousWork?.Question ?? question.Content, settings.ContextSize, CancellationToken.None));
+            KnowledgeContext knowledge = await Task.Run(() => KnowledgeService.Build(snapshot, captured, previousWork?.Question ?? question.Content, settings.ContextSize, CancellationToken.None, agentId: settings.WorkMode == "debate" ? null : agent?.Id));
             if (_shuttingDown) { return; }
             var request = new SavedInferenceJob(Guid.NewGuid(), conversation.Id, branch.Id, answer.Id, conversation.Title,
-                DateTimeOffset.UtcNow, model, models, settings, knowledge.Instruction, knowledge.References, previousWork?.Save(), resumeAnswer is not null, skillRequest);
+                DateTimeOffset.UtcNow, model, models, settings, knowledge.Instruction, knowledge.References, previousWork?.Save(), resumeAnswer is not null, skillRequest, agent,
+                WorkspaceService.AccessStamp(snapshot, conversation.Id, agent?.Id, knowledge.References));
             InferenceJob job = Inferences.Add(request, paused: true);
             job.PropertyChanged += (_, _) => NotifyJob(job);
             await _store.SaveAsync(CaptureState());
@@ -91,27 +101,55 @@ public sealed partial class ChatViewModel
     {
         SavedInferenceJob request = job.Request;
         Conversation source = Conversations.FirstOrDefault(c => c.Id == request.ConversationId) ?? throw new InvalidOperationException("予約先の会話がありません。");
+        if (request.AccessStamp is not null && request.AccessStamp != WorkspaceService.AccessStamp(CaptureState(), source.Id, request.Agent?.Id, request.References))
+        { throw new InvalidOperationException("参加者または記憶の参照設定が変更されています。予約をキャンセルして送信し直してください。"); }
         if (source.ProjectId != request.Settings.SelectedProjectId) { throw new InvalidOperationException("会話の所属が変更されています。予約をキャンセルして送信し直してください。"); }
         ConversationBranch branch = source.Branches.First(b => b.Id == request.BranchId);
         ChatMessage answer = branch.Messages.First(m => m.Id == request.AnswerId);
-        var history = branch.Messages.TakeWhile(m => m != answer).Where(m => m.Role == "user" || m.Content.Length > 0).Select(m => m.Save() with { Incomplete = false }).ToList();
+        var history = branch.Messages.TakeWhile(m => m != answer).Where(m => m.Role == "user" || m.Content.Length > 0).Select(m => m.Save()).ToList();
         Conversation context = Conversation.Restore(new(source.Id, source.Title, history, CustomInstruction: source.CustomInstruction));
         context.Summary = branch.Summary; context.SummaryThrough = Math.Min(branch.SummaryThrough, history.Count);
         context.ProjectId = source.ProjectId;
+        context.Room = source.Room;
+        if (source.Room is { ParentId: Guid parentId, OriginMessageId: Guid origin } && Conversations.FirstOrDefault(c => c.Id == parentId && c.ProjectId == source.ProjectId) is { } parent)
+        {
+            List<SavedMessage> ancestors = new(); var seen = new HashSet<Guid>();
+            ConversationBranch parentBranch = parent.Branches.FirstOrDefault(b => b.Messages.Any(m => m.Id == origin || m.Work?.Turns.Any(t => (t.Id ?? WorkspaceService.StableId(m.Work.Id, t.Round + ":" + t.Role)) == origin) == true))
+                ?? throw new InvalidOperationException("スレッドの元の発言がありません。");
+            foreach (ChatMessage message in parentBranch.Messages)
+            {
+                if (message.Work is { Mode: "debate" } parentWork)
+                {
+                    bool found = false;
+                    foreach (DebateTurn turn in parentWork.Turns)
+                    {
+                        Guid id = turn.Id ?? WorkspaceService.StableId(parentWork.Id, turn.Round + ":" + turn.Role);
+                        if (seen.Add(id)) { ancestors.Add(new(turn.Kind == "user" ? "user" : "assistant", turn.Content, Id: id, Incomplete: turn.Incomplete, Identity: new(turn.AgentId, turn.Name ?? turn.Role, turn.Icon))); }
+                        if (id == origin) { found = true; break; }
+                    }
+                    if (found) { break; }
+                }
+                if (seen.Add(message.Id)) { ancestors.Add(message.Save() with { Work = null, Computer = null }); }
+                if (message.Id == origin) { break; }
+            }
+            var threadContext = Conversation.Restore(new(source.Id, source.Title, ancestors.TakeLast(12).Concat(history).ToList(), CustomInstruction: source.CustomInstruction, ProjectId: source.ProjectId, Room: source.Room));
+            context = threadContext;
+        }
         LlamaService engine = _idleEngines.TryPop(out LlamaService? idle) ? idle : _llama.CreateWorker();
         _busyEngines.Add(engine);
         try
         {
-            answer.Notice = ""; answer.Content = ""; answer.IsGenerating = true;
+            answer.Notice = ""; answer.Content = ""; answer.IsGenerating = true; answer.WasInterrupted = false;
             if (request.ResumeWork && answer.Work is not null) { if (answer.Skills.Count == 0) { await PrepareSkillsAsync(answer, job, engine, answer.Work.Question, token); } await RunWorkCoreAsync(answer, token, job, engine, context); job.Detail = answer.Work.Label; }
             else { await GenerateAnswerCoreAsync(context, answer, job, engine, token, request.PreviousWork is null ? null : WorkSession.Restore(request.PreviousWork)); }
             token.ThrowIfCancellationRequested();
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
-        { answer.Notice = "生成を停止しました"; throw; }
+        { answer.Notice = "生成を停止しました"; answer.WasInterrupted = true; throw; }
         catch (Exception ex)
         {
             engine.Stop(); answer.Notice = "処理を完了できませんでした。推論一覧から再試行またはキャンセルしてください。";
+            answer.WasInterrupted = true;
             _lastError = ex; if (SelectedConversation?.Id == source.Id) { SetError(DiagnosticsService.Explain(ex), () => { if (job.CanResume) { Inferences.Resume(job); } return Task.CompletedTask; }); }
             throw;
         }

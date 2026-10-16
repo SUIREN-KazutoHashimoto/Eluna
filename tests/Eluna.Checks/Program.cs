@@ -26,6 +26,7 @@ internal static class Program
             await CheckStorageAsync(Path.Combine(root, "storage-" + Guid.NewGuid().ToString("N")));
             await CheckEventsAsync();
             await ComputerUseChecks.RunAsync();
+            await WorkspaceChecks.RunAsync(Path.Combine(root, "workspace-" + Guid.NewGuid().ToString("N")));
             await InferenceQueueChecks.RunAsync(Path.Combine(root, "inference-queue-" + Guid.NewGuid().ToString("N")));
             await SkillChecks.RunAsync(Path.Combine(root, "skills-" + Guid.NewGuid().ToString("N")));
             await LicenseChecks.RunAsync();
@@ -247,7 +248,7 @@ internal static class Program
         var interrupted = new WorkSession { Mode = "debate", ModelId = "default", Question = "Elunaを検討", Options = new(3, 3, 2, 60, 5000, 2) };
         await runner.RunAsync(interrupted, (_, _) => Task.FromResult(true), () =>
         {
-            if (interrupted.Turns.Count == 1) { cancel.Cancel(); }
+            if (interrupted.Turns.Count(t => !t.Incomplete) == 1) { cancel.Cancel(); }
             return Task.CompletedTask;
         }, _ => { }, _ => { }, cancel.Token);
         Check(interrupted.Stage == "paused" && interrupted.Turns.Count == 1 && interrupted.Sources.Count == 1 && interrupted.CanResume, "Stopping debate discarded completed work.");

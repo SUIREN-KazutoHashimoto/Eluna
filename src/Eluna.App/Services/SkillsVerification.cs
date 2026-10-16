@@ -113,7 +113,7 @@ internal static class SkillsVerification
             await PrototypePreview.RenderAsync(light, Path.Combine(store.Root, "skills-manager-light-small.png")); light.Close();
             chat.SelectedConversation = numberChat; await PrototypePreview.RenderAsync(window, Path.Combine(store.Root, "skills-result-light.png"));
             await chat.PersistSafelyAsync(); AppState saved = await store.LoadAsync();
-            Check(saved.SchemaVersion == 3 && saved.Skills?.Count == chat.Skills.Count && saved.Conversations.SelectMany(c => c.Messages).Any(m => m.Skills?.Any(s => s.Executions.Count > 0) == true), "スキルと使用記録の保存に失敗しました。");
+            Check(saved.SchemaVersion == 4 && saved.Skills?.Count == chat.Skills.Count && saved.Conversations.SelectMany(c => c.Messages).Any(m => m.Skills?.Any(s => s.Executions.Count > 0) == true), "スキルと使用記録の保存に失敗しました。");
             string document = ""; await chat.SetConversationSkillsAsync([numbers.Id]);
             Task artifactTask = chat.RunMediaOperationAsync(async cancellation => await chat.GenerateArtifactTextAsync("数値2、3、5を集計した簡潔な報告文書を作ってください。", "見出しと表で書く。", text => document = text, cancellation));
             await Until(() => artifactTask.IsCompleted); await artifactTask;

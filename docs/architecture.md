@@ -1,4 +1,6 @@
-﻿# アーキテクチャ
+# アーキテクチャ
+
+チャンネル統合も既存のConversation / KnowledgeProject / キューを使う。WorkspaceServiceは移行・参照許可・ID再割り当て、KnowledgeServiceは許可した抜粋、ResearchRunner / DebateDirectorは議論、Timelineは発言を重複させず表示する責務を持つ。名前・モデルは発言時のスナップショット。[保存形式と境界](workspaces.md)を参照。
 
 ## 現在の構成
 

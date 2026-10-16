@@ -47,6 +47,10 @@ internal static class InferenceQueueChecks
             while (!condition()) { await Task.Delay(5, timeout.Token); }
         }
         Guid a = Guid.NewGuid(), b = Guid.NewGuid(), c = Guid.NewGuid();
+        InferenceJob prepaused = queue.Add(Request(Guid.NewGuid()), paused: true); Task beforeResume = prepaused.Finished;
+        queue.Resume(prepaused); gates[prepaused.Request.Id].SetResult(); await beforeResume.WaitAsync(TimeSpan.FromSeconds(5));
+        Check(prepaused.State == "complete", "The initial resume replaced a pending completion promise.");
+        started.Clear(); peak = 0;
         InferenceJob a1 = queue.Add(Request(a)), a2 = queue.Add(Request(a)), b1 = queue.Add(Request(b));
         Check(started.SequenceEqual([a1.Request.Id]) && queue.WaitingCount == 2, "Default queue did not serialize work.");
         queue.Limit = 2;

@@ -35,20 +35,22 @@ public sealed class MediaWindow : Window
     private List<KnowledgeReference> _documentKnowledge = [];
     private List<AppliedSkill> _documentSkills = [];
     private readonly Guid? _projectId;
+    private readonly Guid? _conversationId, _branchId;
     private readonly string _draftPath;
     internal Guid? ScopeId => _projectId;
     internal void SelectTab(string tab, string? initial = null) { _tabs.SelectedIndex = tab switch { "image" => 1, "vision" => 2, _ => 0 }; if (initial is not null && MessageBox.Show(this, "編集中の本文を直前の回答で置き換えますか？", "文書本文", MessageBoxButton.YesNo) == MessageBoxResult.Yes) { _document.Text = initial; } }
     internal string DraftPathForVerification => _draftPath;
     internal string DraftText => _document.Text;
-    internal bool ScopeMatches => _chat.Settings.SelectedProjectId == _projectId;
+    internal bool ScopeMatches => _chat.Settings.SelectedProjectId == _projectId && _chat.SelectedConversation?.Id == _conversationId && _chat.SelectedBranch?.Id == _branchId;
     internal string OperationStatus => Status;
 
     public MediaWindow(AppStore store, ChatViewModel chat, string tab = "document", string? initialText = null)
     {
         _store = store; _chat = chat; Title = "画像とドキュメント · Eluna"; Width = 1020; Height = 780; MinWidth = 720; MinHeight = 600;
         _projectId = chat.Settings.SelectedProjectId;
-        string primaryDraft = store.DocumentDraftPath(_projectId);
-        _draftPath = Application.Current.Windows.OfType<MediaWindow>().Any(w => !ReferenceEquals(w, this) && w.ScopeId == _projectId && w._store.Root == store.Root) ? Path.Combine(Path.GetDirectoryName(primaryDraft)!, Path.GetFileNameWithoutExtension(primaryDraft) + "-" + Guid.NewGuid().ToString("N") + ".md") : primaryDraft;
+        _conversationId = chat.SelectedConversation?.Id; _branchId = chat.SelectedBranch?.Id;
+        string primaryDraft = store.DocumentDraftPath(_projectId, _conversationId);
+        _draftPath = Application.Current.Windows.OfType<MediaWindow>().Any(w => !ReferenceEquals(w, this) && w._conversationId == _conversationId && w.ScopeId == _projectId && w._store.Root == store.Root) ? Path.Combine(Path.GetDirectoryName(primaryDraft)!, Path.GetFileNameWithoutExtension(primaryDraft) + "-" + Guid.NewGuid().ToString("N") + ".md") : primaryDraft;
         WindowStartupLocation = WindowStartupLocation.CenterOwner; Appearance.Attach(this);
         _tabs.Background = Brushes.Transparent; _tabs.BorderThickness = new(0); _tabs.Padding = new(0); _tabs.SetResourceReference(ForegroundProperty, "TextBrush");
         var root = new Grid { Margin = new(22) }; root.RowDefinitions.Add(new() { Height = GridLength.Auto }); root.RowDefinitions.Add(new()); root.RowDefinitions.Add(new() { Height = GridLength.Auto }); Content = root;
@@ -210,7 +212,7 @@ public sealed class MediaWindow : Window
     private bool CheckScope()
     {
         if (ScopeMatches) { return true; }
-        Status = "この画面を開いたプロジェクトに戻すか、現在のプロジェクトで画面を開き直してください。処理は実行していません。"; return false;
+        Status = "この画面を開いたチャンネル・分岐へ戻すか、現在の場所で画面を開き直してください。処理は実行していません。"; return false;
     }
     private MediaJob? _trackedMedia;
     private void TrackMedia(MediaJob job, Action<MediaJob> update)

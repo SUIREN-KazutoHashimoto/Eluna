@@ -13,11 +13,12 @@ public sealed class AppStore
     public string ModelsDirectory => _modelsDirectory ?? Path.Combine(Root, "Models");
     public SemaphoreSlim ModelsGate { get; } = new(1, 1);
     public string BackupsDirectory => Path.Combine(Root, "Backups");
-    internal string DocumentDraftPath(Guid? projectId) => Path.Combine(Root, "Generated", projectId is Guid id ? $"project-{id:N}-document-draft.md" : "document-draft.md");
+    internal string DocumentDraftPath(Guid? projectId, Guid? conversationId = null) => Path.Combine(Root, "Generated", conversationId is Guid room ? $"room-{room:N}-document-draft.md" : projectId is Guid id ? $"project-{id:N}-document-draft.md" : "document-draft.md");
     internal bool UsesKnowledgeState => File.Exists(Path.Combine(Root, "state-knowledge.json"));
     internal bool UsesSkillsState => File.Exists(Path.Combine(Root, "state-skills.json"));
-    private static int Version(string path) => Path.GetFileName(path) switch { "state-skills.json" => 3, "state-knowledge.json" => 2, _ => 1 };
-    private string StatePath(AppState? state = null) => Path.Combine(Root, UsesSkillsState || state?.SchemaVersion >= 3 || state?.Skills is { Count: > 0 } ? "state-skills.json" : UsesKnowledgeState || state?.SchemaVersion >= 2 || state?.Projects is { Count: > 0 } || state?.CommonMemories is { Count: > 0 } ? "state-knowledge.json" : "state.json");
+    internal bool UsesWorkspaceState => File.Exists(Path.Combine(Root, "state-workspace.json"));
+    private static int Version(string path) => Path.GetFileName(path) switch { "state-workspace.json" => 4, "state-skills.json" => 3, "state-knowledge.json" => 2, _ => 1 };
+    private string StatePath(AppState? state = null) => Path.Combine(Root, UsesWorkspaceState || state?.SchemaVersion >= 4 || state?.Agents is not null ? "state-workspace.json" : UsesSkillsState || state?.SchemaVersion >= 3 || state?.Skills is { Count: > 0 } ? "state-skills.json" : UsesKnowledgeState || state?.SchemaVersion >= 2 || state?.Projects is { Count: > 0 } || state?.CommonMemories is { Count: > 0 } ? "state-knowledge.json" : "state.json");
     private DateTimeOffset _lastBackup;
     public string? RecoveryNotice { get; private set; }
 
@@ -67,6 +68,19 @@ public sealed class AppStore
             string backup = Path.Combine(Root, $"state.broken-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.json");
             File.Copy(path, backup);
             RecoveryNotice = $"履歴を読み込めませんでした。元のデータは {Path.GetFileName(backup)} に保管しています。";
+            if (Path.GetFileName(path) == "state-workspace.json")
+            {
+                foreach (string previous in new[] { "state-skills.json", "state-knowledge.json", "state.json" })
+                {
+                    string old = Path.Combine(Root, previous); if (!File.Exists(old)) { continue; }
+                    try
+                    {
+                        AppState recovered = JsonSerializer.Deserialize<AppState>(await File.ReadAllTextAsync(old), JsonOptions) ?? throw new InvalidDataException();
+                        Validate(recovered); RecoveryNotice += " 以前の形式の履歴を読み込みました。新形式の破損データは退避済みです。"; return WorkspaceService.Upgrade(recovered);
+                    }
+                    catch (Exception failure) when (failure is JsonException or InvalidDataException) { }
+                }
+            }
             return new(UsesSkillsState ? 3 : UsesKnowledgeState ? 2 : 1, new(), []);
         }
     }
@@ -114,6 +128,7 @@ public sealed class AppStore
             (a.Kind == "image" ? a.ImageBase64 is { Length: <= 2800000 } data && data.StartsWith("/9j/", StringComparison.Ordinal) && System.Buffers.Text.Base64.IsValid(data, out int bytes) && bytes <= 2 * 1024 * 1024 : a.ImageBase64 is null));
         static bool ValidMessages(List<SavedMessage>? messages) => messages is not null && messages.All(m => m is not null &&
             m.Content is not null && m.Role is "user" or "assistant" &&
+            (m.Artifact is null || m.Artifact.JobId != Guid.Empty && m.Artifact.Title is { Length: <= 1000 } && m.Artifact.Kind is "image" or "document" or "translation" && m.Artifact.ResultPath is { Length: <= 32767 } && Path.IsPathFullyQualified(m.Artifact.ResultPath)) &&
             ValidAttachments(m.Attachments) &&
             (m.Knowledge is null || m.Knowledge.Count <= 8 && m.Knowledge.All(k => k is not null && k.Number is >= 1 and <= 8 && k.Kind is not null && k.Title is not null && k.Text is not null && k.Title.Length <= 1024 && k.Text.Length <= 700) && m.Knowledge.Select(k => k.Number).Distinct().Count() == m.Knowledge.Count) &&
             SkillValidation.Uses(m.Skills) && ComputerActionPolicy.ValidSaved(m.Computer) && (m.Work is null || ValidWork(m.Work)) &&
@@ -129,12 +144,12 @@ public sealed class AppStore
                 work.Sources.Select(s => s.Number).Distinct().Count() != work.Sources.Count || work.Sources.Count > work.Options.PageLimit ||
                 work.Hits.Any(h => h is null || h.Title is null || h.Snippet is null || h.Provider is null || !PublicUrl(h.Url)) ||
                 work.Activities.Any(a => a is null || a.Kind is null || a.Title is null || a.Detail is null) ||
-                work.Turns.Any(t => t is null || t.Role is null || t.Content is null || t.Round < 1 || t.Round > work.Options.Rounds) ||
+                work.Turns.Any(t => t is null || t.Role is null || t.Content is null || t.Round < 1 || (work.Options.DebateStyle == "rounds" && t.Round > work.Options.Rounds)) ||
                 work.Claims?.Any(c => c is null || c.Quote is null || c.Claim is null || !work.Sources.Any(s => s.Number == c.SourceNumber)) == true) { return false; }
             try { ResearchRunner.ValidateOptions(work.Options); return true; } catch (InvalidDataException) { return false; }
         }
         static bool PublicUrl(string? url) => Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) && uri.Scheme is "http" or "https" && uri.UserInfo.Length == 0;
-        if (state.SchemaVersion is not (1 or 2 or 3) || state.Settings is null || state.Settings.ContextSize is not (2048 or 4096 or 8192 or 16384) || state.Settings.MaxConcurrentInferences is < 1 or > 4 || state.Settings.MaxConcurrentDownloads is < 1 or > 4 || state.Settings.MaxConcurrentMedia is < 1 or > 4 ||
+        if (state.SchemaVersion is not (1 or 2 or 3 or 4) || state.Settings is null || state.Settings.ContextSize is not (2048 or 4096 or 8192 or 16384) || state.Settings.MaxConcurrentInferences is < 1 or > 4 || state.Settings.MaxConcurrentDownloads is < 1 or > 4 || state.Settings.MaxConcurrentMedia is < 1 or > 4 ||
             !double.IsFinite(state.Settings.UiScale) || state.Settings.UiScale is < 1 or > 1.5 ||
             !double.IsFinite(state.Settings.ChatFontSize) || state.Settings.ChatFontSize is < 10 or > 28 ||
             !double.IsFinite(state.Settings.LineHeight) || state.Settings.LineHeight is < 15 or > 60 ||
@@ -150,6 +165,7 @@ public sealed class AppStore
         if (state.Settings.WorkOptions is not null) { ResearchRunner.ValidateOptions(state.Settings.WorkOptions); }
         KnowledgeService.Validate(state.Projects, state.CommonMemories);
         SkillValidation.State(state);
+        WorkspaceService.Validate(state);
         HashSet<Guid> projectIds = (state.Projects ?? []).Select(p => p.Id).ToHashSet();
         if (state.Settings.SelectedProjectId is Guid selected && !projectIds.Contains(selected) || state.Conversations.Any(c => c.ProjectId is Guid id && !projectIds.Contains(id)))
         { throw new InvalidDataException("会話または選択範囲のプロジェクトが見つかりません。"); }

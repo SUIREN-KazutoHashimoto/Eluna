@@ -335,13 +335,13 @@ internal static class PrototypePreview
         var sources = new KnowledgeWindow(knowledge.References) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -20000, Top = -20000 };
         sources.Show(); await RenderAsync(sources, Path.Combine(output, "knowledge-references.png")); sources.Close();
         Directory.CreateDirectory(Path.GetDirectoryName(store.DocumentDraftPath(a.Id))!);
-        await File.WriteAllTextAsync(store.DocumentDraftPath(a.Id), "A_ONLY_DOCUMENT_DRAFT");
-        await File.WriteAllTextAsync(store.DocumentDraftPath(b.Id), "B_ONLY_DOCUMENT_DRAFT");
+        await File.WriteAllTextAsync(store.DocumentDraftPath(a.Id, chat.SelectedConversation!.Id), "A_ONLY_DOCUMENT_DRAFT");
         var mediaA = new MediaWindow(store, chat) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -20000, Top = -20000 };
         mediaA.Show(); Require(mediaA.DraftText == "A_ONLY_DOCUMENT_DRAFT" && mediaA.ScopeMatches, "Project document drafts were read from another scope.");
         chat.SelectProject(b.Id); Require(!mediaA.ScopeMatches, "An open document tool silently followed a different project.");
         Buttons(mediaA).Single(button => button.Content is "AIで作成").RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-        Require(!chat.IsBusy && mediaA.OperationStatus.Contains("開いたプロジェクトに戻す", StringComparison.Ordinal), "Document generation used a different project from the one shown in the tool.");
+        Require(!chat.IsBusy && mediaA.OperationStatus.Contains("開いたチャンネル・分岐へ戻す", StringComparison.Ordinal), "Document generation used a different project from the one shown in the tool.");
+        await File.WriteAllTextAsync(store.DocumentDraftPath(b.Id, chat.SelectedConversation!.Id), "B_ONLY_DOCUMENT_DRAFT");
         var mediaB = new MediaWindow(store, chat) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -20000, Top = -20000 };
         mediaB.Show(); Require(mediaB.DraftText == "B_ONLY_DOCUMENT_DRAFT", "Document draft isolation failed after switching projects."); mediaB.Close(); mediaA.Close(); chat.SelectProject(a.Id); chat.SelectedConversation = example;
         var note = new MemoryNote(Guid.NewGuid(), "取り込み時の共通メモリ確認用 SAMPLE-COMMON-9913", now);

@@ -19,7 +19,7 @@ internal static class KnowledgeService
     internal const string DefaultInstruction = "あなたは親切で正確なアシスタントです。ユーザーの言語で簡潔に答えてください。";
     private sealed record Candidate(string Key, string Kind, string Title, string Text, int Score, int Position);
 
-    internal static KnowledgeContext Build(AppState state, Conversation conversation, string question, int contextSize, CancellationToken token, string? taskInstruction = null)
+    internal static KnowledgeContext Build(AppState state, Conversation conversation, string question, int contextSize, CancellationToken token, string? taskInstruction = null, Guid? agentId = null)
     {
         token.ThrowIfCancellationRequested();
         KnowledgeProject? project = conversation.ProjectId is Guid id
@@ -66,7 +66,7 @@ internal static class KnowledgeService
         {
             foreach (KnowledgeDocument document in project.Documents.Where(d => d.Enabled))
             { Add("document:" + document.Id, document.VisionExtracted ? "画像からの読み取り（未検証）" : "登録資料", document.Name, document.Text); }
-            if (project.ReferenceChats)
+            if (project.ReferenceChats && (conversation.Room is null || conversation.Room.ReferenceSiblingChats))
             {
                 foreach (SavedConversation other in state.Conversations.Where(c => c.ProjectId == project.Id && c.Id != conversation.Id && !c.IsArchived).OrderByDescending(c => c.UpdatedAt).Take(200))
                 {
@@ -94,6 +94,47 @@ internal static class KnowledgeService
             selected.Add(new(selected.Count + 1, candidate.Kind, candidate.Title, candidate.Text[..length]));
             counts[candidate.Key] = counts.GetValueOrDefault(candidate.Key) + 1;
             remaining -= length + 100;
+        }
+        if (agentId is Guid agent)
+        {
+            AgentAccount account = state.Agents?.SingleOrDefault(a => a.Id == agent && a.Enabled) ?? throw new InvalidDataException("このエージェントは利用できません。");
+            if (conversation.Room?.Members.Contains(agent) != true) { throw new InvalidDataException("このエージェントは現在の場所へ参加していません。"); }
+            instruction += "\n今回の話者: " + account.Name + "\n専門分野: " + account.Specialty + "\nエージェントの基本指示:\n" + account.Instruction;
+            SavedConversation destination = conversation.Save();
+            var recall = new List<(KnowledgeReference Reference, int Score)>();
+            void Recall(string kind, string title, string text, Guid? source, Guid? memory = null)
+            {
+                int score = Score(text, title);
+                if (score <= 0 && !overview) { return; }
+                int match = terms.Select(t => text.IndexOf(t, StringComparison.OrdinalIgnoreCase)).Where(i => i >= 0).DefaultIfEmpty(0).Min();
+                int start = Math.Max(0, match - 80); if (start > 0 && char.IsLowSurrogate(text[start])) { start--; }
+                string excerpt = text.Substring(start, Math.Min(700, text.Length - start));
+                if (excerpt.Length > 0 && char.IsHighSurrogate(excerpt[^1])) { excerpt = excerpt[..^1]; }
+                recall.Add((new(0, kind, title, excerpt, source, agent, memory), score));
+                if (recall.Count > 4) { int lowest = recall.Min(r => r.Score); recall.RemoveAt(recall.FindLastIndex(r => r.Score == lowest)); }
+            }
+            foreach (AgentMemory memory in state.AgentMemories ?? [])
+            { token.ThrowIfCancellationRequested(); if (WorkspaceService.CanRecallMemory(state, destination, memory, agent)) { Recall("エージェントの保存メモリ", account.Name + " / " + memory.Scope, memory.Text, memory.SourceConversationId, memory.Id); } }
+            foreach (SavedConversation source in state.Conversations)
+            {
+                token.ThrowIfCancellationRequested();
+                if (!WorkspaceService.CanRecall(state, destination, source, agent)) { continue; }
+                foreach (SavedMessage message in WorkspaceService.Messages(source).Where(m => !m.Incomplete).Reverse())
+                {
+                    if (message.Content.Length > 0) { Recall("持ち越しを許可した過去会話（未検証）", source.Title, (message.Identity?.Name ?? message.Role) + ": " + message.Content, source.Id); }
+                    foreach (DebateTurn turn in message.Work?.Turns.Where(t => !t.Incomplete) ?? [])
+                    { Recall("持ち越しを許可した議論（未検証）", source.Title, (turn.Name ?? turn.Role) + ": " + turn.Content, source.Id); }
+                }
+            }
+            // Keep the established eight-reference and character limits across both knowledge paths.
+            foreach (var item in recall.OrderByDescending(r => r.Score).Take(4))
+            {
+                if (selected.Count >= 8 || remaining < 120) { break; }
+                int length = Math.Min(item.Reference.Text.Length, remaining - 100);
+                if (length > 0 && char.IsHighSurrogate(item.Reference.Text[length - 1])) { length--; }
+                KnowledgeReference reference = item.Reference with { Number = selected.Count + 1, Text = item.Reference.Text[..length] };
+                selected.Add(reference); remaining -= reference.Text.Length + 100;
+            }
         }
         return new(instruction, selected);
     }
