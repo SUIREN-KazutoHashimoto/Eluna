@@ -14,6 +14,24 @@ namespace Eluna.App.Services;
 // Runs in the disposable worker process: a blocked third-party UIA provider must not block Eluna.
 internal static class ComputerDesktopNative
 {
+    internal static bool IsDesktopLocked()
+    {
+        _ = GetWindowThreadProcessId(GetForegroundWindow(), out uint pid);
+        if (pid == 0) { return false; }
+        try { using Process foreground = Process.GetProcessById((int)pid); return foreground.ProcessName.Equals("LockApp", StringComparison.OrdinalIgnoreCase) || foreground.ProcessName.Equals("LogonUI", StringComparison.OrdinalIgnoreCase); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or Win32Exception) { return false; }
+    }
+    internal static void RequireUnlockedDesktop()
+    { if (IsDesktopLocked()) { throw new InvalidOperationException("Windowsがロックされています。ロックを解除してからComputer Useを再開してください。"); } }
+    internal static string DesktopStatus(ComputerTarget target)
+    {
+        nint foreground = GetForegroundWindow(); _ = GetWindowThreadProcessId(foreground, out uint pid);
+        _ = DwmGetWindowAttribute((nint)target.Handle, 14, out int cloaked, sizeof(int));
+        nint input = OpenInputDesktop(0, false, 1);
+        string Name(nint desktop) { var text = new StringBuilder(128); return GetUserObjectInformationW(desktop, 2, text, 256, out _) ? text.ToString() : "unavailable"; }
+        try { return $"foreground={foreground:X}; foregroundPid={pid}; target={target.Handle:X}; cloaked={cloaked}; visible={IsWindowVisible((nint)target.Handle)}; minimized={IsIconic((nint)target.Handle)}; threadDesktop={Name(GetThreadDesktop(GetCurrentThreadId()))}; inputDesktop={Name(input)}"; }
+        finally { if (input != 0) { _ = CloseDesktop(input); } }
+    }
     internal static bool TargetInForeground(ComputerTarget target) => GetForegroundWindow() == (nint)target.Handle;
     internal static List<ComputerTarget> Windows(int parent)
     {
@@ -52,6 +70,7 @@ internal static class ComputerDesktopNative
 
     internal static ComputerObservation Observe(ComputerTarget target, int parent, bool screenCapture = false)
     {
+        RequireUnlockedDesktop();
         nint surface = Validate(target, parent);
         if (!GetWindowRect(surface, out NativeRect rect)) { throw new Win32Exception(); }
         var bounds = new ComputerBounds(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
@@ -116,9 +135,7 @@ internal static class ComputerDesktopNative
         ComputerObservation now = Observe(before.Target, request.Parent);
         ComputerActionPolicy.RequireFresh(before, now, action);
         nint surface = (nint)now.Surface;
-        _ = SetForegroundWindow(surface);
-        for (int i = 0; i < 20 && GetForegroundWindow() != surface; i++) { Thread.Sleep(25); }
-        Foreground(surface);
+        Activate(surface);
         // Activation can reveal a dialog or change layout; inspect again before any input.
         now = Observe(before.Target, request.Parent);
         ComputerActionPolicy.RequireFresh(before, now, action);
@@ -185,7 +202,13 @@ internal static class ComputerDesktopNative
         { throw new InvalidOperationException("入力先を確認できないか、パスワード欄です。利用者が対象アプリで確認してください。"); }
     }
     private static void Foreground(nint surface)
-    { if (GetForegroundWindow() != surface) { throw new InvalidOperationException("対象アプリを前面にできませんでした。対象をクリックしてから再実行してください。"); } }
+    { if (GetForegroundWindow() != surface) { RequireUnlockedDesktop(); throw new InvalidOperationException("対象アプリを前面にできませんでした。対象をクリックしてから再実行してください。"); } }
+    private static void Activate(nint surface)
+    {
+        _ = SetForegroundWindow(surface);
+        for (int i = 0; i < 20 && GetForegroundWindow() != surface; i++) { Thread.Sleep(25); }
+        Foreground(surface);
+    }
     private static void PointTarget(nint surface, ComputerBounds bounds, int x, int y)
     {
         Foreground(surface);
@@ -273,6 +296,12 @@ internal static class ComputerDesktopNative
     [StructLayout(LayoutKind.Sequential)] private struct KeyboardInput { public ushort Key, Scan; public uint Flags, Time; public nuint Extra; }
     private delegate bool WindowCallback(nint window, nint data);
     [DllImport("user32.dll")] private static extern bool EnumWindows(WindowCallback callback, nint data);
+    [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(nint window, int attribute, out int value, int size);
+    [DllImport("user32.dll")] private static extern nint OpenInputDesktop(uint flags, bool inherit, uint access);
+    [DllImport("user32.dll")] private static extern bool CloseDesktop(nint desktop);
+    [DllImport("user32.dll")] private static extern nint GetThreadDesktop(uint thread);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool GetUserObjectInformationW(nint obj, int index, StringBuilder info, uint length, out uint needed);
     [DllImport("user32.dll")] private static extern bool IsWindow(nint window);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint window);
     [DllImport("user32.dll")] private static extern bool IsIconic(nint window);

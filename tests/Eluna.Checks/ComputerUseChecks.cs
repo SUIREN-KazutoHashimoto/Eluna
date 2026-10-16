@@ -1,4 +1,8 @@
 using System.IO;
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
+using System.Text;
 using System.Text.Json;
 using Eluna.App.Models;
 using Eluna.App.Services;
@@ -17,6 +21,7 @@ internal static class ComputerUseChecks
 
     internal static async Task RunAsync()
     {
+        await CheckBrowserFixtureAsync();
         ComputerObservation screen = Screen();
         Check(ComputerUseOverlay.ActionArea(screen, new("click", X: 1000, Y: 1000)) is { Left: -229, Top: 771 }, "Overlay coordinates lost the negative monitor origin or last pixel.");
         Check(ComputerUseOverlay.ActionArea(screen, new("set_value", Element: 1)) == screen.Elements[0].Bounds, "Typing highlight lost the element bounds.");
@@ -60,6 +65,15 @@ internal static class ComputerUseChecks
         var exhaustedController = new ComputerChatController(exhausted, () => throw new InvalidOperationException("Should not load a model."), new("fixture", "fixture", "local", "local", "fixture.gguf", "", 0), new(), () => true, () => { });
         exhaustedController.Start(); await exhaustedController.Completion; exhaustedController.Stop(); exhaustedController.Stop();
         Check(exhausted.Stage == "limit" && exhausted.Windows.Count == 0, "A completed or exhausted controller was not safe to stop again.");
+        if (ComputerDesktopNative.IsDesktopLocked())
+        {
+            bool loaded = false;
+            var locked = new ComputerSession { Task = "ロック中の操作", ModelId = "fixture" };
+            var controller = new ComputerChatController(locked, () => { loaded = true; throw new InvalidOperationException("Should not load a model on a locked desktop."); }, new("fixture", "fixture", "local", "local", "fixture.gguf", "", 0), new(), () => true, () => { });
+            controller.Start(); await controller.Completion; controller.Stop();
+            Check(locked.Stage == "failed" && locked.Detail.Contains("ロック", StringComparison.Ordinal) && !loaded && locked.Steps.Count == 0 && locked.Windows.Count == 0, "Locked desktop reached app observation, model loading or input.");
+            Console.WriteLine("Locked desktop: controller stops before app observation, model loading and input: OK");
+        }
         Reject(() => ComputerActionPolicy.Confirmation(new("type_text", Element: 3), screen, false), "Password field could be modified.");
         ComputerActionPolicy.RequireFresh(screen, screen, action);
         Reject(() => ComputerActionPolicy.RequireFresh(screen, screen with { Surface = 102 }, action), "Changed modal window was accepted.");
@@ -141,6 +155,30 @@ internal static class ComputerUseChecks
         using IDisposable lease = await ComputerUseLease.AcquireAsync(CancellationToken.None);
         try { using IDisposable second = await ComputerUseLease.AcquireAsync(CancellationToken.None); throw new Exception("Two controllers acquired the desktop."); } catch (InvalidOperationException) { }
         Console.WriteLine("Computer Use: action protocol, permission boundaries, stale screen, observe-act loop, denial, cancellation and exclusive input: OK");
+    }
+
+    private static async Task CheckBrowserFixtureAsync()
+    {
+        string output = Path.GetFullPath("artifacts/checks/computer-browser-fixture"); Directory.CreateDirectory(output);
+        var listener = new TcpListener(IPAddress.Loopback, 0); listener.Start();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        Task serving = ComputerBrowserVerification.ServeAsync(listener, "<title>検証ページ</title>"u8.ToArray(), output, timeout.Token);
+        try
+        {
+            using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}/"), Timeout = TimeSpan.FromSeconds(5) };
+            Check((await client.GetStringAsync("memo", timeout.Token)).Contains("検証ページ", StringComparison.Ordinal), "Browser fixture did not serve its second tab.");
+            const string draft = "{\"product\":\"North Mini 32\",\"purpose\":\"ローカルAI用\"}";
+            using var body = new StringContent(draft, Encoding.UTF8, "application/json");
+            using HttpResponseMessage saved = await client.PostAsync("api/draft", body, timeout.Token);
+            Check(saved.IsSuccessStatusCode && await File.ReadAllTextAsync(Path.Combine(output, "draft.json"), timeout.Token) == draft, "Browser fixture corrupted the Unicode draft or byte length.");
+            using HttpResponseMessage missing = await client.GetAsync("not-a-page", timeout.Token);
+            Check(missing.StatusCode == HttpStatusCode.NotFound, "Browser fixture accepted an unknown route.");
+        }
+        finally
+        {
+            timeout.Cancel(); listener.Stop();
+            try { await serving; } catch (Exception ex) when (ex is OperationCanceledException or SocketException or ObjectDisposedException) { }
+        }
     }
 
     private sealed class FakeDesktop(ComputerObservation screen) : IComputerDesktop

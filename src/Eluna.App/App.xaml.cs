@@ -40,6 +40,13 @@ public partial class App : Application
                 root = Path.Combine(captureDirectory, "preview-data");
             }
             var store = new AppStore(root);
+            int browserIndex = Array.IndexOf(e.Args, "--verify-computer-browser");
+            if (browserIndex >= 0 && browserIndex + 1 < e.Args.Length)
+            {
+                int modelIndex = Array.IndexOf(e.Args, "--model-meta"), pageIndex = Array.IndexOf(e.Args, "--fixture-page");
+                if (root is null || modelIndex < 0 || modelIndex + 1 >= e.Args.Length || pageIndex < 0 || pageIndex + 1 >= e.Args.Length) { throw new InvalidOperationException("ブラウザ検証には専用の --data-dir、--model-meta、--fixture-page が必要です。"); }
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = ComputerBrowserVerification.RunAsync(store, e.Args[browserIndex + 1], e.Args[modelIndex + 1], e.Args[pageIndex + 1]); return;
+            }
             int effectsIndex = Array.IndexOf(e.Args, "--verify-computer-effects");
             if (effectsIndex >= 0 && effectsIndex + 1 < e.Args.Length)
             {

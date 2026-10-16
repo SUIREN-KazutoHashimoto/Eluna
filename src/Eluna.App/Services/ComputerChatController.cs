@@ -105,6 +105,7 @@ internal sealed class ComputerChatController(ComputerSession session, Func<Llama
         try
         {
             if (session.SecondsUsed >= 1200 || session.Steps.Count >= session.MaxSteps) { State("limit", "操作回数または実行時間の上限に達しています。新しい依頼として送信してください。"); return; }
+            ComputerDesktopNative.RequireUnlockedDesktop();
             await SelectAppsAsync("この依頼で操作してよいアプリを選び、「許可して続行」を押してください。", _stop.Token);
             while (true)
             {
@@ -117,6 +118,7 @@ internal sealed class ComputerChatController(ComputerSession session, Func<Llama
                 {
                     State("queued", "別のComputer Useが終わると操作します。会話は切り替えられます。");
                     await DesktopGate.WaitAsync(segment.Token); acquired = true;
+                    ComputerDesktopNative.RequireUnlockedDesktop();
                     segment.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, 1200 - session.SecondsUsed)));
                     using var hotkey = new ComputerStopHotkey(Application.Current.MainWindow, Stop);
                     using var overlay = new ComputerUseOverlay(() => _ = HandleAsync("pause"), Stop); _overlay = overlay;
