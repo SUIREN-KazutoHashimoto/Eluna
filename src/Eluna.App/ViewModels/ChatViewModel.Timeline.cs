@@ -82,6 +82,6 @@ public sealed partial class ChatViewModel
             if (old >= 0) { Timeline.Move(old, i); } else { Timeline.Insert(i, next[i]); }
         }
         while (Timeline.Count > next.Count) { Timeline.RemoveAt(Timeline.Count - 1); }
-        Notify(nameof(ReplyLabel));
+        Notify(nameof(ReplyLabel)); Notify(nameof(IsEmpty));
     }
 }

@@ -25,8 +25,8 @@ public static class Appearance
         Application.Current.Resources["Theme"] = theme;
         bool light = theme == "light";
         string[] names = ["BackgroundBrush", "SidebarBrush", "SurfaceBrush", "HoverBrush", "StrokeBrush", "TextBrush", "MutedBrush", "AccentBrush", "OnAccentBrush", "CodeKeywordBrush", "CodeStringBrush", "CodeCommentBrush", "CodeNumberBrush"];
-        string[] colors = light ? ["#FAFAFA", "#F0F0F0", "#E8E8E8", "#DEDEDE", "#CBCBCB", "#202020", "#656565", "#286B48", "#FFFFFF", "#6843A0", "#79550E", "#36733A", "#23667C"]
-            : ["#212121", "#171717", "#303030", "#3B3B3B", "#424242", "#ECECEC", "#A5A5A5", "#B3EBCB", "#10291B", "#9E9BEF", "#C2A76F", "#86AA82", "#89BCD8"];
+        string[] colors = light ? ["#E3E5E8", "#F2F3F5", "#EBEDEF", "#DFE1E5", "#D9DCE1", "#313338", "#5C5E66", "#5865F2", "#FFFFFF", "#6843A0", "#79550E", "#36733A", "#23667C"]
+            : ["#1E1F22", "#2B2D31", "#232428", "#404249", "#26272D", "#F2F3F5", "#B5BAC1", "#5865F2", "#FFFFFF", "#B0ADF6", "#D1B47B", "#96BA92", "#99CCE8"];
         for (int i = 0; i < names.Length; i++) { Application.Current.Resources[names[i]] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(colors[i])); }
         Application.Current.Resources["ChatBackgroundBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(light ? "#FFFFFF" : "#313338"));
         Application.Current.Resources["ChatHoverBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(light ? "#F2F3F5" : "#2E3035"));

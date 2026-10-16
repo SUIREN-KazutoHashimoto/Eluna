@@ -1,5 +1,7 @@
 # 完成版に向けた実装・検証の台帳
 
+2026-10-16: codex/discord-shell で主画面をDiscordを参考にした構成へ変更し、AI設定をユーザー設定へ集約した。モデル選択はアカウントで管理する。今回の配布確認用exeは artifacts/release-discord/Eluna.exe。[画面・設定の移動先と検証](discord-ui.md)を参照。
+
 2026-10-16: `codex/agent-channel-integration`でA01〜A16の統合改修を実装。アカウント、サーバー・チャンネル・DM・スレッド、参照許可付きメモリ、共通タイムライン、自由形ディベート、生成物の関連付け、schema 4と旧履歴保全を追加した。配布確認用exeは`artifacts/release-workspace/Eluna.exe`。使い方、確認結果、実機で未確認の範囲は[統合改修の記録](workspaces.md)を参照。以下のexeパスは各機能追加時点の記録。
 
 Computer Useを会話へ統合した開発版は`artifacts/release-computer-chat/Eluna.exe`。専用ウィンドウを廃止し、チャットからの依頼、アプリ許可、通常のマウス・キー操作の自動実行、重要な操作の確認、追加指示、一時停止・再開・引き継ぎ、会話切り替え、履歴保存と再許可を実装した。使用モデルに左右される操作精度をChatGPTと同等と断定しない。現在の使い方・確認済み／未確認の範囲は[Computer Use](computer-use.md)を参照。以下は機能追加時点の記録として保持する。

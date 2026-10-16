@@ -22,6 +22,7 @@ public sealed partial class ChatViewModel
     public string SendLabel => SelectedComputer is not null ? "追加指示を送信" : !_ready ? "起動の準備中です" : !HasModel ? "設定の「モデルを探す」からモデルを追加してください" : _modelsChanging ? "モデルの準備が終わるまで待っています" : _submitting ? "前の依頼を予約しています" : Inferences.Items.Count(j => j.IsPending) >= 100 ? "予約上限の100件です。処理リストから予約を整理してください" : _isBusy || MediaJobs.Any(j => j.IsPending) || Inferences.ActiveCount >= Inferences.Limit || SelectedConversation is not null && Inferences.Contains(SelectedConversation.Id) ? "予約して送信" : "送信";
     private void QueueChanged()
     {
+        Notify(nameof(TypingNotice));
         Notify(nameof(ProcessSummary)); PumpMedia(); Notify(nameof(IsBusy)); Notify(nameof(QueueLabel)); Notify(nameof(Status)); Notify(nameof(Metrics));
         Notify(nameof(CanStopSelected)); Notify(nameof(SendLabel)); RefreshCommands();
         foreach (Conversation conversation in Conversations)
@@ -40,6 +41,7 @@ public sealed partial class ChatViewModel
         .FirstOrDefault(b => b.Id == request.BranchId)?.Messages.FirstOrDefault(m => m.Id == request.AnswerId);
     private void NotifyJob(InferenceJob job)
     {
+        Notify(nameof(TypingNotice));
         if (ReferenceEquals(SelectedJob, job)) { Notify(nameof(Status)); Notify(nameof(Metrics)); }
     }
     private void ScrollJob(InferenceJob job, bool force)

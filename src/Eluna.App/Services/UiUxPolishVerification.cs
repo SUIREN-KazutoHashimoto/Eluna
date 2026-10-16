@@ -46,8 +46,7 @@ internal static class UiUxPolishVerification
             for (int i = 0; i < 24; i++) { var c = new Conversation { Title = $"会話 {i + 1} · 長い名前を読みながら作業する" }; vm.Conversations.Add(c); fixtures.Add(c); }
             window.Width = 820; window.Height = 600;
             await PrototypePreview.RenderAsync(window, Path.Combine(output, "main-minimum.png"));
-            var selector = (ComboBox)window.FindName("ModelSelector");
-            Check(selector.SelectedItem is LocalModel && Find<TextBlock>(selector).Any(t => t.Text == model.DisplayName && t.ActualWidth > 20), "The selected model name is not visible.");
+            Check(window.FindName("ModelSelector") is null && !Find<ComboBox>(window).Any(), "AI selectors remain in the conversation shell.");
             double messageHeight = ((ListBox)window.FindName("MessagesList")).ActualHeight;
             double historyHeight = ((ListBox)window.FindName("HistoryList")).ActualHeight;
             Check(messageHeight >= 300 && historyHeight >= 240, "The compact layout did not leave enough space for chat and history.");
@@ -86,12 +85,12 @@ internal static class UiUxPolishVerification
             Check(!canceledRan, "Canceled media work was executed.");
             vm.Downloads.Items.Add(new() { Name = "表示確認用モデル.gguf", ImportPath = "fixture", Status = "active", Stage = "ダウンロード中", Received = 40L << 20, Total = 100L << 20, Speed = 4L << 20 });
             await Until(() => started.Count == 1);
-            var popup = (Popup)window.FindName("ProcessPopup"); popup.IsOpen = true;
-            await PrototypePreview.RenderAsync(window, Path.Combine(output, "process-popup.png"), popup);
-            ProcessListPanel panel = (ProcessListPanel)((ContentControl)window.FindName("ProcessContent")).Content; panel.Refresh();
+            var processSettings = Offscreen(new SettingsWindow(vm, 9) { Owner = window });
+            await PrototypePreview.RenderAsync(processSettings, Path.Combine(output, "process-settings.png"));
+            ProcessListPanel panel = (ProcessListPanel)((ContentControl)processSettings.FindName("ProcessContent")).Content; panel.Refresh();
             Check(Find<TextBlock>(panel).Any(t => t.Text.Contains("本文を生成", StringComparison.Ordinal)) && Find<ProgressBar>(panel).Any(p => !p.IsIndeterminate && Math.Abs(p.Value - 40) < 0.01), "Process popup omitted live inference or download progress.");
             Check(Find<TextBlock>(panel).Any(t => t.Text.Contains("画像の予約", StringComparison.Ordinal)), "Process popup omitted queued work.");
-            popup.IsOpen = false; hold.TrySetResult(); await running; await next; await Until(() => !vm.IsBusy);
+            processSettings.Close(); hold.TrySetResult(); await running; await next; await Until(() => !vm.IsBusy);
             Check(started.SequenceEqual(new[] { "first", "second" }), "Media jobs did not run in order."); vm.Downloads.Items.Clear();
             report["processes"] = new { progress = 40, mediaOrder = started, canceledRan };
 
@@ -180,7 +179,7 @@ internal static class UiUxPolishVerification
     {
         AppSettings original = vm.Settings;
         Check(original.ComputerUseKeepAwake, "The default-on setting was not loaded.");
-        var settings = Offscreen(new SettingsWindow(vm));
+        var settings = Offscreen(new SettingsWindow(vm, 6));
         var box = (CheckBox)settings.FindName("ComputerAwakeBox");
         Check(box.IsChecked == true, "The settings checkbox did not show the enabled value.");
         box.IsChecked = false; box.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
@@ -190,7 +189,7 @@ internal static class UiUxPolishVerification
         Click((Button)settings.FindName("SaveButton")); await Until(() => !vm.Settings.ComputerUseKeepAwake && ((Button)settings.FindName("SaveButton")).IsEnabled);
         Check(!(await store.LoadAsync()).Settings.ComputerUseKeepAwake, "Saving the power opt-out did not persist.");
         settings.Close();
-        settings = Offscreen(new SettingsWindow(vm)); box = (CheckBox)settings.FindName("ComputerAwakeBox");
+        settings = Offscreen(new SettingsWindow(vm, 6)); box = (CheckBox)settings.FindName("ComputerAwakeBox");
         Check(box.IsChecked == false, "Reopening settings lost the power opt-out.");
         box.IsChecked = true; box.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
         Click((Button)settings.FindName("SaveButton")); await Until(() => vm.Settings.ComputerUseKeepAwake && ((Button)settings.FindName("SaveButton")).IsEnabled);

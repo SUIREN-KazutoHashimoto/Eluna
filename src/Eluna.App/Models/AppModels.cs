@@ -37,12 +37,13 @@ public sealed class ChatMessage : ObservableObject
     public Guid Id { get; init; } = Guid.NewGuid();
     public string Role { get; init; } = "user";
     private MessageIdentity? _identity;
-    public MessageIdentity? Identity { get => _identity; set { if (Set(ref _identity, value)) { Notify(nameof(Speaker)); Notify(nameof(Avatar)); Notify(nameof(SpeakerDetail)); Notify(nameof(HasReply)); } } }
+    public MessageIdentity? Identity { get => _identity; set { if (Set(ref _identity, value)) { Notify(nameof(Speaker)); Notify(nameof(Avatar)); Notify(nameof(SpeakerDetail)); Notify(nameof(DisplayTime)); Notify(nameof(HasReply)); } } }
     private string _replyPreview = "返信元の発言へ";
     public string ReplyPreview { get => _replyPreview; internal set => Set(ref _replyPreview, value); }
     public string Speaker => Identity?.Name ?? (Role == "user" ? "あなた" : "Eluna");
     public string Avatar => Identity?.Icon ?? (Role == "user" ? "あ" : "✦");
     public string SpeakerDetail => string.Join(" · ", new[] { Identity?.ModelName, Identity?.Detail, Identity?.Time?.ToLocalTime().ToString("HH:mm") }.Where(s => !string.IsNullOrEmpty(s)));
+    public string DisplayTime => Identity?.Time?.ToLocalTime().ToString("HH:mm") ?? "";
     public bool HasReply => Identity?.ReplyTo is not null;
     public bool IsProjection { get; internal set; }
     public bool WasInterrupted { get; internal set; }

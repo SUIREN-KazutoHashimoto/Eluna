@@ -29,11 +29,9 @@ public partial class MainWindow : Window
     {
         InitializeComponent(); _store = store; _readingPositions = new(store.Root); _viewModel = new(store, downloads); DataContext = _viewModel;
         _readingSave.Tick += async (_, _) => { _readingSave.Stop(); RememberReadingPosition(); await _readingPositions.SaveAsync(); };
-        RootLayout.SizeChanged += (_, _) => UpdateComposerHeight();
+        RootLayout.SizeChanged += (_, _) => { UpdateComposerHeight(); UpdateShellLayout(); };
         HeaderArea.SizeChanged += (_, _) => UpdateComposerHeight();
         ErrorBanner.SizeChanged += (_, _) => UpdateComposerHeight();
-        ComposerArea.SizeChanged += (_, _) => UpdateComposerTools();
-        ProcessContent.Content = new ProcessListPanel(_viewModel);
         _viewModel.ScrollRequested += FollowOutput;
         _viewModel.MessageRequested += message => { MessagesList.ScrollIntoView(message); MessagesList.SelectedItem = message; };
         _viewModel.NavigationStarting += RememberReadingPosition;
@@ -75,35 +73,26 @@ public partial class MainWindow : Window
         double error = ErrorBanner.IsVisible ? ErrorBanner.ActualHeight + ErrorBanner.Margin.Top + ErrorBanner.Margin.Bottom : 0;
         ComposerArea.MaxHeight = Math.Clamp(RootLayout.ActualHeight - header - error - 114, 160, 400);
     }
-    private void UpdateComposerTools()
-    {
-        bool compact = ComposerArea.ActualWidth < 620;
-        ComposerSkillsButton.Visibility = ComposerWorkOptionsButton.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
-        ComposerMoreButton.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
-        WorkModeSelector.Width = compact ? 160 : 172;
-    }
-    private void ComposerMore_Click(object sender, RoutedEventArgs e)
-    {
-        var menu = new ContextMenu { PlacementTarget = ComposerMoreButton };
-        var skills = new MenuItem { Header = _viewModel.SkillsLabel + "…" };
-        skills.Click += (_, _) => SkillPicker_Click(sender, e); menu.Items.Add(skills);
-        var options = new MenuItem { Header = _viewModel.SelectedWorkMode.Id == "debate" ? "ディベートの参加者と上限…" : "検索・調査・議論の設定…" };
-        options.Click += (_, _) => WorkOptions_Click(sender, e); menu.Items.Add(options); menu.IsOpen = true;
-    }
     private void Models_Click(object sender, RoutedEventArgs e)
     {
-        ShowUnique(() => { var browser = new ModelWindow(_store, _viewModel.Downloads, _viewModel.ComputeChoices, _viewModel.Settings.Compute, _viewModel.EffectiveContext, _viewModel) { Owner = this }; browser.Closed += async (_, _) => await _viewModel.RefreshModelsAsync(browser.DownloadedModel); return browser; });
+        Guid? accountId = _viewModel.SelectedRecipient?.Id ?? _viewModel.SelectedConversation?.Room?.DefaultAgentId;
+        ShowUnique(() =>
+        {
+            var browser = new ModelWindow(_store, _viewModel.Downloads, _viewModel.ComputeChoices, _viewModel.Settings.Compute, _viewModel.EffectiveContext, _viewModel) { Owner = this };
+            browser.Closed += async (_, _) =>
+            {
+                await _viewModel.RefreshModelsAsync(browser.DownloadedModel);
+                if (browser.DownloadedModel is { } model && _viewModel.Agents.FirstOrDefault(a => a.Id == accountId) is { } account) { await _viewModel.SaveAgentAsync(account with { ModelId = model.Id }); }
+            }; return browser;
+        });
     }
     private void Settings_Click(object sender, RoutedEventArgs e) => OpenSettings();
-    private void EnableComputer() { _viewModel.SelectedWorkMode = WorkModes.Find("computer"); InputBox.Focus(); }
-    public void OpenSettings(int tab = 0) { var settings = ShowUnique(() => new SettingsWindow(_viewModel) { Owner = this }); settings.SelectTab(tab); }
     private static T ShowUnique<T>(Func<T> create) where T : Window
     {
         T? existing = Application.Current.Windows.OfType<T>().FirstOrDefault(w => w.IsVisible);
         if (existing is not null) { if (existing.WindowState == WindowState.Minimized) { existing.WindowState = WindowState.Normal; } existing.Activate(); return existing; }
         T window = create(); window.Show(); return window;
     }
-    private void ProcessPopup_Opened(object? sender, EventArgs e) => ((ProcessListPanel)ProcessContent.Content).Refresh();
     internal void OpenModels() => Models_Click(this, new RoutedEventArgs());
     internal void OpenModelManager() => ManageModels_Click(this, new RoutedEventArgs());
     internal void OpenData() => new DataWindow(_viewModel) { Owner = this }.ShowDialog();
@@ -121,8 +110,6 @@ public partial class MainWindow : Window
         if (e.Kind == "K") { var matches = message.Knowledge.Where(k => k.Number == e.Number).ToArray(); if (matches.Length > 0) { new KnowledgeWindow(matches) { Owner = this }.Show(); } }
         else if (message.Work?.Sources.FirstOrDefault(source => source.Number == e.Number) is { } source) { new SourceWindow(source) { Owner = this }.Show(); }
     }
-    private void Skills_Click(object sender, RoutedEventArgs e) => new SkillsWindow(_viewModel) { Owner = this }.Show();
-    private void SkillPicker_Click(object sender, RoutedEventArgs e) => new SkillPickerWindow(_viewModel) { Owner = this }.Show();
     private void SkillUse_Click(object sender, RoutedEventArgs e)
     { if (sender is FrameworkElement { DataContext: ChatMessage message }) { new SkillUseWindow(message.Skills, _viewModel.DataDirectory) { Owner = this }.Show(); } }
     private async Task<bool> ReviewSkillExecutionAsync(SkillExecutionRequest request, CancellationToken token)
@@ -139,20 +126,18 @@ public partial class MainWindow : Window
         if (sender is not Button button || !_viewModel.CanChange) { return; }
         var menu = new ContextMenu { PlacementTarget = button };
         void Item(string text, Action action) { var item = new MenuItem { Header = text }; item.Click += (_, _) => action(); menu.Items.Add(item); }
-        Item("新しいプロジェクト", () => new ProjectWindow(_viewModel) { Owner = this }.ShowDialog());
-        if (_viewModel.SelectedProject is KnowledgeProject project) { Item("このプロジェクトを管理", () => new ProjectWindow(_viewModel, project) { Owner = this }.ShowDialog()); }
-        Item("共通メモリを管理", () => OpenSettings(2));
+        Item("サーバーを作成", async () =>
+        {
+            var prompt = new TextPromptWindow("サーバーを作成", "新しいサーバー", false, 80) { Owner = this };
+            if (prompt.ShowDialog() == true && !string.IsNullOrWhiteSpace(prompt.Result)) { await _viewModel.SaveProjectAsync(new(Guid.NewGuid(), prompt.Result.Trim(), "", "project-only", false, [], [])); }
+        });
+        Item("チャンネル・DMを作成", () => NewRoom_Click(sender, e));
+        Item("サーバー・チャンネルの設定", () => OpenSettings(7));
+        Item(_viewModel.ShowArchived ? "通常のチャンネルを表示" : "保管済みを表示", () => _viewModel.ShowArchived = !_viewModel.ShowArchived);
+        Item("ユーザー設定", () => OpenSettings());
         menu.IsOpen = true;
     }
-    private void Agents_Click(object sender, RoutedEventArgs e) => new AgentsWindow(_viewModel) { Owner = this }.Show();
-    private void NewRoom_Click(object sender, RoutedEventArgs e) => new RoomWindow(_viewModel) { Owner = this }.Show();
-    private void RoomSettings_Click(object sender, RoutedEventArgs e)
-    { if (_viewModel.SelectedConversation is { } room) { new RoomWindow(_viewModel, room) { Owner = this }.Show(); } }
-    private async void AgentModel_Changed(object sender, SelectionChangedEventArgs e)
-    {
-        if (_viewModel is null || sender is not ComboBox { SelectedItem: LocalModel model } box || !(box.IsDropDownOpen || box.IsKeyboardFocusWithin)) { return; }
-        try { await _viewModel.SetRecipientModelAsync(model); } catch (Exception ex) { _viewModel.Error = ex.Message; }
-    }
+    private void NewRoom_Click(object sender, RoutedEventArgs e) => new RoomWindow(_viewModel, basicOnly: true) { Owner = this }.Show();
     private void ReplyMessage_Click(object sender, RoutedEventArgs e)
     { if (sender is FrameworkElement { DataContext: ChatMessage message }) { _viewModel.ReplyTo(message); InputBox.Focus(); } }
     private void ClearReply_Click(object sender, RoutedEventArgs e) => _viewModel.ReplyTo(null);
@@ -167,8 +152,8 @@ public partial class MainWindow : Window
         if (sender is not Button { DataContext: ChatMessage message } button || _viewModel.SelectedConversation is not { } room) { return; }
         var menu = new ContextMenu { PlacementTarget = button };
         var thread = new MenuItem { Header = "この発言からスレッドを作成", IsEnabled = room.Room?.Kind != "thread" };
-        thread.Click += (_, _) => new RoomWindow(_viewModel, room, origin: message) { Owner = this }.Show(); menu.Items.Add(thread);
-        var memory = new MenuItem { Header = "エージェントの記憶を管理" }; memory.Click += (_, _) => new AgentsWindow(_viewModel) { Owner = this }.Show(); menu.Items.Add(memory);
+        thread.Click += (_, _) => new RoomWindow(_viewModel, room, origin: message, basicOnly: true) { Owner = this }.Show(); menu.Items.Add(thread);
+        var info = new MenuItem { Header = "メッセージの詳細" }; info.Click += (_, _) => { OpenSettings(7); Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault(w => w.Owner == this)?.ShowMessage(message); }; menu.Items.Add(info);
         menu.IsOpen = true;
     }
     private async void OpenArtifact_Click(object sender, RoutedEventArgs e)
@@ -204,14 +189,8 @@ public partial class MainWindow : Window
         if (sender is not Button button) { return; }
         var menu = new ContextMenu { PlacementTarget = button };
         void Item(string label, Action action) { var item = new MenuItem { Header = label }; item.Click += (_, _) => action(); menu.Items.Add(item); }
-        Item("画像・文書を添付…", async () => { var picker = new OpenFileDialog { Filter = AttachmentService.Filter, Multiselect = true }; if (picker.ShowDialog(this) == true) { await _viewModel.AttachFilesAsync(picker.FileNames); } });
+        Item("ファイルをアップロード…", async () => { var picker = new OpenFileDialog { Filter = AttachmentService.Filter, Multiselect = true }; if (picker.ShowDialog(this) == true) { await _viewModel.AttachFilesAsync(picker.FileNames); } });
         if (menu.Items[0] is MenuItem attachment) { attachment.IsEnabled = _viewModel.CanChange; attachment.ToolTip = "実行中の推論・準備が終わると添付できます。別の依頼は送信・予約できます。"; ToolTipService.SetShowOnDisabled(attachment, true); }
-        Item("画像認識モデルの設定…", () => OpenMedia("vision"));
-        Item("Computer Use · チャットからPCを操作", EnableComputer);
-        menu.Items.Add(new Separator());
-        Item("画像を生成…", () => OpenMedia("image"));
-        Item("ドキュメントを生成…", () => OpenMedia());
-        Item("直前の回答を文書にする…", () => OpenMedia(initial: _viewModel.SelectedConversation?.Messages.LastOrDefault(m => m.Role == "assistant")?.Content));
         menu.IsOpen = true;
     }
     private async void RemoveAttachment_Click(object sender, RoutedEventArgs e)
@@ -250,10 +229,9 @@ public partial class MainWindow : Window
         catch (Exception ex) { _viewModel.Error = DiagnosticsService.Explain(ex); }
         finally { try { if (path is not null && File.Exists(path)) { File.Delete(path); } } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { } }
     }
-    private void WorkOptions_Click(object sender, RoutedEventArgs e) => new WorkOptionsWindow(_viewModel) { Owner = this }.ShowDialog();
     private void WorkActivity_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: ChatMessage { Work: not null } answer }) { new WorkWindow(_viewModel, answer) { Owner = this }.Show(); }
+        if (sender is FrameworkElement { DataContext: ChatMessage { Work: not null } answer }) { OpenSettings(9); Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault(w => w.Owner == this)?.ShowMessage(answer); }
     }
     private async Task<bool> ReviewPlanAsync(WorkSession work, CancellationToken token)
     {
@@ -267,16 +245,8 @@ public partial class MainWindow : Window
     }
     private void Data_Click(object sender, RoutedEventArgs e) => new DataWindow(_viewModel) { Owner = this }.ShowDialog();
     private void Sidebar_Click(object sender, RoutedEventArgs e) => _viewModel.ToggleSidebar();
-    private void Branch_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (sender is ComboBox { SelectedItem: ConversationBranch branch } && _viewModel is not null) { _viewModel.SelectedBranch = branch; }
-    }
     private void Latest_Click(object sender, RoutedEventArgs e) => FollowOutput(true);
     private void DismissError_Click(object sender, RoutedEventArgs e) => _viewModel.Error = "";
-    private void Mode_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (ModePopup?.IsOpen == true) { ModePopup.IsOpen = false; ModeButton.Focus(); }
-    }
     private async void DeleteChat_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: Conversation conversation }) { await DeleteChatAsync(conversation); }
@@ -314,41 +284,16 @@ public partial class MainWindow : Window
     {
         if (sender is not Button button) { return; }
         var menu = new ContextMenu { PlacementTarget = button };
-        void Item(string label, Action action) { var item = new MenuItem { Header = label }; item.Click += (_, _) => action(); menu.Items.Add(item); }
-        menu.Items.Add(new MenuItem { Header = "モデルを読み込む", Command = _viewModel.PreloadCommand });
-        menu.Items.Add(new MenuItem { Header = "モデルをメモリから解放", Command = _viewModel.UnloadCommand });
-        Item("直前の回答をメモリに保存…", async () =>
+        var settings = new MenuItem { Header = "チャンネル設定" }; settings.Click += (_, _) => OpenSettings(7); menu.Items.Add(settings);
+        var archive = new MenuItem { Header = "保管済みを表示", IsCheckable = true, IsChecked = _viewModel.ShowArchived }; archive.Click += (_, _) => _viewModel.ShowArchived = archive.IsChecked; menu.Items.Add(archive);
+        var export = new MenuItem { Header = "この会話をMarkdownで書き出す" };
+        export.Click += async (_, _) =>
         {
-            ChatMessage? answer = _viewModel.SelectedConversation?.Messages.LastOrDefault(m => m.Role == "assistant" && m.Content.Length > 0);
-            if (answer is null) { return; }
-            var editor = new TextPromptWindow((_viewModel.SelectedProject?.Name ?? "共通") + "の保存メモリ（4,000文字まで）", answer.Content[..Math.Min(4000, answer.Content.Length)], true, 4000) { Owner = this };
-            if (editor.ShowDialog() == true && !string.IsNullOrWhiteSpace(editor.Result))
-            { try { await _viewModel.SaveMemoryAsync(editor.Result); } catch (Exception ex) { _viewModel.Error = ex.Message; } }
-        });
-        Item("この会話のカスタム指示", async () =>
-        {
-            if (_viewModel.SelectedConversation is not Conversation conversation) { return; }
-            var dialog = new TextPromptWindow("この会話のカスタム指示", conversation.CustomInstruction, true) { Owner = this };
-            if (dialog.ShowDialog() == true) { conversation.CustomInstruction = dialog.Result; await _viewModel.PersistSafelyAsync(); }
-        });
-        Item("会話の引き継ぎメモ", async () =>
-        {
-            if (!_viewModel.CanEditConversation) { _viewModel.Error = "この会話の推論と予約を終えてから引き継ぎメモを変更してください。"; return; }
-            if (_viewModel.SelectedConversation is not Conversation conversation) { return; }
-            var dialog = new TextPromptWindow("引き継ぎメモを確認・編集", conversation.Summary, true) { Owner = this };
-            if (dialog.ShowDialog() == true) { conversation.Summary = dialog.Result; await _viewModel.PersistSafelyAsync(); }
-        });
-        Item("この会話をMarkdownで書き出す", async () =>
-        {
-            if (_viewModel.SelectedConversation is not Conversation conversation) { return; }
+            if (_viewModel.SelectedConversation is not { } conversation) { return; }
             var picker = new SaveFileDialog { Filter = "Markdown (*.md)|*.md", FileName = "Eluna-chat.md" };
-            if (picker.ShowDialog(this) == true)
-            {
-                try { await File.WriteAllTextAsync(picker.FileName, "# " + conversation.Title + "\n\n" + string.Join("\n\n", conversation.Messages.Select(m => "## " + m.Speaker + "\n\n" + m.Content))); }
-                catch (IOException) { _viewModel.Error = "会話を書き出せませんでした。保存先を確認してください。"; }
-            }
-        });
-        menu.IsOpen = true;
+            if (picker.ShowDialog(this) == true) { try { await File.WriteAllTextAsync(picker.FileName, "# " + conversation.Title + "\n\n" + string.Join("\n\n", conversation.Messages.Select(m => "## " + m.Speaker + "\n\n" + m.Content))); } catch (IOException) { _viewModel.Error = "会話を書き出せませんでした。保存先を確認してください。"; } }
+        };
+        menu.Items.Add(export); menu.IsOpen = true;
     }
     private void CopyMessage_Click(object sender, RoutedEventArgs e)
     {
@@ -359,23 +304,11 @@ public partial class MainWindow : Window
         try { Clipboard.SetText(message.Content); }
         catch (System.Runtime.InteropServices.COMException) { _viewModel.Error = "コピーできませんでした。もう一度試してください。"; }
     }
-    private async void Regenerate_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: ChatMessage message }) { await _viewModel.RegenerateAsync(message); }
-    }
-    private async void Continue_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: ChatMessage message }) { await _viewModel.ContinueAsync(message); }
-    }
     private async void EditMessage_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: ChatMessage message }) { return; }
         var dialog = new TextPromptWindow("質問を編集して別の回答を生成", message.Content, true) { Owner = this };
         if (dialog.ShowDialog() == true) { await _viewModel.EditAndGenerateAsync(message, dialog.Result); }
-    }
-    private void Suggestion_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { Tag: string text }) { _viewModel.Input = text; InputBox.Focus(); InputBox.CaretIndex = text.Length; }
     }
     private void Input_PreviewKeyDown(object sender, KeyEventArgs e)
     {
@@ -390,8 +323,8 @@ public partial class MainWindow : Window
         if (_composing) { return; }
         if (e.Key == Key.Escape)
         {
-            if (ModePopup.IsOpen) { ModePopup.IsOpen = false; ModeButton.Focus(); e.Handled = true; return; }
-            if (ModelSelector.IsDropDownOpen || ProjectSelector.IsDropDownOpen || BranchSelector.IsDropDownOpen || e.OriginalSource is ComboBox { IsDropDownOpen: true }) { return; }
+            if (MembersPopup.IsOpen) { MembersPopup.IsOpen = false; MembersButton.Focus(); e.Handled = true; return; }
+            if (e.OriginalSource is ComboBox { IsDropDownOpen: true }) { return; }
             if (_viewModel.CanStopSelected) { _viewModel.StopCommand.Execute(null); e.Handled = true; }
             return;
         }

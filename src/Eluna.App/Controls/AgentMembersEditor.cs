@@ -23,7 +23,7 @@ public sealed class AgentMembersEditor : UserControl
         _selected.ItemsSource = _members;
         var grid = new Grid(); grid.ColumnDefinitions.Add(new()); grid.ColumnDefinitions.Add(new() { Width = new(74) }); grid.ColumnDefinitions.Add(new());
         grid.RowDefinitions.Add(new() { Height = GridLength.Auto }); grid.RowDefinitions.Add(new() { Height = new(190) }); grid.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        grid.Children.Add(new TextBlock { Text = "エージェント", Margin = new(0, 0, 0, 8) });
+        grid.Children.Add(new TextBlock { Text = "アカウント", Margin = new(0, 0, 0, 8) });
         var heading = new TextBlock { Text = "参加者", ToolTip = "ドラッグで追加・並べ替え", Margin = new(0, 0, 0, 8), TextWrapping = TextWrapping.Wrap }; Grid.SetColumn(heading, 2); grid.Children.Add(heading);
         Grid.SetRow(_available, 1); grid.Children.Add(_available); Grid.SetRow(_selected, 1); Grid.SetColumn(_selected, 2); grid.Children.Add(_selected);
         System.Windows.Automation.AutomationProperties.SetName(_available, "参加できるエージェント"); System.Windows.Automation.AutomationProperties.SetName(_selected, "参加者と表示順");

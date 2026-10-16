@@ -32,6 +32,7 @@ public sealed partial class ChatViewModel
     }
     private void NotifyProjectScope()
     {
+        NotifyShell();
         Notify(nameof(SelectedProjectChoice)); Notify(nameof(SelectedProject)); Notify(nameof(ProjectContextLabel)); Notify(nameof(ProjectScopeHint)); Notify(nameof(CommonMemories)); Notify(nameof(NetworkNotice));
         HistoryView.Refresh(); NotifySkills();
     }

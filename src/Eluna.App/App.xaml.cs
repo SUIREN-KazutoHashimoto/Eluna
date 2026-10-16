@@ -40,6 +40,12 @@ public partial class App : Application
                 root = Path.Combine(captureDirectory, "preview-data");
             }
             var store = new AppStore(root);
+            int discordIndex = Array.IndexOf(e.Args, "--verify-discord");
+            if (discordIndex >= 0 && discordIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("画面検証には専用の --data-dir が必要です。"); }
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = DiscordShellVerification.RunAsync(store, e.Args[discordIndex + 1]); return;
+            }
             int workspaceIndex = Array.IndexOf(e.Args, "--verify-workspace");
             if (workspaceIndex >= 0 && workspaceIndex + 1 < e.Args.Length)
             {

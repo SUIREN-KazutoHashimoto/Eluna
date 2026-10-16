@@ -89,7 +89,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     public string Metrics { get => SelectedComputer is { } computer ? $"PC操作 {computer.Steps.Count} / {computer.MaxSteps}" : !_isBusy && SelectedJob is { } job && job.Request.Model.Id == SelectedModel?.Id ? (job.Metrics.Length > 0 && !job.IsPending ? "直前の回答 · " : "") + job.Metrics : _metrics; private set => Set(ref _metrics, value); }
     public string Error { get => _error; set { _retryAction = null; Set(ref _error, value); Notify(nameof(HasError)); Notify(nameof(ShowStatus)); Notify(nameof(CanRetry)); RetryCommand?.Refresh(); } }
     public bool HasError => Error.Length > 0;
-    public string HistorySearch { get => _search; set { if (Set(ref _search, value)) { RefreshHistorySearch(); } } }
+    public string HistorySearch { get => _search; set { if (Set(ref _search, value)) { Notify(nameof(HasHistorySearch)); RefreshHistorySearch(); } } }
     public bool ShowArchived { get => _showArchived; set { if (Set(ref _showArchived, value)) { HistoryView.Refresh(); } } }
     public string Input
     {
@@ -219,6 +219,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     private void ConversationChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (ReferenceEquals(sender, SelectedConversation) && e.PropertyName is nameof(Conversation.Title) or nameof(Conversation.Room)) { NotifyShell(); }
         if (ReferenceEquals(sender, SelectedConversation) && e.PropertyName == nameof(Conversation.ActiveBranch)) { BindTimeline(); Notify(nameof(SelectedBranch)); Notify(nameof(IsEmpty)); }
         if (e.PropertyName is nameof(Conversation.Title) or nameof(Conversation.IsPinned) or nameof(Conversation.IsArchived) or nameof(Conversation.UpdatedAt) or nameof(Conversation.ProjectId)) { if (HistorySearch.Length > 0) { RefreshHistorySearch(); } else { HistoryView.Refresh(); } }
     }

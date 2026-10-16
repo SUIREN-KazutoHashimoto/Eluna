@@ -81,7 +81,7 @@ public sealed class AgentsWindow : Window
     private void Fill(AgentAccount agent)
     {
         _id = agent.Id; NameBox.Text = agent.Name; IconBox.Text = agent.Icon; InstructionBox.Text = agent.Instruction; _specialty.Text = agent.Specialty; _enabled.IsChecked = agent.Enabled;
-        var models = new List<DebateModelChoice> { new("", "この場所で選択したモデル", "") }; models.AddRange(_chat.Models.Select(m => new DebateModelChoice(m.Id, m.DisplayName, m.SizeLabel)));
+        var models = new List<DebateModelChoice> { new("", "未指定（既存のモデル設定を使用）", "") }; models.AddRange(_chat.Models.Select(m => new DebateModelChoice(m.Id, m.DisplayName, m.SizeLabel)));
         if (agent.ModelId is string missing && !models.Any(m => m.Id == missing)) { models.Add(new(missing, "未取得のモデル · " + missing, "モデルを再取得するか選び直してください", false)); }
         _model.ItemsSource = models; _model.SelectedItem = models.First(m => m.Id == (agent.ModelId ?? "")); _baseline = Snapshot(); _status.Text = "保存済み"; RefreshMemories();
         _origin.ItemsSource = new[] { new Origin(null, "作成場所を指定しない（持ち越し記憶用）", null) }.Concat(_chat.Conversations.Where(c => WorkspaceService.Participated(c.Save(), agent.Id)).Select(c => new Origin(c.Id, (_chat.Projects.FirstOrDefault(p => p.Id == c.ProjectId)?.Name ?? "DM・個人") + " / " + c.Title, c.ProjectId))).ToArray();

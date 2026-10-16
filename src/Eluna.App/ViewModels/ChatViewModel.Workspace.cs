@@ -44,6 +44,7 @@ public sealed partial class ChatViewModel
     }
     internal void RefreshRoom()
     {
+        RoomMembers.Clear(); foreach (Guid member in SelectedConversation?.Room?.Members ?? []) { if (Agents.FirstOrDefault(a => a.Id == member) is { } account) { RoomMembers.Add(account); } }
         Recipients.Clear();
         foreach (Guid id in SelectedConversation?.Room?.Members ?? [])
         { if (Agents.FirstOrDefault(a => a.Id == id) is { } agent) { Recipients.Add(new(id, agent.Icon + " " + agent.Name + (agent.Enabled ? "" : "（無効）"))); } }
@@ -52,6 +53,7 @@ public sealed partial class ChatViewModel
         Notify(nameof(SelectedRecipient)); Notify(nameof(RoomLabel)); Notify(nameof(RoomMembersLabel));
         SelectRecipientModel();
         BindTimeline();
+        NotifyShell();
     }
     public void ReplyTo(ChatMessage? message)
     { _replyTo = message?.Id; Notify(nameof(ReplyLabel)); Notify(nameof(HasReplyTarget)); }

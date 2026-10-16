@@ -17,7 +17,7 @@ public sealed class RoomWindow : Window
         _accept = new() { Content = "参加エージェントの持ち越し記憶を参照する" }, _serverAccept = new() { Content = "このサーバーで持ち越し記憶の受け入れを許可する" };
     internal Button SaveButton { get; } = new() { Content = "保存", Padding = new(24, 8, 24, 8) };
     private string _baseline = ""; private bool _saving;
-    public RoomWindow(ChatViewModel chat, Conversation? room = null, WorkSession? discussion = null, ChatMessage? origin = null)
+    public RoomWindow(ChatViewModel chat, Conversation? room = null, WorkSession? discussion = null, ChatMessage? origin = null, bool basicOnly = false)
     {
         Title = discussion is not null ? "議論の参加者 · Eluna" : room is null ? "チャンネル・DMを作成 · Eluna" : "チャンネルの設定 · Eluna";
         Guid? capturedProject = room?.ProjectId ?? chat.SelectedProject?.Id;
@@ -34,12 +34,13 @@ public sealed class RoomWindow : Window
         IEnumerable<Guid> members = discussion?.Discussion.PendingParticipants?.Where(r => r.AgentId is not null).Select(r => r.AgentId!.Value) ?? room?.Room?.Members ?? chat.SelectedConversation?.Room?.Members ?? [];
         MembersEditor = new(chat.Agents, members); body.Children.Add(MembersEditor);
         foreach (CheckBox box in new[] { _siblings, _share, _accept, _serverAccept })
-        { box.Margin = new(0, 12, 0, 0); if (box.Content is string text) { box.Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap }; } body.Children.Add(box); }
+        { box.Margin = new(0, 12, 0, 0); if (box.Content is string text) { box.Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap }; } if (basicOnly) { box.Visibility = Visibility.Collapsed; } body.Children.Add(box); }
         _siblings.IsChecked = room?.Room?.ReferenceSiblingChats == true; _share.IsChecked = room?.Room?.ShareHistory == true; _accept.IsChecked = room?.Room?.AcceptAgentMemory == true;
+        if (basicOnly) { _siblings.IsChecked = _share.IsChecked = _accept.IsChecked = false; }
         _siblings.ToolTip = "サーバー管理で別会話の参照を許可している場合に利用できます。";
         _serverAccept.IsChecked = chat.Projects.FirstOrDefault(p => p.Id == (room?.ProjectId ?? chat.SelectedProject?.Id))?.AcceptAgentMemory == true;
-        _serverAccept.Visibility = (room?.ProjectId ?? chat.SelectedProject?.Id) is null ? Visibility.Collapsed : Visibility.Visible;
-        body.Children.Add(new TextBlock { Text = "限定サーバーの初期値は持ち越し記憶を使いません。履歴を共有すると、この場所で話した内容が許可先の会話で使われます。DMは一人、議論はAI二人以上です。", TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 14, 0, 0) });
+        _serverAccept.Visibility = basicOnly || (room?.ProjectId ?? chat.SelectedProject?.Id) is null ? Visibility.Collapsed : Visibility.Visible;
+        if (!basicOnly) { body.Children.Add(new TextBlock { Text = "限定サーバーの初期値は持ち越し記憶を使いません。履歴を共有すると、この場所で話した内容が許可先の会話で使われます。DMは一人、議論はAI二人以上です。", TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 14, 0, 0) }); }
         if (discussion is not null) { KindBox.Visibility = NameBox.Visibility = _siblings.Visibility = _share.Visibility = _accept.Visibility = _serverAccept.Visibility = Visibility.Collapsed; }
         if (origin is not null) { body.Children.Add(new TextBlock { Text = "このスレッドは、親の返信先までの発言を参照します。", TextWrapping = TextWrapping.Wrap, Margin = new(0, 10, 0, 0) }); }
         string Snapshot() => JsonSerializer.Serialize(new { NameBox.Text, KindBox.SelectedValue, Members = MembersEditor.SelectedIds, Siblings = _siblings.IsChecked, Share = _share.IsChecked, Accept = _accept.IsChecked, ServerAccept = _serverAccept.IsChecked });
