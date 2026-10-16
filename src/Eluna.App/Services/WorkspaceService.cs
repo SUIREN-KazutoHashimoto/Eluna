@@ -41,8 +41,8 @@ internal static class WorkspaceService
         source.Room?.PastMembers?.Contains(agent) == true || Messages(source).Any(m => m.Identity?.AgentId == agent || m.Work?.Turns.Any(t => t.AgentId == agent) == true);
     internal static string AccessStamp(AppState state, Guid room, Guid? agent, IReadOnlyList<KnowledgeReference> references) => Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
     {
-        Agent = state.Agents?.Where(a => a.Id == agent).Select(a => new { a.Id, a.Enabled }),
-        Rooms = state.Conversations.Where(c => c.Id == room || references.Any(r => r.SourceConversationId == c.Id)).OrderBy(c => c.Id).Select(c => new
+        Agent = state.Agents?.Where(a => a.Id == agent).Select(a => new { a.Id, a.Enabled, Autonomy = a.Autonomy ?? new(), Connections = (a.Connections ?? []).Order().ToArray() }),
+        Rooms = state.Conversations.Where(c => c.Id == room || state.Conversations.Any(r => (r.Id == room || references.Any(k => k.SourceConversationId == r.Id)) && r.Room?.ParentId == c.Id) || references.Any(r => r.SourceConversationId == c.Id)).OrderBy(c => c.Id).Select(c => new
         {
             c.Id,
             c.ProjectId,
@@ -54,6 +54,7 @@ internal static class WorkspaceService
             c.Room?.ReferenceSiblingChats,
             c.Room?.ShareHistory,
             c.Room?.AcceptAgentMemory,
+            Permissions = c.Room?.Permissions?.OrderBy(p => p.AgentId).ToArray(),
             Past = (c.Room?.PastMembers ?? []).Order().ToArray()
         }),
         Projects = state.Projects?.Where(p => state.Conversations.Any(c => c.Id == room && c.ProjectId == p.Id)).Select(p => new { p.Id, p.AcceptAgentMemory, p.ReferenceChats, p.MemoryMode }),
@@ -61,7 +62,7 @@ internal static class WorkspaceService
     })));
     internal static bool CanRecall(AppState state, SavedConversation destination, SavedConversation source, Guid agent)
     {
-        if (source.Id == destination.Id || source.IsArchived || source.Room?.ShareHistory != true || !Participated(source, agent)) { return false; }
+        if (source.Id == destination.Id || source.IsArchived || source.Room?.ShareHistory != true || !Participated(source, agent) || !ChannelAccess.CanView(state, source, agent) || !ChannelAccess.CanView(state, destination, agent)) { return false; }
         return AcceptsMemory(state, destination, agent);
     }
     internal static bool AcceptsMemory(AppState state, SavedConversation destination, Guid agent) =>
@@ -69,8 +70,8 @@ internal static class WorkspaceService
         (destination.ProjectId is null || state.Projects?.Any(p => p.Id == destination.ProjectId && p.AcceptAgentMemory) == true);
     internal static bool CanRecallMemory(AppState state, SavedConversation room, AgentMemory memory, Guid agent)
     {
-        if (!memory.Enabled || memory.AgentId != agent || room.Room?.Members.Contains(agent) != true) { return false; }
-        if (memory.SourceConversationId is Guid origin && !state.Conversations.Any(c => c.Id == origin && Participated(c, agent))) { return false; }
+        if (!memory.Enabled || memory.AgentId != agent || room.Room?.Members.Contains(agent) != true || !ChannelAccess.CanView(state, room, agent)) { return false; }
+        if (memory.SourceConversationId is Guid origin && !state.Conversations.Any(c => c.Id == origin && Participated(c, agent) && ChannelAccess.CanView(state, c, agent))) { return false; }
         return memory.Scope switch
         {
             "room" => memory.SourceConversationId == room.Id || room.Room.ParentId == memory.SourceConversationId,
@@ -101,6 +102,7 @@ internal static class WorkspaceService
         {
             Id = m.Id is Guid id ? Map(id) : null,
             Work = Work(m.Work),
+            Team = m.Team is null ? null : m.Team with { Id = Map(m.Team.Id), CoordinatorId = agents[m.Team.CoordinatorId], ProjectId = m.Team.ProjectId is Guid teamProject ? projects.GetValueOrDefault(teamProject) : null, Stage = m.Team.Stage == "complete" ? "complete" : "paused", ActiveAgentId = null, ActiveRoomId = null, Assignments = m.Team.Assignments.Select(a => a with { RoomId = rooms.GetValueOrDefault(a.RoomId, a.RoomId), BranchId = Map(a.BranchId), AgentId = agents[a.AgentId], AnswerId = Map(a.AnswerId) }).ToList() },
             Knowledge = References(m.Knowledge),
             Identity = m.Identity is null ? null : m.Identity with { AgentId = Agent(m.Identity.AgentId), ReplyTo = m.Identity.ReplyTo is Guid reply ? Map(reply) : null, WorkId = m.Identity.WorkId is Guid work ? Map(work) : null },
             Computer = m.Computer is null ? null : m.Computer with { ProjectId = m.Computer.ProjectId is Guid p ? projects[p] : null },
@@ -113,7 +115,7 @@ internal static class WorkspaceService
                 SelectedProjectId = source.Settings.SelectedProjectId is Guid selected ? projects[selected] : null,
                 WorkOptions = source.Settings.WorkOptions is null ? null : source.Settings.WorkOptions with { Roles = source.Settings.WorkOptions.Participants.Select(Role).ToList() }
             },
-            Agents = source.Agents!.Select(a => a with { Id = agents[a.Id] }).ToList(),
+            Agents = source.Agents!.Select(a => a with { Id = agents[a.Id], Connections = a.Connections?.Select(id => agents[id]).ToList(), Autonomy = a.Autonomy is null ? null : a.Autonomy with { Automatic = false } }).ToList(),
             AgentMemories = source.AgentMemories?.Select(m => m with { Id = Map(m.Id), AgentId = agents[m.AgentId], SourceConversationId = m.SourceConversationId is Guid id ? rooms[id] : null, ProjectId = m.ProjectId is Guid p ? projects[p] : null }).ToList(),
             Projects = source.Projects?.Select(p => p with { Id = projects[p.Id], UseCommonSkills = false }).ToList(),
             Conversations = source.Conversations.Select(c => c with
@@ -121,7 +123,7 @@ internal static class WorkspaceService
                 Id = rooms[c.Id],
                 ProjectId = c.ProjectId is Guid p ? projects[p] : null,
                 SkillIds = [],
-                Room = c.Room is null ? null : c.Room with { Members = c.Room.Members.Select(id => agents[id]).ToList(), DefaultAgentId = Agent(c.Room.DefaultAgentId), PastMembers = c.Room.PastMembers?.Select(id => agents[id]).ToList(), ParentId = c.Room.ParentId is Guid parent ? rooms[parent] : null, OriginMessageId = c.Room.OriginMessageId is Guid origin ? Map(origin) : null },
+                Room = c.Room is null ? null : c.Room with { Permissions = c.Room.Permissions?.Select(g => g with { AgentId = agents[g.AgentId] }).ToList(), Members = c.Room.Members.Select(id => agents[id]).ToList(), DefaultAgentId = Agent(c.Room.DefaultAgentId), PastMembers = c.Room.PastMembers?.Select(id => agents[id]).ToList(), ParentId = c.Room.ParentId is Guid parent ? rooms[parent] : null, OriginMessageId = c.Room.OriginMessageId is Guid origin ? Map(origin) : null },
                 Messages = c.Messages.Select(Message).ToList(),
                 Branches = c.Branches?.Select(b => b with { Id = Map(b.Id), Messages = b.Messages.Select(Message).ToList() }).ToList(),
                 ActiveBranchId = c.ActiveBranchId is Guid branch ? Map(branch) : null
@@ -138,9 +140,12 @@ internal static class WorkspaceService
             a.Icon is null || a.Icon.Length > 16 || a.Instruction is null || a.Instruction.Length > 8000 || a.Specialty is null || a.Specialty.Length > 1000 || a.VoiceId?.Length > 2048 || a.SpeechRate is < -10 or > 10) ||
             state.Agents.Select(a => a.Id).Distinct().Count() != state.Agents.Count) { throw new InvalidDataException("エージェントの形式を確認してください。"); }
         HashSet<Guid> agents = state.Agents.Select(a => a.Id).ToHashSet();
+        foreach (AgentAccount account in state.Agents) { AgentPersonas.Validate(account, agents); }
         foreach (SavedConversation c in state.Conversations)
         {
+            foreach (TeamRun team in Messages(c).Select(m => m.Team).OfType<TeamRun>()) { TeamPlanner.Validate(team, agents); }
             if (c.Room is not { } r) { continue; }
+            ChannelAccess.Validate(r.Permissions, agents);
             if (r.Kind is not ("channel" or "voice" or "dm" or "group" or "thread" or "legacy") || r.Members is null || r.Members.Count is < 1 or > 6 ||
                 r.WorkMode is not null && !WorkModes.All.Any(m => m.Id == r.WorkMode) || r.InferenceMode is not null && !InferenceModes.IsValid(r.InferenceMode) ||
                 r.Members.Distinct().Count() != r.Members.Count || r.Members.Any(id => !agents.Contains(id)) || r.DefaultAgentId is Guid chosen && !r.Members.Contains(chosen) ||

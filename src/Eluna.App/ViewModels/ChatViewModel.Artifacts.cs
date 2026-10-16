@@ -12,6 +12,7 @@ public sealed partial class ChatViewModel
         LocalModel model = SelectedModel ?? throw new InvalidOperationException("左上から文章生成用のモデルを選んでください。");
         Conversation conversation = SelectedConversation ?? throw new InvalidOperationException("会話を選択してください。");
         AppState state = CaptureState();
+        ChannelAccess.RequireSpeaker(state, conversation.Save(), _recipient ?? conversation.Room?.DefaultAgentId);
         state = state with { InferenceJobs = null };
         return new(state, conversation.Save(), model, EffectiveSettings, SkillRunner.Capture(Skills, conversation.ProjectId, SelectedProject?.UseCommonSkills == true, SkillMode, conversation.SkillIds, prompt), AgentId: _recipient ?? conversation.Room?.DefaultAgentId);
     }

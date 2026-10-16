@@ -8,6 +8,14 @@ public sealed class InferenceQueue(Func<InferenceJob, CancellationToken, Task> e
 {
     private int _limit = 1;
     private bool _suspended, _closing, _pumping, _pumpAgain;
+    private readonly Dictionary<Guid, HashSet<Guid>> _reservations = [];
+    internal void Reserve(Guid owner, IEnumerable<Guid> rooms)
+    {
+        HashSet<Guid> ids = rooms.ToHashSet();
+        if (Items.Any(j => j.Request.Id != owner && j.State == "active" && ids.Contains(j.Request.ConversationId)) || _reservations.Any(r => r.Key != owner && r.Value.Overlaps(ids))) { throw new InvalidOperationException("作業先のチャンネルが使用中です。処理の完了後に再開してください。"); }
+        _reservations[owner] = ids;
+    }
+    internal void Release(Guid owner) { _reservations.Remove(owner); Pump(); }
     public ObservableCollection<InferenceJob> Items { get; } = [];
     public event Action? Changed;
     public int ActiveCount => Items.Count(j => j.State == "active");
@@ -15,7 +23,7 @@ public sealed class InferenceQueue(Func<InferenceJob, CancellationToken, Task> e
     public bool HasPending => Items.Any(j => j.IsPending);
     public int Limit { get => _limit; set { if (value is < 1 or > 4) { throw new ArgumentOutOfRangeException(nameof(value)); } _limit = value; Pump(); } }
     internal bool Suspended { get => _suspended; set { _suspended = value; Pump(); } }
-    public bool Contains(Guid conversationId) => Items.Any(j => j.Request.ConversationId == conversationId && j.IsPending);
+    public bool Contains(Guid conversationId) => _reservations.Values.Any(r => r.Contains(conversationId)) || Items.Any(j => j.Request.ConversationId == conversationId && j.IsPending);
     public InferenceJob Add(SavedInferenceJob request, bool paused = false)
     {
         if (_closing) { throw new InvalidOperationException("アプリを終了しています。"); }
@@ -51,6 +59,7 @@ public sealed class InferenceQueue(Func<InferenceJob, CancellationToken, Task> e
             while (!_closing && !_suspended && ActiveCount < Limit)
             {
                 InferenceJob? next = Items.FirstOrDefault(j => j.State == "queued" &&
+                    !_reservations.Any(r => r.Key != j.Request.Id && r.Value.Contains(j.Request.ConversationId)) &&
                     !Items.TakeWhile(p => p != j).Any(p => p.Request.ConversationId == j.Request.ConversationId && p.IsPending));
                 if (next is null) { break; }
                 next.State = "active"; next.Cancellation = new(); _ = RunAsync(next);

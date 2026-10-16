@@ -21,6 +21,7 @@ public sealed partial class ChatViewModel
         ConversationBranch branch = source.ActiveBranch;
         string text = Input.Trim(); ComputerSession? current = SelectedComputer;
         if (current is null && !RequestsComputer(text, SelectedWorkMode.Id) && !CanUseVoiceShare(source)) { return false; }
+        try { ChannelAccess.RequireSpeaker(CaptureState(), source.Save(), _recipient ?? source.Room?.DefaultAgentId); } catch (Exception ex) { Error = ex.Message; return true; }
         if (Agents.FirstOrDefault(a => a.Id == (_recipient ?? source.Room?.DefaultAgentId)) is { Enabled: false }) { Error = "このアカウントは無効です。プロフィールと参加者を確認してください。"; return true; }
         if (text.Length == 0 || text.Length > 4000) { Error = "Computer Useへの依頼・追加指示は1回4,000文字以内で入力してください。"; return true; }
         if (PendingAttachments.Count > 0) { Error = "添付は先にチャットで読み取り、その結果をComputer Useへの依頼に含めてください。"; return true; }
@@ -61,6 +62,7 @@ public sealed partial class ChatViewModel
     }
     private async Task CreateComputerAnswerAsync(Conversation source, ConversationBranch branch, string text, AgentAccount? agent, LocalModel model, ComputerTarget? shared)
     {
+        ChannelAccess.RequireSpeaker(CaptureState(), source.Save(), agent?.Id);
         var answer = new ChatMessage { Role = "assistant", Identity = agent is null ? null : new(agent.Id, agent.Name, agent.Icon, model.Id, model.DisplayName, DateTimeOffset.UtcNow) }; branch.Messages.Add(answer);
         _submitting = true; RefreshCommands();
         try
@@ -99,6 +101,7 @@ public sealed partial class ChatViewModel
     }
     private void StartComputer(Conversation source, ConversationBranch branch, ChatMessage answer, ComputerSession session, LocalModel model)
     {
+        if (answer.Identity?.AgentId is Guid actor && !ChannelAccess.CanSpeak(CaptureState(), source.Save(), actor)) { session.Stage = "stopped"; session.Detail = "チャンネルの閲覧・発言権限がありません。"; return; }
         if (session.SharedTarget is not null && (!CanUseVoiceShare(source) || _sharedTarget != session.SharedTarget)) { session.Stage = "stopped"; session.Detail = "画面共有または操作許可が終了しました。共有し直して新しく依頼してください。"; return; }
         Guid? scope = session.ProjectId;
         var activity = new ComputerActivity(source.Title, () => session.Invoke("stop"), () => { OpenAnswer(answer); System.Windows.Application.Current.MainWindow?.Activate(); });
@@ -113,7 +116,7 @@ public sealed partial class ChatViewModel
             if (_ready && !_shuttingDown) { ScheduleSave(); }
         }
         var controller = new ComputerChatController(session, () => _llama.CreateWorker(), model, EffectiveSettings with { ContextSize = model.Options.ContextSize ?? _settings.ContextSize },
-            () => Conversations.Contains(source) && source.ProjectId == scope && source.Branches.Contains(branch) && branch.Messages.Contains(answer) && (session.SharedTarget is null || CanUseVoiceShare(source) && _sharedTarget == session.SharedTarget), Changed,
+            () => Conversations.Contains(source) && source.ProjectId == scope && source.Branches.Contains(branch) && branch.Messages.Contains(answer) && (answer.Identity?.AgentId is not Guid actor || ChannelAccess.CanSpeak(CaptureState(), source.Save(), actor)) && (session.SharedTarget is null || CanUseVoiceShare(source) && _sharedTarget == session.SharedTarget), Changed,
             session.SharedTarget is { } target ? new[] { target } : null);
         _computerControllers[answer.Id] = controller; controller.Start(); _ = FinishAsync();
         async Task FinishAsync()

@@ -24,9 +24,10 @@ public sealed partial class ChatViewModel
         RefreshTimeline();
     }
     private void TimelineMessageChanged(object? sender, PropertyChangedEventArgs e) { if (e.PropertyName == nameof(ChatMessage.Work)) { RefreshTimeline(); } }
-    private void TimelineWorkChanged(object? sender, PropertyChangedEventArgs e) { if (e.PropertyName is nameof(WorkSession.Stage) or nameof(WorkSession.IsRunning)) { RefreshTimeline(); } }
+    private void TimelineWorkChanged(object? sender, PropertyChangedEventArgs e) { if (e.PropertyName is nameof(WorkSession.Stage) or nameof(WorkSession.IsRunning)) { RefreshTimeline(); Notify(nameof(TypingNotice)); } }
     private void TimelineChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        Notify(nameof(TypingNotice));
         if (e.Action == NotifyCollectionChangedAction.Replace && e.NewItems is { Count: 1 } && e.NewItems[0] is DebateTurn turn &&
             _timelineWorks.FirstOrDefault(w => ReferenceEquals(w.Turns, sender)) is { } work &&
             _turnRows.TryGetValue(turn.Id ?? WorkspaceService.StableId(work.Id, turn.Round + ":" + turn.Role), out ChatMessage? row))

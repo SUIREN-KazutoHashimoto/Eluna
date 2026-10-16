@@ -15,7 +15,7 @@ public sealed partial class ChatViewModel
     public bool CanCompose => _ready && !_shuttingDown && !_modelsChanging && !_dataMaintenance;
     public bool CanEditConversation => CanGenerate && !_submitting && SelectedConversation is not null && !Inferences.Contains(SelectedConversation.Id) && !HasComputerPending(SelectedConversation.Id);
     public string QueueLabel => $"推論 · 実行 {Inferences.ActiveCount} / 予約 {Inferences.WaitingCount}" + (Inferences.Items.Any(j => j.CanResume) ? " · 再開待ちあり" : "");
-    private InferenceJob? SelectedJob => Inferences.Items.LastOrDefault(j => j.Request.ConversationId == SelectedConversation?.Id && j.Request.BranchId == SelectedBranch?.Id && j.State == "active") ??
+    private InferenceJob? SelectedJob => Inferences.Items.LastOrDefault(j => j.State == "active" && (j.Request.ConversationId == SelectedConversation?.Id && j.Request.BranchId == SelectedBranch?.Id || FindAnswer(j.Request)?.Team is { ActiveRoomId: Guid id } && id == SelectedConversation?.Id)) ??
         Inferences.Items.LastOrDefault(j => j.Request.ConversationId == SelectedConversation?.Id && j.Request.BranchId == SelectedBranch?.Id);
     public bool CanStopSelected => SelectedComputer is not null || SelectedJob?.State == "active" || _generation is not null;
     public string StopTip => SelectedComputer is not null ? "表示中の会話のPC操作を停止" : SelectedJob?.State == "active" ? "表示中の会話の生成を停止" : "画像・文書・モデルの準備を停止";
@@ -61,9 +61,11 @@ public sealed partial class ChatViewModel
         if (!CanGenerate || SelectedModel is null) { return; }
         if (Inferences.Items.Count(j => j.IsPending) >= 100) { Error = "推論の予約は100件までです。"; return; }
         ConversationBranch branch = conversation.ActiveBranch;
-        if (previousWork is null && _settings.WorkMode == "debate") { EnsureDebateMembers(conversation); }
+        ChannelAccess.RequireSpeaker(CaptureState(), conversation.Save(), agent?.Id ?? conversation.Room?.DefaultAgentId);
+        if (previousWork is null && (conversation.Room?.WorkMode ?? _settings.WorkMode) == "debate") { EnsureDebateMembers(conversation); }
         agent ??= Agents.FirstOrDefault(a => a.Id == (resumeAnswer?.Identity?.AgentId ?? conversation.Room?.DefaultAgentId));
         if (agent is { Enabled: false }) { Error = "このエージェントは無効です。"; return; }
+        ChannelAccess.RequireSpeaker(CaptureState(), conversation.Save(), agent?.Id);
         LocalModel model = agent?.ModelId is string modelId ? Models.FirstOrDefault(m => m.Id == modelId) ?? throw new InvalidOperationException(agent.Name + "のモデルがありません。エージェント設定から選択してください。") : SelectedModel;
         AppSettings settings = EffectiveSettings with { WorkMode = conversation.Room?.WorkMode ?? _settings.WorkMode, InferenceMode = conversation.Room?.InferenceMode ?? _settings.InferenceMode, ModelId = model.Id, ContextSize = model.Options.ContextSize ?? EffectiveSettings.ContextSize, SelectedProjectId = conversation.ProjectId, WorkOptions = RoomWorkOptions(conversation, _settings.WorkOptions ?? new()) };
         List<LocalModel> models = [.. Models];
@@ -104,6 +106,7 @@ public sealed partial class ChatViewModel
     {
         SavedInferenceJob request = job.Request;
         Conversation source = Conversations.FirstOrDefault(c => c.Id == request.ConversationId) ?? throw new InvalidOperationException("予約先の会話がありません。");
+        ChannelAccess.RequireSpeaker(CaptureState(), source.Save(), request.Agent?.Id);
         if (request.AccessStamp is not null && request.AccessStamp != WorkspaceService.AccessStamp(CaptureState(), source.Id, request.Agent?.Id, request.References))
         { throw new InvalidOperationException("参加者または記憶の参照設定が変更されています。予約をキャンセルして送信し直してください。"); }
         if (source.ProjectId != request.Settings.SelectedProjectId) { throw new InvalidOperationException("会話の所属が変更されています。予約をキャンセルして送信し直してください。"); }
@@ -142,7 +145,8 @@ public sealed partial class ChatViewModel
         _busyEngines.Add(engine);
         try
         {
-            answer.Notice = ""; answer.Content = ""; answer.IsGenerating = true; answer.WasInterrupted = false;
+            answer.Notice = ""; if (answer.Team is null || answer.Team.Stage is not ("complete" or "limited")) { answer.Content = ""; }
+            answer.IsGenerating = true; answer.WasInterrupted = false;
             if (request.ResumeWork && answer.Work is not null) { if (answer.Skills.Count == 0) { await PrepareSkillsAsync(answer, job, engine, answer.Work.Question, token); } await RunWorkCoreAsync(answer, token, job, engine, context); job.Detail = answer.Work.Label; }
             else { await GenerateAnswerCoreAsync(context, answer, job, engine, token, request.PreviousWork is null ? null : WorkSession.Restore(request.PreviousWork)); }
             token.ThrowIfCancellationRequested();

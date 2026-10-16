@@ -46,6 +46,7 @@ public partial class SettingsWindow
     private void SkillSelection_Click(object sender, RoutedEventArgs e) { if (CheckRoom()) { new SkillPickerWindow(_viewModel) { Owner = this }.Show(); } }
     private void WorkOptions_Click(object sender, RoutedEventArgs e) { if (CheckRoom()) { new WorkOptionsWindow(_viewModel) { Owner = this }.ShowDialog(); } }
     private void RoomSettings_Click(object sender, RoutedEventArgs e) { if (CheckRoom()) { new RoomWindow(_viewModel, _room) { Owner = this }.Show(); } }
+    private void Permissions_Click(object sender, RoutedEventArgs e) { if (CheckRoom() && _room is not null) { new RoomPermissionsWindow(_viewModel, _room) { Owner = this }.Show(); } }
     private void ProjectSettings_Click(object sender, RoutedEventArgs e)
     { if (CheckRoom() && _viewModel.SelectedProject is { } project) { new ProjectWindow(_viewModel, project) { Owner = this }.Show(); } }
     private void Branch_Changed(object sender, SelectionChangedEventArgs e)

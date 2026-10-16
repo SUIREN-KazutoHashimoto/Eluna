@@ -63,7 +63,8 @@ public sealed partial class ChatViewModel
     {
         var next = Agents.Where(a => a.Id != agent.Id).Append(agent).ToList();
         WorkspaceService.Validate(CaptureState() with { Agents = next });
-        if (!agent.Enabled) { CancelWorkspaceRequests(agent: agent.Id); }
+        AgentAccount? before = Agents.FirstOrDefault(a => a.Id == agent.Id);
+        if (!agent.Enabled || before is not null && ((before.Autonomy ?? new()) != (agent.Autonomy ?? new()) || !(before.Connections ?? []).SequenceEqual(agent.Connections ?? []))) { CancelWorkspaceRequests(agent: agent.Id); }
         int index = Agents.ToList().FindIndex(a => a.Id == agent.Id);
         if (index < 0) { Agents.Add(agent); } else { Agents[index] = agent; }
         if (agent.Enabled)
@@ -72,7 +73,8 @@ public sealed partial class ChatViewModel
             {
                 List<DebateRole> roles = work.Discussion.PendingParticipants ?? work.Options.Participants.ToList();
                 if (!roles.Any(r => r.AgentId == agent.Id)) { continue; }
-                work.Discussion = work.Discussion with { PendingParticipants = roles.Select(r => r.AgentId == agent.Id ? r with { Name = agent.Name, Icon = agent.Icon, Instruction = agent.Instruction.Length > 3000 ? agent.Instruction[..3000] : string.IsNullOrWhiteSpace(agent.Instruction) ? "自分の観点から具体的に検討する。" : agent.Instruction, ModelId = agent.ModelId } : r).ToList() };
+                string persona = AgentPersonas.Instruction(agent);
+                work.Discussion = work.Discussion with { PendingParticipants = roles.Select(r => r.AgentId == agent.Id ? r with { Name = agent.Name, Icon = agent.Icon, Instruction = persona.Length > 3000 ? persona[..3000] : string.IsNullOrWhiteSpace(persona) ? "自分の観点から具体的に検討する。" : persona, ModelId = agent.ModelId } : r).ToList() };
             }
         }
         RefreshRoom(); await PersistSafelyAsync();
@@ -98,8 +100,9 @@ public sealed partial class ChatViewModel
         }
         foreach (InferenceJob job in Inferences.Items.Where(j => j.IsPending).ToArray())
         {
-            WorkSession? work = FindAnswer(job.Request)?.Work;
-            if (!Affects(job.Request.ConversationId, job.Request.Agent?.Id, job.Request.References.Concat(work?.Turns.SelectMany(t => t.Knowledge ?? []) ?? []), work)) { continue; }
+            ChatMessage? answer = FindAnswer(job.Request); WorkSession? work = answer?.Work;
+            bool teamAffected = answer?.Team?.Assignments.Any(a => rooms?.Contains(a.RoomId) == true || agent == a.AgentId || project is not null && Conversations.Any(c => c.Id == a.RoomId && c.ProjectId == project)) == true;
+            if (!teamAffected && !Affects(job.Request.ConversationId, job.Request.Agent?.Id, job.Request.References.Concat(work?.Turns.SelectMany(t => t.Knowledge ?? []) ?? []), work)) { continue; }
             tasks.Add(job.Finished); Inferences.Cancel(job);
         }
         foreach ((Guid answerId, ComputerChatController controller) in _computerControllers.ToArray())
@@ -147,7 +150,7 @@ public sealed partial class ChatViewModel
         AppState current = CaptureState();
         next = next with { Projects = next.Projects?.Select(p => p.Id == conversation.ProjectId ? p with { AcceptAgentMemory = acceptServerMemory } : p).ToList() };
         bool policyChanged = WorkspaceService.AccessStamp(current, conversation.Id, null, []) != WorkspaceService.AccessStamp(next, conversation.Id, null, []);
-        if (policyChanged) { CancelWorkspaceRequests(new HashSet<Guid> { conversation.Id }, project: current.Projects?.FirstOrDefault(p => p.Id == conversation.ProjectId)?.AcceptAgentMemory != acceptServerMemory ? conversation.ProjectId : null); }
+        if (policyChanged) { CancelWorkspaceRequests(Conversations.Where(c => c.Id == conversation.Id || c.Room?.ParentId == conversation.Id).Select(c => c.Id).ToHashSet(), project: current.Projects?.FirstOrDefault(p => p.Id == conversation.ProjectId)?.AcceptAgentMemory != acceptServerMemory ? conversation.ProjectId : null); }
         conversation.Title = title; conversation.Room = profile;
         if (conversation.ProjectId is Guid project)
         { int index = Projects.ToList().FindIndex(p => p.Id == project); if (index >= 0) { Projects[index] = Projects[index] with { AcceptAgentMemory = acceptServerMemory }; } }
@@ -161,16 +164,30 @@ public sealed partial class ChatViewModel
         var mentioned = members.Where(a => text.StartsWith("@" + a.Name + " ", StringComparison.OrdinalIgnoreCase) || text.StartsWith("@{" + a.Name + "}", StringComparison.OrdinalIgnoreCase)).ToList();
         if (mentioned.Count > 1) { throw new InvalidDataException("同名の参加者がいます。宛先メニューで選択してください。"); }
         IReadOnlyList<AgentAccount> targets = mentioned.Count > 0 ? mentioned : all || _recipient is null ? members : members.Where(a => a.Id == _recipient).ToList();
-        if (targets.Any(a => !a.Enabled)) { throw new InvalidOperationException("無効なエージェントが宛先に含まれています。参加者を確認してください。"); }
-        return targets;
+        AppState state = CaptureState();
+        if (mentioned.Count > 0 || !all && _recipient is not null) { foreach (AgentAccount target in targets) { ChannelAccess.RequireSpeaker(state, conversation.Save(), target.Id); } }
+        return targets.Where(a => ChannelAccess.CanSpeak(state, conversation.Save(), a.Id)).ToArray();
     }
     internal WorkOptions RoomWorkOptions(Conversation conversation, WorkOptions options)
     {
         if (conversation.Room?.Members.Count is not >= 2) { return options; }
         return options with
         {
-            Roles = conversation.Room.Members.Select(id => Agents.First(a => a.Id == id)).Select(a => new DebateRole(a.Id.ToString("N"), a.Name,
-            string.IsNullOrWhiteSpace(a.Instruction) ? "あなたの専門分野「" + a.Specialty + "」から根拠と異なる視点を示してください。" : a.Instruction[..Math.Min(3000, a.Instruction.Length)], a.ModelId, a.Id, a.Icon)).ToList()
+            Roles = conversation.Room.Members.Select(id => Agents.First(a => a.Id == id)).Where(a => ChannelAccess.CanSpeak(CaptureState(), conversation.Save(), a.Id)).Select(a => new DebateRole(a.Id.ToString("N"), a.Name,
+            string.IsNullOrWhiteSpace(AgentPersonas.Instruction(a)) ? "あなたの専門分野「" + a.Specialty + "」から根拠と異なる視点を示してください。" : AgentPersonas.Instruction(a)[..Math.Min(3000, AgentPersonas.Instruction(a).Length)], a.ModelId, a.Id, a.Icon)).ToList()
         };
+    }
+    public async Task SetChannelPermissionsAsync(Guid roomId, IReadOnlyList<ChannelGrant> grants)
+    {
+        Conversation room = Conversations.FirstOrDefault(c => c.Id == roomId) ?? throw new InvalidOperationException("対象のチャンネルがありません。");
+        RoomProfile profile = room.Room ?? throw new InvalidOperationException("チャンネル情報がありません。");
+        AppState next = CaptureState() with { Conversations = Conversations.Select(c => c.Id == roomId ? c.Save() with { Room = profile with { Permissions = grants.ToList() } } : c.Save()).ToList() };
+        WorkspaceService.Validate(next);
+        var affected = Conversations.Where(c => c.Id == roomId || c.Room?.ParentId == roomId).Select(c => c.Id).ToHashSet();
+        Task[] pending = CancelWorkspaceRequests(affected);
+        room.Room = profile with { Permissions = grants.ToList() };
+        if (VoiceJoined && !VoiceValid) { await LeaveVoiceAsync(); }
+        RefreshRoom(); await PersistSafelyAsync();
+        try { await Task.WhenAll(pending); } catch (OperationCanceledException) { }
     }
 }

@@ -1,5 +1,7 @@
 # 完成版に向けた実装・検証の台帳
 
+2026-10-16: `codex/agent-permissions-autonomy`でチャンネルACL、性格・ロールプレイ、つながりと招待許可、AIによるサーバー・チャンネル作成と担当別の実行・報告、入力中表示を追加。開発版exeは`artifacts/release-agents/Eluna.exe`。[仕様と確認範囲](agent-permissions-autonomy.md)を参照。
+
 プロフィール編集、プロジェクト＝サーバー、ボイスチャンネル、ウィンドウ共有とComputer Useの入口、および重なり対策を追加しました。[現行の仕様・操作と検証範囲](voice-channels.md)を参照してください。
 
 2026-10-16: codex/discord-shell で主画面をDiscordを参考にした構成へ変更し、AI設定をユーザー設定へ集約した。モデル選択はアカウントで管理する。今回の配布確認用exeは artifacts/release-discord/Eluna.exe。[画面・設定の移動先と検証](discord-ui.md)を参照。

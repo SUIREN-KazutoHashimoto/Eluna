@@ -72,6 +72,10 @@ public sealed class ChatMessage : ObservableObject
     public bool HasNotice => Notice.Length > 0;
     public WorkSession? Work { get => _work; set { if (Set(ref _work, value)) { Notify(nameof(HasWork)); } } }
     public bool HasWork => Work is not null;
+    private TeamRun? _team;
+    public TeamRun? Team { get => _team; set { if (Set(ref _team, value)) { Notify(nameof(HasTeam)); Notify(nameof(TeamLabel)); } } }
+    public bool HasTeam => Team is not null;
+    public string TeamLabel => Team?.Label ?? "";
     public ComputerSession? Computer { get => _computer; set { if (Set(ref _computer, value)) { Notify(nameof(HasComputer)); Notify(nameof(IsWaiting)); } } }
     public bool HasComputer => Computer is not null;
     public List<ChatAttachment> Attachments { get; init; } = [];
@@ -83,7 +87,7 @@ public sealed class ChatMessage : ObservableObject
     public bool HasSkills => Skills.Count > 0;
     public string SkillsLabel => "使用スキル · " + string.Join(" / ", Skills.Select(s => s.Name));
     public string KnowledgeLabel => $"渡したナレッジ · {Knowledge.Count}件";
-    public SavedMessage Save() => new(Role, Content, Mode, ThinkingSeconds, HasNotice ? Notice : null, Id, IsGenerating || WasInterrupted, Work?.Save(), Attachments.Count > 0 ? Attachments : null, HasKnowledge ? Knowledge : null, HasSkills ? Skills : null, Computer?.Save(), Identity, Artifact);
+    public SavedMessage Save() => new(Role, Content, Mode, ThinkingSeconds, HasNotice ? Notice : null, Id, IsGenerating || WasInterrupted, Work?.Save(), Attachments.Count > 0 ? Attachments : null, HasKnowledge ? Knowledge : null, HasSkills ? Skills : null, Computer?.Save(), Identity, Artifact, Team);
     public static ChatMessage Restore(SavedMessage saved) => new()
     {
         Id = saved.Id ?? Guid.NewGuid(),
@@ -91,6 +95,7 @@ public sealed class ChatMessage : ObservableObject
         Identity = saved.Identity,
         WasInterrupted = saved.Incomplete,
         Artifact = saved.Artifact,
+        Team = saved.Team is { Stage: "running" or "report" } team ? team with { Stage = "paused", ActiveRoomId = null, ActiveAgentId = null } : saved.Team,
         Content = saved.Content,
         Attachments = saved.Attachments ?? [],
         Knowledge = saved.Knowledge ?? [],
@@ -211,7 +216,7 @@ public sealed class Conversation : ObservableObject
 }
 
 public sealed record SavedMessage(string Role, string Content, string? Mode = null, double? ThinkingSeconds = null, string? Notice = null,
-    Guid? Id = null, bool Incomplete = false, SavedWork? Work = null, List<ChatAttachment>? Attachments = null, List<KnowledgeReference>? Knowledge = null, List<AppliedSkill>? Skills = null, SavedComputerTask? Computer = null, MessageIdentity? Identity = null, GeneratedArtifact? Artifact = null)
+    Guid? Id = null, bool Incomplete = false, SavedWork? Work = null, List<ChatAttachment>? Attachments = null, List<KnowledgeReference>? Knowledge = null, List<AppliedSkill>? Skills = null, SavedComputerTask? Computer = null, MessageIdentity? Identity = null, GeneratedArtifact? Artifact = null, TeamRun? Team = null)
 {
     [System.Text.Json.Serialization.JsonIgnore]
     public string PromptText => (Identity is null ? "" : "［発言者: " + Identity.Name + "］\n") + (Incomplete ? "［中断した未完了の発言］\n" : "") + Content +

@@ -267,6 +267,7 @@ public partial class MainWindow : Window
         var menu = new ContextMenu { PlacementTarget = button };
         void Item(string label, Action action) { var item = new MenuItem { Header = label }; item.Click += (_, _) => action(); menu.Items.Add(item); }
         Item("名前を変更", async () => { var dialog = new TextPromptWindow("会話の名前", conversation.Title) { Owner = this }; if (dialog.ShowDialog() == true) { await _viewModel.RenameConversationAsync(conversation, dialog.Result); } });
+        Item("アクセス権", () => new RoomPermissionsWindow(_viewModel, conversation) { Owner = this }.Show());
         Item(conversation.IsPinned ? "ピン留めを解除" : "ピン留め", async () => await _viewModel.TogglePinAsync(conversation));
         Item(conversation.IsArchived ? "保管から戻す" : "アーカイブ", async () => await _viewModel.ToggleArchiveAsync(conversation));
         var move = new MenuItem { Header = "プロジェクトへ移動" };
@@ -288,6 +289,7 @@ public partial class MainWindow : Window
         if (sender is not Button button) { return; }
         var menu = new ContextMenu { PlacementTarget = button };
         var settings = new MenuItem { Header = "チャンネル設定" }; settings.Click += (_, _) => OpenSettings(7); menu.Items.Add(settings);
+        var permissions = new MenuItem { Header = "アクセス権" }; permissions.Click += (_, _) => { if (_viewModel.SelectedConversation is { } room) { new RoomPermissionsWindow(_viewModel, room) { Owner = this }.Show(); } }; menu.Items.Add(permissions);
         var archive = new MenuItem { Header = "保管済みを表示", IsCheckable = true, IsChecked = _viewModel.ShowArchived }; archive.Click += (_, _) => _viewModel.ShowArchived = archive.IsChecked; menu.Items.Add(archive);
         var export = new MenuItem { Header = "この会話をMarkdownで書き出す" };
         export.Click += async (_, _) =>
@@ -298,6 +300,7 @@ public partial class MainWindow : Window
         };
         menu.Items.Add(export); menu.IsOpen = true;
     }
+    private void TeamActivity_Click(object sender, RoutedEventArgs e) { if (sender is FrameworkElement { DataContext: ChatMessage message }) { new TeamWindow(_viewModel, message) { Owner = this }.Show(); } }
     private void CopyMessage_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: ChatMessage message }) { CopyMessage(message); }

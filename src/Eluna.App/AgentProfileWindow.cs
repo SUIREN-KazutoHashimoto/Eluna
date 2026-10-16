@@ -22,6 +22,7 @@ public sealed class AgentProfileWindow : Window
     internal Button SaveButton { get; } = new() { Content = "変更を保存" };
     private string _baseline = "";
     private bool _saving;
+    internal AgentBehaviorEditor Behavior { get; } = new();
     public AgentProfileWindow(ChatViewModel chat, Guid id)
     {
         _chat = chat; _id = id; AgentAccount account = chat.Agents.First(a => a.Id == id);
@@ -37,6 +38,7 @@ public sealed class AgentProfileWindow : Window
         body.Children.Add(new TextBlock { Text = account.Name, FontSize = 24, TextWrapping = TextWrapping.Wrap, FontWeight = FontWeights.SemiBold });
         void Field(string label, FrameworkElement element) { body.Children.Add(new TextBlock { Text = label, Margin = new(0, 14, 0, 6), TextWrapping = TextWrapping.Wrap }); body.Children.Add(element); System.Windows.Automation.AutomationProperties.SetName(element, label); }
         Field("名前", NameBox); Field("アイコン", _icon); Field("専門分野", _specialty); Field("使用モデル", ModelBox); Field("基本指示・話し方", _instruction); Field("読み上げ音声", VoiceBox); Field("読み上げ速度", _rate);
+        Behavior.Load(account, chat.Agents); body.Children.Add(Behavior);
         body.Children.Add(new TextBlock { Text = "変更は次の依頼から使います。過去の発言と記憶は引き継ぎます。", TextWrapping = TextWrapping.Wrap, Margin = new(0, 14, 0, 0) });
         NameBox.Text = account.Name; _icon.Text = account.Icon; _specialty.Text = account.Specialty; _instruction.Text = account.Instruction; _rate.Value = account.SpeechRate;
         var models = new List<DebateModelChoice> { new("", "既存のモデル設定を使用", "") }; models.AddRange(chat.Models.Select(m => new DebateModelChoice(m.Id, m.DisplayName, m.SizeLabel)));
@@ -61,7 +63,7 @@ public sealed class AgentProfileWindow : Window
             catch (Exception ex) { _status.Text = "音声を取得できません: " + ex.Message; }
         };
     }
-    private string Snapshot() => JsonSerializer.Serialize(new { NameBox.Text, Icon = _icon.Text, Specialty = _specialty.Text, Instruction = _instruction.Text, Model = (ModelBox.SelectedItem as DebateModelChoice)?.Id, Voice = (VoiceBox.SelectedItem as VoiceChoice)?.Id, Rate = (int)_rate.Value });
+    private string Snapshot() => JsonSerializer.Serialize(new { NameBox.Text, Icon = _icon.Text, Specialty = _specialty.Text, Instruction = _instruction.Text, Model = (ModelBox.SelectedItem as DebateModelChoice)?.Id, Voice = (VoiceBox.SelectedItem as VoiceChoice)?.Id, Rate = (int)_rate.Value, Behavior.Personality, Behavior.Autonomy, Behavior.Connections });
     internal async Task<bool> SaveAsync()
     {
         if (_saving) { return false; }
@@ -69,7 +71,7 @@ public sealed class AgentProfileWindow : Window
         try
         {
             AgentAccount current = _chat.Agents.First(a => a.Id == _id); string? model = (ModelBox.SelectedItem as DebateModelChoice)?.Id, voice = (VoiceBox.SelectedItem as VoiceChoice)?.Id;
-            await _chat.SaveAgentAsync(current with { Name = NameBox.Text.Trim(), Icon = _icon.Text.Trim(), Specialty = _specialty.Text, Instruction = _instruction.Text, ModelId = string.IsNullOrEmpty(model) ? null : model, VoiceId = string.IsNullOrEmpty(voice) ? null : voice, SpeechRate = (int)_rate.Value });
+            await _chat.SaveAgentAsync(current with { Name = NameBox.Text.Trim(), Icon = _icon.Text.Trim(), Specialty = _specialty.Text, Instruction = _instruction.Text, ModelId = string.IsNullOrEmpty(model) ? null : model, VoiceId = string.IsNullOrEmpty(voice) ? null : voice, SpeechRate = (int)_rate.Value, Personality = Behavior.Personality, Connections = Behavior.Connections, Autonomy = Behavior.Autonomy });
             _baseline = snapshot; _status.Text = Snapshot() == snapshot ? "保存しました" : "保存後の編集は未保存です"; return true;
         }
         catch (Exception ex) { _status.Text = ex.Message; return false; }

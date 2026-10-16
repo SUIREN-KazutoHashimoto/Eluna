@@ -19,10 +19,8 @@ public sealed partial class ChatViewModel
     {
         get
         {
-            InferenceJob[] active = Inferences.Items.Where(j => j.State == "active" && j.Request.ConversationId == SelectedConversation?.Id).ToArray();
-            if (active.Any(j => FindAnswer(j.Request)?.Work?.Stage == "debate-wait")) { return "次の発言を待っています"; }
-            if (active.Any(j => FindAnswer(j.Request)?.Work?.Stage == "plan")) { return "確認を待っています"; }
-            string names = string.Join("、", active.Select(j => FindAnswer(j.Request)?.Work?.Turns.LastOrDefault(t => t.Incomplete)?.Name ?? j.Request.Agent?.Name ?? "メンバー").Distinct());
+            InferenceJob[] active = Inferences.Items.Where(j => j.State == "active" && (j.Request.ConversationId == SelectedConversation?.Id && j.Request.BranchId == SelectedBranch?.Id || FindAnswer(j.Request)?.Team is { ActiveRoomId: Guid room } && room == SelectedConversation?.Id)).ToArray();
+            string names = string.Join("、", active.Where(j => FindAnswer(j.Request)?.Work?.Stage is not ("debate-wait" or "plan" or "paused")).Select(j => FindAnswer(j.Request)?.Team is { } team ? team.ActiveRoomId == SelectedConversation?.Id ? Agents.FirstOrDefault(a => a.Id == team.ActiveAgentId)?.Name : null : FindAnswer(j.Request)?.Work?.Turns.LastOrDefault(t => t.Incomplete)?.Name ?? j.Request.Agent?.Name ?? "メンバー").Where(n => n is not null).Distinct());
             return names.Length > 0 ? names + " が入力中…" : "";
         }
     }

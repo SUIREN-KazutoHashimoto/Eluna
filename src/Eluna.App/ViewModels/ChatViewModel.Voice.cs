@@ -47,7 +47,7 @@ public sealed partial class ChatViewModel
         get => _shareControl;
         set { if (_shareControl == value) { return; } _shareControl = value && IsSharing; if (!_shareControl) { StopSharedComputers(); } NotifyVoice(); }
     }
-    private bool VoiceValid => _voiceRoom is { IsArchived: false, Room.Kind: "voice" } room && Conversations.Contains(room) && room.ActiveBranch.Id == _voiceBranch && room.ProjectId == _voiceProject;
+    private bool VoiceValid => _voiceRoom is { IsArchived: false, Room.Kind: "voice" } room && Conversations.Contains(room) && room.ActiveBranch.Id == _voiceBranch && room.ProjectId == _voiceProject && (room.Room.DefaultAgentId is not Guid actor || ChannelAccess.CanSpeak(CaptureState(), room.Save(), actor));
     private void NotifyVoice()
     {
         foreach (string property in new[] { nameof(IsVoiceChannel), nameof(VoiceJoined), nameof(IsJoinedVoiceChannel), nameof(CanJoinVoiceChannel), nameof(ShowVoicePanel), nameof(VoiceRoomName), nameof(VoiceStatus), nameof(VoiceNotice), nameof(VoiceHeard), nameof(VoiceMuted), nameof(MicrophoneLabel), nameof(VoiceOutputLabel), nameof(VoiceBusy), nameof(IsSharing), nameof(SharedTitle), nameof(SharedPreview), nameof(ShareControlAllowed), nameof(ShareStatus) }) { Notify(property); }
@@ -55,6 +55,7 @@ public sealed partial class ChatViewModel
     public async Task JoinVoiceAsync()
     {
         if (VoiceBusy || !IsVoiceChannel || !CanCompose || SelectedConversation is not { } room) { return; }
+        ChannelAccess.RequireSpeaker(CaptureState(), room.Save(), room.Room?.DefaultAgentId);
         _voiceJoining = true;
         try
         {

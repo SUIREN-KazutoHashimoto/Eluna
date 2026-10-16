@@ -326,6 +326,8 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         if (await TrySendComputerAsync()) { return; }
         if (await TrySendDebateAsync()) { return; }
         Conversation conversation = SelectedConversation;
+        try { IReadOnlyList<AgentAccount> allowed = TargetAgents(conversation, Input.Trim()); if (allowed.Count == 0 || SelectedWorkMode.Id == "debate") { ChannelAccess.RequireSpeaker(CaptureState(), conversation.Save(), null); } }
+        catch (Exception ex) { Error = ex.Message; return; }
         try { SkillRunner.Capture(Skills, conversation.ProjectId, SelectedProject?.UseCommonSkills == true, SkillMode, conversation.SkillIds, Input); }
         catch (Exception ex) { Error = ex.Message; return; }
         if ((PendingAttachments.Any(a => a.ImageBase64 is not null) || SelectedConversation.Messages.Any(m => m.Attachments.Any(a => a.ImageBase64 is not null))) && SelectedModel?.Projector is null) { Error = "画像・PDFの認識には対応するprojectorが必要です。入力欄の添付メニューから「画像認識モデルの設定」を開いてください。"; return; }
@@ -373,8 +375,9 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         });
         return _generationTask = GenerateAnswerAsync(SelectedConversation, message.Work);
     }
-    private async Task GenerateAnswerCoreAsync(Conversation conversation, ChatMessage answer, InferenceJob job, LlamaService engine, CancellationToken token, WorkSession? previousWork = null)
+    private async Task GenerateAnswerCoreAsync(Conversation conversation, ChatMessage answer, InferenceJob job, LlamaService engine, CancellationToken token, WorkSession? previousWork = null, bool allowTeam = true)
     {
+        if (allowTeam && await TryRunTeamAsync(conversation, answer, job, engine, token)) { return; }
         SavedMessage[] requests = conversation.Messages.Select(m => m.Save()).ToArray();
         AppSettings settings = job.Request.Settings;
         LocalModel model = job.Request.Model;
@@ -446,7 +449,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
             await engine.EnsureModelAsync(model, inferenceSettings, message => job.Detail = message, token);
             SavedMessage[] context = await ContextCompressor.PrepareAsync(conversation, engine, inferenceSettings, message => job.Detail = message, token, knowledge, job.Request.Agent);
             job.Detail = "応答を生成しています…"; elapsed.Restart();
-            await foreach (GenerationUpdate piece in engine.GenerateAsync(context, mode, token, knowledge.Instruction))
+            await foreach (GenerationUpdate piece in engine.GenerateAsync(context, mode, token, knowledge.Instruction, allowTeam ? null : 512))
             {
                 if (piece.Content.Length > 0 || piece.Reasoning.Length > 0) { firstOutput ??= elapsed.Elapsed.TotalSeconds; }
                 if (piece.Reasoning.Length > 0 && thinking is null) { thinking = Stopwatch.StartNew(); answer.IsThinking = true; job.Detail = $"{mode.Name} · 考えています…"; }
@@ -525,6 +528,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         var personalContexts = new Dictionary<(AgentAccount, int), KnowledgeContext>();
         async Task<KnowledgeContext> PromptKnowledgeAsync(WorkPrompt prompt)
         {
+            ChannelAccess.RequireSpeaker(CaptureState(), Conversations.First(c => c.Id == job.Request.ConversationId).Save(), prompt.AgentId ?? job.Request.Agent?.Id);
             if (prompt.AgentId is not Guid agent) { return knowledge; }
             AgentAccount account = Agents.First(a => a.Id == agent);
             int capacity = ModelContext(prompt.ModelId);
