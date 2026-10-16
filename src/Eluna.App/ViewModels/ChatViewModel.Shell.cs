@@ -8,12 +8,12 @@ public sealed partial class ChatViewModel
     public ObservableCollection<AgentAccount> RoomMembers { get; } = [];
     public string ServerTitle => SelectedProject?.Name ?? "ダイレクトメッセージ";
     public string ChannelTitle => SelectedConversation?.Title ?? "会話";
-    public string ChannelSymbol => SelectedConversation?.Room?.Kind switch { "dm" or "group" => "@", "thread" => "↳", _ => "#" };
-    public string ChannelDescription => SelectedConversation?.Room?.Kind switch { "dm" => "ダイレクトメッセージ", "group" => "グループメッセージ", "thread" => "スレッド", _ => SelectedProject?.Name ?? "テキストチャンネル" };
+    public string ChannelSymbol => SelectedConversation?.Room?.Kind switch { "voice" => "◖", "dm" or "group" => "@", "thread" => "↳", _ => "#" };
+    public string ChannelDescription => SelectedConversation?.Room?.Kind switch { "voice" => "ボイス・テキスト・画面共有", "dm" => "ダイレクトメッセージ", "group" => "グループメッセージ", "thread" => "スレッド", _ => SelectedProject?.Name ?? "テキストチャンネル" };
     public string ChannelPlaceholder => ChannelSymbol + " " + ChannelTitle + " へメッセージを送信";
     public string ChannelWelcome => ChannelSymbol == "#" ? ChannelTitle + "へようこそ！" : ChannelTitle;
     public string MemberHeading => "メンバー — " + RoomMembers.Count;
-    public string ChannelListHeading => SelectedProject is null ? "ダイレクトメッセージ" : "テキストチャンネル";
+    public string ChannelListHeading => SelectedProject is null ? "ダイレクトメッセージ" : "チャンネル";
     public bool HasHistorySearch => HistorySearch.Length > 0;
     public string TypingNotice
     {
@@ -28,6 +28,7 @@ public sealed partial class ChatViewModel
     }
     private void NotifyShell()
     {
+        NotifyVoice();
         Notify(nameof(ServerTitle)); Notify(nameof(ChannelTitle)); Notify(nameof(ChannelSymbol)); Notify(nameof(ChannelDescription)); Notify(nameof(ChannelPlaceholder)); Notify(nameof(ChannelWelcome)); Notify(nameof(MemberHeading)); Notify(nameof(TypingNotice)); Notify(nameof(ChannelListHeading));
     }
 }

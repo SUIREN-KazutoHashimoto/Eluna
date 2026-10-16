@@ -115,7 +115,7 @@ public sealed class AgentsWindow : Window
     {
         if (_saving) { return false; }
         _saving = true; SaveButton.IsEnabled = false; AgentList.IsEnabled = false; string savedSnapshot = Snapshot();
-        try { string? model = (_model.SelectedItem as DebateModelChoice)?.Id; await _chat.SaveAgentAsync(new(_id, NameBox.Text.Trim(), IconBox.Text.Trim(), InstructionBox.Text, _specialty.Text, string.IsNullOrEmpty(model) ? null : model, _enabled.IsChecked == true)); _baseline = savedSnapshot; _status.Text = Snapshot() == _baseline ? "保存しました" : "保存しました。その後の編集は未保存です。"; return true; }
+        try { string? model = (_model.SelectedItem as DebateModelChoice)?.Id; AgentAccount original = _chat.Agents.FirstOrDefault(a => a.Id == _id) ?? new(_id, "新しいエージェント"); await _chat.SaveAgentAsync(original with { Name = NameBox.Text.Trim(), Icon = IconBox.Text.Trim(), Instruction = InstructionBox.Text, Specialty = _specialty.Text, ModelId = string.IsNullOrEmpty(model) ? null : model, Enabled = _enabled.IsChecked == true }); _baseline = savedSnapshot; _status.Text = Snapshot() == _baseline ? "保存しました" : "保存しました。その後の編集は未保存です。"; return true; }
         catch (Exception ex) { _status.Text = ex.Message; return false; }
         finally { _saving = false; SaveButton.IsEnabled = true; AgentList.IsEnabled = true; }
     }

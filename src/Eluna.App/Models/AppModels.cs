@@ -116,7 +116,7 @@ public sealed class Conversation : ObservableObject
 {
     private RoomProfile? _room;
     public RoomProfile? Room { get => _room; set { if (Set(ref _room, value)) { Notify(nameof(NavigationLabel)); Notify(nameof(HistoryGroup)); } } }
-    public string NavigationLabel => (Room?.Kind switch { "dm" => "@ ", "group" => "◉ ", "thread" => "↳ ", _ => "# " }) + Title;
+    public string NavigationLabel => (Room?.Kind switch { "voice" => "◖ ", "dm" => "@ ", "group" => "◉ ", "thread" => "↳ ", _ => "# " }) + Title;
     private string _activity = "";
     public string Activity { get => _activity; internal set { if (Set(ref _activity, value)) { Notify(nameof(HistoryDetail)); } } }
     public string HistoryDetail => Activity.Length > 0 ? Activity : UpdatedAt.ToLocalTime().ToString("MM/dd HH:mm");
@@ -133,7 +133,7 @@ public sealed class Conversation : ObservableObject
     public Guid? ProjectId { get => _projectId; set => Set(ref _projectId, value); }
     public string Title { get => _title; set { if (Set(ref _title, value)) { Notify(nameof(NavigationLabel)); } } }
     public bool IsPinned { get => _isPinned; set { if (Set(ref _isPinned, value)) { Notify(nameof(PinLabel)); Notify(nameof(HistoryGroup)); } } }
-    public string HistoryGroup => IsPinned ? "ピン留め" : Room?.Kind switch { "dm" => "DM", "group" => "グループDM", "thread" => "スレッド", "legacy" => "移行した会話", "channel" => "チャンネル", _ => "会話" };
+    public string HistoryGroup => IsPinned ? "ピン留め" : Room?.Kind switch { "voice" => "ボイスチャンネル", "dm" => "DM", "group" => "グループDM", "thread" => "スレッド", "legacy" => "移行した会話", "channel" => "チャンネル", _ => "会話" };
     public string PinLabel => IsPinned ? "★ " : "";
     public bool IsArchived { get => _isArchived; set => Set(ref _isArchived, value); }
     public DateTimeOffset UpdatedAt { get => _updatedAt; set { if (Set(ref _updatedAt, value)) { Notify(nameof(HistoryDetail)); Notify(nameof(HistoryGroup)); } } }

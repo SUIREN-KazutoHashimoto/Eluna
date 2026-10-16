@@ -27,6 +27,7 @@ internal static class Program
             await CheckEventsAsync();
             await ComputerUseChecks.RunAsync();
             await WorkspaceChecks.RunAsync(Path.Combine(root, "workspace-" + Guid.NewGuid().ToString("N")));
+            await VoiceChannelChecks.RunAsync(Path.Combine(root, "voice-" + Guid.NewGuid().ToString("N")));
             await InferenceQueueChecks.RunAsync(Path.Combine(root, "inference-queue-" + Guid.NewGuid().ToString("N")));
             await SkillChecks.RunAsync(Path.Combine(root, "skills-" + Guid.NewGuid().ToString("N")));
             await LicenseChecks.RunAsync();

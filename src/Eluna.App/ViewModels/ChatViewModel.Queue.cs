@@ -22,6 +22,7 @@ public sealed partial class ChatViewModel
     public string SendLabel => SelectedComputer is not null ? "追加指示を送信" : !_ready ? "起動の準備中です" : !HasModel ? "設定の「モデルを探す」からモデルを追加してください" : _modelsChanging ? "モデルの準備が終わるまで待っています" : _submitting ? "前の依頼を予約しています" : Inferences.Items.Count(j => j.IsPending) >= 100 ? "予約上限の100件です。処理リストから予約を整理してください" : _isBusy || MediaJobs.Any(j => j.IsPending) || Inferences.ActiveCount >= Inferences.Limit || SelectedConversation is not null && Inferences.Contains(SelectedConversation.Id) ? "予約して送信" : "送信";
     private void QueueChanged()
     {
+        VoiceQueueChanged();
         Notify(nameof(TypingNotice));
         Notify(nameof(ProcessSummary)); PumpMedia(); Notify(nameof(IsBusy)); Notify(nameof(QueueLabel)); Notify(nameof(Status)); Notify(nameof(Metrics));
         Notify(nameof(CanStopSelected)); Notify(nameof(SendLabel)); RefreshCommands();
@@ -64,7 +65,7 @@ public sealed partial class ChatViewModel
         agent ??= Agents.FirstOrDefault(a => a.Id == (resumeAnswer?.Identity?.AgentId ?? conversation.Room?.DefaultAgentId));
         if (agent is { Enabled: false }) { Error = "このエージェントは無効です。"; return; }
         LocalModel model = agent?.ModelId is string modelId ? Models.FirstOrDefault(m => m.Id == modelId) ?? throw new InvalidOperationException(agent.Name + "のモデルがありません。エージェント設定から選択してください。") : SelectedModel;
-        AppSettings settings = EffectiveSettings with { ModelId = model.Id, ContextSize = model.Options.ContextSize ?? EffectiveSettings.ContextSize, SelectedProjectId = conversation.ProjectId, WorkOptions = RoomWorkOptions(conversation, _settings.WorkOptions ?? new()) };
+        AppSettings settings = EffectiveSettings with { WorkMode = conversation.Room?.WorkMode ?? _settings.WorkMode, InferenceMode = conversation.Room?.InferenceMode ?? _settings.InferenceMode, ModelId = model.Id, ContextSize = model.Options.ContextSize ?? EffectiveSettings.ContextSize, SelectedProjectId = conversation.ProjectId, WorkOptions = RoomWorkOptions(conversation, _settings.WorkOptions ?? new()) };
         List<LocalModel> models = [.. Models];
         var answer = resumeAnswer ?? new ChatMessage
         {
@@ -78,7 +79,7 @@ public sealed partial class ChatViewModel
         SavedMessage? question = branch.Messages.TakeWhile(m => m != answer).LastOrDefault(m => m.Role == "user")?.Save();
         if (question is null) { return; }
         SkillRequest skillRequest;
-        try { skillRequest = SkillRunner.Capture(Skills, conversation.ProjectId, Projects.FirstOrDefault(p => p.Id == conversation.ProjectId)?.UseCommonSkills == true, SkillMode, conversation.SkillIds, question.Content); }
+        try { skillRequest = SkillRunner.Capture(Skills, conversation.ProjectId, Projects.FirstOrDefault(p => p.Id == conversation.ProjectId)?.UseCommonSkills == true, conversation.SkillsMode ?? _settings.SkillMode, conversation.SkillIds, question.Content); }
         catch (Exception ex) { Error = ex.Message; answer.Notice = "スキルの設定を確認してから再生成してください。"; return; }
         AppState snapshot = CaptureState();
         Conversation captured = Conversation.Restore(conversation.Save());

@@ -5,7 +5,7 @@ using Eluna.App.Models;
 namespace Eluna.App.Services;
 
 internal sealed class ComputerChatController(ComputerSession session, Func<LlamaService> engineFactory, LocalModel model,
-    AppSettings settings, Func<bool> sourceValid, Action changed)
+    AppSettings settings, Func<bool> sourceValid, Action changed, IReadOnlyList<ComputerTarget>? initialTargets = null)
 {
     private static readonly SemaphoreSlim DesktopGate = new(1, 1);
     private readonly ComputerDesktop _desktop = new();
@@ -106,7 +106,8 @@ internal sealed class ComputerChatController(ComputerSession session, Func<Llama
         {
             if (session.SecondsUsed >= 1200 || session.Steps.Count >= session.MaxSteps) { State("limit", "操作回数または実行時間の上限に達しています。新しい依頼として送信してください。"); return; }
             ComputerDesktopNative.RequireUnlockedDesktop();
-            await SelectAppsAsync("この依頼で操作してよいアプリを選び、「許可して続行」を押してください。", _stop.Token);
+            if (initialTargets is { Count: > 0 }) { _allowed = initialTargets; }
+            else { await SelectAppsAsync("この依頼で操作してよいアプリを選び、「許可して続行」を押してください。", _stop.Token); }
             while (true)
             {
                 _stop.Token.ThrowIfCancellationRequested();
@@ -131,7 +132,7 @@ internal sealed class ComputerChatController(ComputerSession session, Func<Llama
                     var runner = new ComputerUseRunner(_desktop, planner);
                     ComputerUseResult result = await runner.RunAsync(TaskText(), _allowed, session.MaxSteps, false,
                         observation => { session.Observe(observation); overlay.Observe(observation); }, step => { session.Steps.Add(step); changed(); }, text => { session.Detail = text; overlay.Status(text); changed(); }, ReviewAsync, segment.Token,
-                        new(() => session.Automatic, [.. session.Steps], async (reason, token) => await SelectAppsAsync("別のアプリを使うための許可が必要です: " + reason, token), Math.Max(1, 1200 - session.SecondsUsed), overlay.BeforeAction, overlay.AfterAction));
+                        new(() => session.Automatic, [.. session.Steps], initialTargets is not null ? null : async (reason, token) => await SelectAppsAsync("別のアプリを使うための許可が必要です: " + reason, token), Math.Max(1, 1200 - session.SecondsUsed), overlay.BeforeAction, overlay.AfterAction));
                     if (result.State == "needs_user") { _pause = _takeover = true; State("takeover", result.Message + "\n対象アプリで操作した後、「最新画面から再開」を押してください。"); }
                     else { State(result.State, result.Message); return; }
                 }

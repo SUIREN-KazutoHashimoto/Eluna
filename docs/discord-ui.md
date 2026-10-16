@@ -1,5 +1,7 @@
 # Discordを参考にした主画面
 
+プロフィール編集、プロジェクト＝サーバー、ボイスチャンネル、ウィンドウ共有とComputer Useの入口、および重なり対策を追加しました。[現行の仕様・操作と検証範囲](voice-channels.md)を参照してください。
+
 2026-10-16、codex/discord-shellで主画面を再構成。左端のサーバー列、チャンネル一覧、会話、右側のメンバー一覧、左下のユーザー設定へ操作を整理した。モデル中心のツールバーを外し、アカウントとの会話を中心にした。
 
 配置は[Discordのユーザー設定ガイド](https://support.discord.com/hc/en-us/articles/206346498-Where-can-I-find-my-User-Server-Message-ID)と[アプリ・メンバー一覧のガイド](https://support.discord.com/hc/en-us/articles/21334461140375-Using-Apps-on-Discord)を参考にした。アプリ名・サービスはElunaのままで、外部Discordへの接続は追加していない。画像素材や外部UIライブラリを追加せず、WPF標準機能と描画で実装した。

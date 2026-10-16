@@ -25,7 +25,7 @@ public sealed record KnowledgeDocument(Guid Id, string Name, string Text, DateTi
 public sealed record KnowledgeProject(Guid Id, string Name, string Instruction, string MemoryMode,
     bool ReferenceChats, List<KnowledgeDocument> Documents, List<MemoryNote> Memories, bool UseCommonSkills = false, bool AcceptAgentMemory = false)
 {
-    [JsonIgnore] public string ScopeLabel => MemoryMode == "project-only" ? "プロジェクト限定メモリ" : "共通メモリも参照";
+    [JsonIgnore] public string ScopeLabel => MemoryMode == "project-only" ? "サーバー限定メモリ" : "共通メモリも参照";
 }
 
 public sealed record ProjectChoice(Guid? Id, string Name)

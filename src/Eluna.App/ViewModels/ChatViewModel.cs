@@ -205,6 +205,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     private void ConversationsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        if (VoiceJoined && !VoiceValid) { _ = LeaveVoiceAsync(); }
         if (e.Action == NotifyCollectionChangedAction.Reset)
         {
             HashSet<Conversation> next = Conversations.ToHashSet();
@@ -219,6 +220,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     private void ConversationChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (VoiceJoined && !VoiceValid) { _ = LeaveVoiceAsync(); }
         if (ReferenceEquals(sender, SelectedConversation) && e.PropertyName is nameof(Conversation.Title) or nameof(Conversation.Room)) { NotifyShell(); }
         if (ReferenceEquals(sender, SelectedConversation) && e.PropertyName == nameof(Conversation.ActiveBranch)) { BindTimeline(); Notify(nameof(SelectedBranch)); Notify(nameof(IsEmpty)); }
         if (e.PropertyName is nameof(Conversation.Title) or nameof(Conversation.IsPinned) or nameof(Conversation.IsArchived) or nameof(Conversation.UpdatedAt) or nameof(Conversation.ProjectId)) { if (HistorySearch.Length > 0) { RefreshHistorySearch(); } else { HistoryView.Refresh(); } }
@@ -328,7 +330,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         catch (Exception ex) { Error = ex.Message; return; }
         if ((PendingAttachments.Any(a => a.ImageBase64 is not null) || SelectedConversation.Messages.Any(m => m.Attachments.Any(a => a.ImageBase64 is not null))) && SelectedModel?.Projector is null) { Error = "画像・PDFの認識には対応するprojectorが必要です。入力欄の添付メニューから「画像認識モデルの設定」を開いてください。"; return; }
         string prompt = Input.Trim(); if (prompt.Length == 0) { prompt = "添付した画像・文書の内容を説明してください。"; }
-        List<ChatAttachment> attachments = [.. PendingAttachments]; PendingAttachments.Clear(); Input = ""; Error = "";
+        List<ChatAttachment> attachments = [.. PendingAttachments, .. SharedAttachments(conversation)]; PendingAttachments.Clear(); Input = ""; Error = "";
         if (conversation.Messages.Count == 0 && conversation.Title is "新しいチャット" or "新しいチャンネル") { string title = prompt.Replace('\r', ' ').Replace('\n', ' '); conversation.Title = title.Length > 28 ? title[..28] + "…" : title; }
         conversation.Messages.Add(new() { Role = "user", Content = prompt, Attachments = attachments, Identity = new(null, "あなた", "あ", Time: DateTimeOffset.UtcNow, ReplyTo: _replyTo) });
         ReplyTo(null);
@@ -707,6 +709,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     public async Task ShutdownAsync()
     {
+        await LeaveVoiceAsync();
         _shuttingDown = true; StopComputers(); try { await ComputerCompletion; } catch (OperationCanceledException) { }
         _mediaShutdown.Cancel(); foreach (MediaJob job in MediaJobs.Where(j => j.IsPending).ToArray()) { job.Cancel(); if (job.State == "queued") { job.State = job.Request is null ? "canceled" : "paused"; job.Completion.TrySetCanceled(); } }
         RefreshCommands(); _draftSave?.Cancel(); _generation?.Cancel();

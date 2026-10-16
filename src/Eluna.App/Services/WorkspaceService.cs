@@ -135,13 +135,13 @@ internal static class WorkspaceService
         if (state.Agents is null)
         { if (state.Conversations.Any(c => c.Room is not null) || state.AgentMemories is { Count: > 0 }) { throw new InvalidDataException("エージェント情報がありません。"); } return; }
         if (state.Agents.Count > 500 || state.Agents.Any(a => a is null || a.Id == Guid.Empty || string.IsNullOrWhiteSpace(a.Name) || a.Name.Length > 80 ||
-            a.Icon is null || a.Icon.Length > 16 || a.Instruction is null || a.Instruction.Length > 8000 || a.Specialty is null || a.Specialty.Length > 1000) ||
+            a.Icon is null || a.Icon.Length > 16 || a.Instruction is null || a.Instruction.Length > 8000 || a.Specialty is null || a.Specialty.Length > 1000 || a.VoiceId?.Length > 2048 || a.SpeechRate is < -10 or > 10) ||
             state.Agents.Select(a => a.Id).Distinct().Count() != state.Agents.Count) { throw new InvalidDataException("エージェントの形式を確認してください。"); }
         HashSet<Guid> agents = state.Agents.Select(a => a.Id).ToHashSet();
         foreach (SavedConversation c in state.Conversations)
         {
             if (c.Room is not { } r) { continue; }
-            if (r.Kind is not ("channel" or "dm" or "group" or "thread" or "legacy") || r.Members is null || r.Members.Count is < 1 or > 6 ||
+            if (r.Kind is not ("channel" or "voice" or "dm" or "group" or "thread" or "legacy") || r.Members is null || r.Members.Count is < 1 or > 6 ||
                 r.WorkMode is not null && !WorkModes.All.Any(m => m.Id == r.WorkMode) || r.InferenceMode is not null && !InferenceModes.IsValid(r.InferenceMode) ||
                 r.Members.Distinct().Count() != r.Members.Count || r.Members.Any(id => !agents.Contains(id)) || r.DefaultAgentId is Guid chosen && !r.Members.Contains(chosen) ||
                 r.Kind == "dm" && r.Members.Count != 1 || r.Kind is "dm" or "group" && c.ProjectId is not null ||

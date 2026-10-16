@@ -22,7 +22,7 @@ public sealed partial class ChatViewModel
     public string ProjectContextLabel => (SelectedProject is KnowledgeProject project ? project.Name + " · " + project.ScopeLabel : "DM・個人 · 共通メモリ") + (SelectedConversation?.Room?.AcceptAgentMemory == true && (SelectedProject is null || SelectedProject.AcceptAgentMemory) ? " · エージェントの持ち越し記憶を参照" : "");
     public string ProjectScopeHint => SelectedProject is KnowledgeProject project
         ? project.MemoryMode == "project-only" ? "このサーバーの資料・保存メモリを参照します。共通メモリと共通指示は使いません。" + (project.AcceptAgentMemory && SelectedConversation?.Room?.AcceptAgentMemory == true ? " 許可されたエージェントの持ち越し記憶も参照します。" : " エージェントの持ち越し記憶は参照しません。") : "このサーバーと共通の保存メモリ・共通指示を使います。エージェントの持ち越し記憶はチャンネルの設定に従います。"
-        : "共通指示・共通の保存メモリと、この会話を使います。プロジェクトの資料や他の通常チャットは参照しません。";
+        : "共通指示・共通の保存メモリと、この会話を使います。サーバーの資料や他の通常チャットは参照しません。";
 
     private void RefreshProjectChoices()
     {
@@ -38,7 +38,7 @@ public sealed partial class ChatViewModel
     }
     private void SetProjectScope(Guid? id)
     {
-        if (id is Guid projectId && !Projects.Any(p => p.Id == projectId)) { throw new InvalidDataException("プロジェクトが見つかりません。"); }
+        if (id is Guid projectId && !Projects.Any(p => p.Id == projectId)) { throw new InvalidDataException("サーバーが見つかりません。"); }
         _settings = _settings with { SelectedProjectId = id };
         ShowArchived = false; HistorySearch = ""; NotifyProjectScope();
     }
@@ -56,8 +56,9 @@ public sealed partial class ChatViewModel
         if (IsBusy) { throw new InvalidOperationException("実行中の処理を停止してから変更してください。"); }
         KnowledgeService.Validate([project], []);
         int index = Projects.ToList().FindIndex(p => p.Id == project.Id);
-        if (index >= 0 && Projects[index].MemoryMode != project.MemoryMode) { throw new InvalidDataException("メモリの範囲は作成時に固定されます。新しいプロジェクトを作成してください。"); }
-        if (index < 0 && Projects.Count >= 100) { throw new InvalidDataException("プロジェクトは100件までです。"); }
+        if (index >= 0 && Projects[index].MemoryMode != project.MemoryMode) { throw new InvalidDataException("メモリの範囲は作成時に固定されます。新しいサーバーを作成してください。"); }
+        if (index < 0 && Projects.Count >= 100) { throw new InvalidDataException("サーバーは100件までです。"); }
+        if (index >= 0 && (Projects[index].AcceptAgentMemory != project.AcceptAgentMemory || Projects[index].ReferenceChats != project.ReferenceChats)) { CancelWorkspaceRequests(project: project.Id); }
         if (index >= 0) { Projects[index] = project; } else { Projects.Add(project); }
         RefreshProjectChoices();
         if (index < 0) { SelectProject(project.Id); }
@@ -65,7 +66,7 @@ public sealed partial class ChatViewModel
     }
     public async Task DeleteProjectAsync(Guid id)
     {
-        if (IsBusy || MediaJobs.Any(j => j.Request?.ProjectId == id && (j.IsPending || j.CanResume)) || Conversations.Any(c => c.ProjectId == id && Inferences.Contains(c.Id))) { throw new InvalidOperationException("このプロジェクトの実行中の処理と予約を終えてから削除してください。"); }
+        if (IsBusy || MediaJobs.Any(j => j.Request?.ProjectId == id && (j.IsPending || j.CanResume)) || Conversations.Any(c => c.ProjectId == id && Inferences.Contains(c.Id))) { throw new InvalidOperationException("このサーバーの実行中の処理と予約を終えてから削除してください。"); }
         KnowledgeProject? project = Projects.FirstOrDefault(p => p.Id == id);
         if (project is null) { return; }
         await StopWorkspaceRequestsAsync(Conversations.Where(c => c.ProjectId == id).Select(c => c.Id).ToHashSet(), id);
@@ -83,7 +84,7 @@ public sealed partial class ChatViewModel
     {
         if (_isBusy || _submitting || !Conversations.Contains(conversation) || conversation.ProjectId == projectId) { return; }
         if (Inferences.Contains(conversation.Id)) { throw new InvalidOperationException("この会話の予約をキャンセルしてから移動してください。"); }
-        if (projectId is Guid id && !Projects.Any(p => p.Id == id)) { throw new InvalidDataException("移動先のプロジェクトが見つかりません。"); }
+        if (projectId is Guid id && !Projects.Any(p => p.Id == id)) { throw new InvalidDataException("移動先のサーバーが見つかりません。"); }
         if (conversation.Room?.Kind == "thread") { throw new InvalidOperationException("スレッドは親チャンネルと一緒に移動してください。"); }
         await StopWorkspaceRequestsAsync(Conversations.Where(c => c.Id == conversation.Id || c.Room?.ParentId == conversation.Id).Select(c => c.Id).ToHashSet());
         foreach (Conversation child in Conversations.Where(c => c.Room?.ParentId == conversation.Id).ToArray())

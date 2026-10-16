@@ -1,7 +1,7 @@
 namespace Eluna.App.Models;
 
 public sealed record AgentAccount(Guid Id, string Name, string Icon = "✦", string Instruction = "", string Specialty = "",
-    string? ModelId = null, bool Enabled = true)
+    string? ModelId = null, bool Enabled = true, string? VoiceId = null, int SpeechRate = 0)
 {
     public string Label => Icon + " " + Name + (Enabled ? "" : "（無効）");
 }

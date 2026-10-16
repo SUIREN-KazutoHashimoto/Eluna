@@ -20,6 +20,8 @@ public partial class MainWindow : Window
     private bool _composing, _followOutput = true, _closing, _shutdownStarted;
     private ScrollViewer? _messagesScroll;
     private string? _scrollKey;
+    private string? _restoringReading;
+    private int _scrollVersion;
     private readonly ReadingPositions _readingPositions;
     private PreparedBackup? _restoreBackup;
     private string? _restoreVerification;
@@ -54,7 +56,7 @@ public partial class MainWindow : Window
             InputBox.Focus();
         };
         SourceInitialized += (_, _) => WindowPlacement.Restore(this, store.Root);
-        _viewModel.BackupStarting += async () => { _readingSave.Stop(); RememberReadingPosition(); await _readingPositions.SaveAsync(); await WindowPlacement.SaveAsync(this, store.Root); };
+        _viewModel.BackupStarting += async () => { await _viewModel.LeaveVoiceAsync(); _readingSave.Stop(); RememberReadingPosition(); await _readingPositions.SaveAsync(); await WindowPlacement.SaveAsync(this, store.Root); };
         Closing += OnClosing; PreviewKeyDown += Window_KeyDown; Appearance.Attach(this);
     }
     private static T? FindChild<T>(DependencyObject parent) where T : DependencyObject
@@ -132,7 +134,8 @@ public partial class MainWindow : Window
             if (prompt.ShowDialog() == true && !string.IsNullOrWhiteSpace(prompt.Result)) { await _viewModel.SaveProjectAsync(new(Guid.NewGuid(), prompt.Result.Trim(), "", "project-only", false, [], [])); }
         });
         Item("チャンネル・DMを作成", () => NewRoom_Click(sender, e));
-        Item("サーバー・チャンネルの設定", () => OpenSettings(7));
+        if (_viewModel.SelectedProject is { } server) { Item("サーバー設定・資料・メモリ", () => new ProjectWindow(_viewModel, server) { Owner = this }.Show()); }
+        Item("チャンネルの設定", () => OpenSettings(7));
         Item(_viewModel.ShowArchived ? "通常のチャンネルを表示" : "保管済みを表示", () => _viewModel.ShowArchived = !_viewModel.ShowArchived);
         Item("ユーザー設定", () => OpenSettings());
         menu.IsOpen = true;
@@ -343,31 +346,59 @@ public partial class MainWindow : Window
     private void MessagesScroll_Changed(object sender, ScrollChangedEventArgs e)
     {
         if (!ReferenceEquals(e.OriginalSource, _messagesScroll) || _messagesScroll is null) { return; }
+        if (_restoringReading == _scrollKey) { return; }
         if (e.ExtentHeightChange == 0) { _followOutput = _messagesScroll.ScrollableHeight - _messagesScroll.VerticalOffset < 80; }
         LatestButton.Visibility = _followOutput ? Visibility.Collapsed : Visibility.Visible;
         _readingSave.Stop(); _readingSave.Start();
     }
-    private void RememberReadingPosition() { if (_scrollKey is not null && _messagesScroll is not null) { _readingPositions.Set(_scrollKey, _messagesScroll.VerticalOffset, _followOutput); } }
+    private void RememberReadingPosition() { if (_scrollKey is not null && _messagesScroll is not null && _restoringReading != _scrollKey) { _readingPositions.Set(_scrollKey, _messagesScroll.VerticalOffset, _followOutput); } }
+    internal bool ReadingPositionPending => _restoringReading is not null;
+    private async Task RestoreReadingAsync(ReadingPosition position, int version)
+    {
+        int stable = 0;
+        try
+        {
+            // ScrollViewer processes seek commands on later layout frames. Recycled item height
+            // estimates may adjust the first seek; wait for measured frames before saving it.
+            for (int attempt = 0; attempt < 12 && stable < 2; attempt++)
+            {
+                await Dispatcher.Yield(DispatcherPriority.ContextIdle);
+                if (_scrollVersion != version) { return; }
+                MessagesList.UpdateLayout(); _messagesScroll?.ScrollToVerticalOffset(position.Offset);
+                await Task.Delay(25);
+                if (_scrollVersion != version) { return; }
+                MessagesList.UpdateLayout();
+                stable = _messagesScroll is not null && Math.Abs(_messagesScroll.VerticalOffset - Math.Min(position.Offset, _messagesScroll.ScrollableHeight)) < 1 ? stable + 1 : 0;
+            }
+        }
+        finally
+        {
+            if (_scrollVersion == version) { _followOutput = position.Follow; _restoringReading = null; LatestButton.Visibility = _followOutput ? Visibility.Collapsed : Visibility.Visible; }
+        }
+    }
     private void FollowOutput(bool force)
     {
         string key = $"{_viewModel.SelectedConversation?.Id}/{_viewModel.SelectedBranch?.Id}";
         if (_scrollKey != key)
         {
-            _scrollKey = key;
+            _scrollKey = key; _restoringReading = null; _scrollVersion++; int restoreVersion = _scrollVersion;
             if (_viewModel.HistorySearch.Trim().Length == 0 && _readingPositions.Find(key) is { } position)
             {
-                _followOutput = position.Follow;
-                Dispatcher.BeginInvoke(DispatcherPriority.Background, () => { _messagesScroll?.ScrollToVerticalOffset(position.Offset); LatestButton.Visibility = _followOutput ? Visibility.Collapsed : Visibility.Visible; }); return;
+                _followOutput = position.Follow; _restoringReading = key;
+                _ = RestoreReadingAsync(position, restoreVersion); return;
             }
             _followOutput = true;
         }
+        if (_restoringReading == key) { return; }
+        int version = _scrollVersion;
         _followOutput |= force;
         if (_viewModel.HistorySearch.Trim().Length > 0 && _viewModel.SelectedConversation?.Messages.FirstOrDefault(m => m.Content.Contains(_viewModel.HistorySearch.Trim(), StringComparison.OrdinalIgnoreCase)) is ChatMessage match)
-        { _followOutput = false; Dispatcher.BeginInvoke(DispatcherPriority.Background, () => { MessagesList.ScrollIntoView(match); LatestButton.Visibility = Visibility.Visible; }); return; }
+        { _followOutput = false; Dispatcher.BeginInvoke(DispatcherPriority.Background, () => { if (_scrollVersion != version) { return; } MessagesList.ScrollIntoView(match); LatestButton.Visibility = Visibility.Visible; }); return; }
         if (_followOutput)
         {
             Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
             {
+                if (_scrollVersion != version) { return; }
                 _messagesScroll ??= FindChild<ScrollViewer>(MessagesList);
                 if (_viewModel.SelectedConversation?.Messages.LastOrDefault() is ChatMessage last) { MessagesList.ScrollIntoView(last); }
                 _messagesScroll?.ScrollToEnd(); LatestButton.Visibility = Visibility.Collapsed;

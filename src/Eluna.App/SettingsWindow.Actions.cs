@@ -42,7 +42,7 @@ public partial class SettingsWindow
     private void MessageKnowledge_Click(object sender, RoutedEventArgs e) { if (_message is { } message) { new KnowledgeWindow(message.Knowledge) { Owner = this }.Show(); } }
     private void MessageSkills_Click(object sender, RoutedEventArgs e) { if (_message is { } message) { new SkillUseWindow(message.Skills, _viewModel.DataDirectory) { Owner = this }.Show(); } }
     private void Accounts_Click(object sender, RoutedEventArgs e) => ShowAccounts();
-    private void Account_Click(object sender, RoutedEventArgs e) { if (sender is FrameworkElement { DataContext: AgentAccount account }) { ShowAccounts(account.Id); } }
+    private void Account_Click(object sender, RoutedEventArgs e) { if (sender is FrameworkElement { DataContext: AgentAccount account }) { new AgentProfileWindow(_viewModel, account.Id) { Owner = this }.Show(); } }
     private void SkillSelection_Click(object sender, RoutedEventArgs e) { if (CheckRoom()) { new SkillPickerWindow(_viewModel) { Owner = this }.Show(); } }
     private void WorkOptions_Click(object sender, RoutedEventArgs e) { if (CheckRoom()) { new WorkOptionsWindow(_viewModel) { Owner = this }.ShowDialog(); } }
     private void RoomSettings_Click(object sender, RoutedEventArgs e) { if (CheckRoom()) { new RoomWindow(_viewModel, _room) { Owner = this }.Show(); } }

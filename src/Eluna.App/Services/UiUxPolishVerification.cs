@@ -141,9 +141,15 @@ internal static class UiUxPolishVerification
             vm.Conversations.Add(longChat); vm.SelectedConversation = longChat;
             await PrototypePreview.RenderAsync(window, Path.Combine(output, "reading-position-before.png"));
             ScrollViewer reading = Find<ScrollViewer>((ListBox)window.FindName("MessagesList")).First(); reading.ScrollToVerticalOffset(150); await Task.Delay(100); double savedOffset = reading.VerticalOffset;
-            vm.SelectedConversation = fixtures[0]; await Task.Delay(150); vm.SelectedConversation = longChat; await Task.Delay(200);
+            vm.SelectedConversation = fixtures[0]; await Task.Delay(150); vm.SelectedConversation = longChat; await Until(() => !window.ReadingPositionPending);
             await File.WriteAllTextAsync(Path.Combine(output, "reading-position.json"), JsonSerializer.Serialize(new { savedOffset, restored = reading.VerticalOffset }));
             Check(Math.Abs(reading.VerticalOffset - savedOffset) < 2, "Conversation navigation lost its reading position.");
+            for (int repeat = 0; repeat < 3; repeat++)
+            {
+                vm.SelectedConversation = fixtures[0]; vm.SelectedConversation = longChat; await Until(() => !window.ReadingPositionPending);
+                await File.WriteAllTextAsync(Path.Combine(output, "rapid-reading-position.json"), JsonSerializer.Serialize(new { repeat, savedOffset, restored = reading.VerticalOffset, reading.ScrollableHeight, reading.ViewportHeight, count = ((ListBox)window.FindName("MessagesList")).Items.Count }));
+                Check(Math.Abs(reading.VerticalOffset - savedOffset) < 2, $"Rapid channel navigation applied a stale scroll operation: repeat={repeat}, offset={reading.VerticalOffset}, expected={savedOffset}, extent={reading.ScrollableHeight}.");
+            }
             report["readingPosition"] = new { savedOffset, restoredOffset = reading.VerticalOffset }; vm.SelectedConversation = conversation; vm.Conversations.Remove(longChat);
 
             var loads = new List<object>();

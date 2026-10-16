@@ -43,12 +43,16 @@ public partial class MainWindow
     }
     private void Member_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button { DataContext: AgentAccount member } button) { return; }
-        var menu = new ContextMenu { PlacementTarget = button };
-        menu.Items.Add(new MenuItem { Header = member.Name, IsEnabled = false });
-        var mention = new MenuItem { Header = "メンション", IsEnabled = member.Enabled }; mention.Click += (_, _) => { MembersPopup.IsOpen = false; InsertMessageText(Mention(member)); }; menu.Items.Add(mention);
-        var profile = new MenuItem { Header = "アカウント設定" }; profile.Click += (_, _) => { OpenSettings(5); Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault(w => w.Owner == this)?.ShowAccounts(member.Id); }; menu.Items.Add(profile);
-        button.ContextMenu = menu; menu.IsOpen = true;
+        if (sender is FrameworkElement { DataContext: AgentAccount member }) { OpenProfile(member.Id); }
+    }
+    private void Speaker_Click(object sender, RoutedEventArgs e)
+    { if (sender is FrameworkElement { DataContext: ChatMessage { Identity.AgentId: Guid id } }) { OpenProfile(id); } }
+    internal void OpenProfile(Guid id)
+    {
+        MembersPopup.IsOpen = false;
+        var existing = OwnedWindows.OfType<AgentProfileWindow>().FirstOrDefault(w => w.Tag is Guid current && current == id);
+        if (existing is not null) { existing.Activate(); return; }
+        new AgentProfileWindow(_viewModel, id) { Owner = this, Tag = id }.Show();
     }
     internal void OpenMediaTools(string tab = "document", string? initial = null) => OpenMedia(tab, initial);
     private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;

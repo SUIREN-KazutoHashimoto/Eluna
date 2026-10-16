@@ -18,7 +18,7 @@
         </Grid>
         <Border Grid.Row="2" Background="{DynamicResource SurfaceBrush}" Padding="8,6"><DockPanel><Button x:Name="UserSettingsButton" DockPanel.Dock="Right" Click="Settings_Click" Style="{StaticResource ShellIcon}" ToolTip="ユーザー設定" AutomationProperties.Name="ユーザー設定"><Path Data="{StaticResource SettingsIcon}" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.6" Width="20" Height="20" Stretch="Uniform" /></Button><Border Width="32" Height="32" CornerRadius="16" Background="#5865F2" DockPanel.Dock="Left" Margin="0,0,8,0"><TextBlock Text="あ" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border><StackPanel VerticalAlignment="Center"><TextBlock Text="あなた" FontWeight="SemiBold" FontSize="12" /><TextBlock Text="ローカル" FontSize="10" Foreground="{DynamicResource MutedBrush}" /></StackPanel></DockPanel></Border>
       </Grid></Border>
-      <Grid Grid.Column="2" Background="{DynamicResource ChatBackgroundBrush}"><Grid.RowDefinitions><RowDefinition Height="48" /><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+      <Grid Grid.Column="2" Background="{DynamicResource ChatBackgroundBrush}"><Grid.RowDefinitions><RowDefinition Height="Auto" MinHeight="48" /><RowDefinition Height="Auto" /><RowDefinition /></Grid.RowDefinitions>
         <Border x:Name="HeaderArea" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="0,0,0,1" Padding="12,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
           <Button Style="{StaticResource ShellIcon}" Content="☰" Click="Sidebar_Click" ToolTip="サイドバー" />
           <Button Grid.Column="1" Click="ChatMenu_Click" Background="Transparent" Padding="0" Margin="8,0,12,0" HorizontalContentAlignment="Left" AutomationProperties.Name="チャンネルメニュー"><StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="{Binding ChannelSymbol}" FontSize="23" Foreground="{DynamicResource MutedBrush}" Margin="0,0,9,0" /><TextBlock x:Name="ChannelTitleText" Text="{Binding ChannelTitle}" FontWeight="SemiBold" FontSize="14" MaxWidth="250" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" /></StackPanel></Button>
@@ -26,7 +26,8 @@
           <Button x:Name="MembersButton" Grid.Column="3" Click="Members_Click" Style="{StaticResource ShellIcon}" ToolTip="メンバー一覧" AutomationProperties.Name="メンバー一覧"><Path Data="{StaticResource MembersIcon}" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.7" Stretch="Uniform" Width="21" Height="21" /></Button>
           <Grid Grid.Column="4" Width="136" Margin="8,9,0,9"><TextBox x:Name="HistorySearchBox" Text="{Binding HistorySearch, UpdateSourceTrigger=PropertyChanged}" Padding="8,3,26,3" AutomationProperties.Name="メッセージを検索" ToolTip="メッセージを検索（Ctrl+F）" /><Path Data="{StaticResource SearchIcon}" Width="14" Height="14" Stretch="Uniform" Stroke="{DynamicResource MutedBrush}" StrokeThickness="1.8" HorizontalAlignment="Right" Margin="0,0,7,0" IsHitTestVisible="False" /><TextBlock Text="検索" Margin="8,3,0,0" Foreground="{DynamicResource MutedBrush}" FontSize="12" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed" /><Style.Triggers><DataTrigger Binding="{Binding HistorySearch}" Value=""><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid>
         </Grid></Border>
-        <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition x:Name="MembersColumn" Width="224" /></Grid.ColumnDefinitions>
+        <controls:VoiceChannelPanel x:Name="VoicePanel" Grid.Row="1" />
+        <Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition x:Name="MembersColumn" Width="224" /></Grid.ColumnDefinitions>
           <Grid><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
             <Border x:Name="ErrorBanner" Background="{DynamicResource ErrorBackgroundBrush}" CornerRadius="4" Margin="16,6,16,0" Padding="12,8" Visibility="{Binding HasError, Converter={StaticResource BoolVisibility}}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="28" /></Grid.ColumnDefinitions><TextBox Text="{Binding Error, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="70" VerticalScrollBarVisibility="Auto" BorderThickness="0" Background="Transparent" Padding="0" AutomationProperties.Name="エラーの詳細" /><Button Grid.Column="1" Content="再試行" Command="{Binding RetryCommand}" Visibility="{Binding CanRetry, Converter={StaticResource BoolVisibility}}" /><Button Grid.Column="2" Content="×" Click="DismissError_Click" Style="{StaticResource ShellIcon}" Width="26" Height="26" /></Grid></Border>
             <Grid Grid.Row="1">
@@ -37,18 +38,18 @@
                 <Border x:Name="MessageBorder" Background="Transparent" Padding="16,5" Margin="0,0,0,0" HorizontalAlignment="Stretch">
                   <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="44" /><ColumnDefinition /></Grid.ColumnDefinitions>
-                    <Border x:Name="Avatar" Width="36" Height="36" CornerRadius="18" Background="{DynamicResource AccentBrush}" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,3,0,0">
+                    <Button Click="Speaker_Click" Padding="0" Background="Transparent" HorizontalAlignment="Left" VerticalAlignment="Top" ToolTip="プロフィールを表示"><Border x:Name="Avatar" Width="36" Height="36" CornerRadius="18" Background="{DynamicResource AccentBrush}" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,3,0,0">
                       <TextBlock x:Name="AvatarLetter" Text="{Binding Avatar}" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource OnAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    </Border>
+                    </Border></Button>
                   <StackPanel Grid.Column="1">
                     <Grid Margin="0,0,0,4">
                       <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                      <StackPanel x:Name="Speaker" Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding Speaker}" FontSize="13" FontWeight="SemiBold" />
-                        <Border x:Name="AssistantBadge" Background="#5865F2" CornerRadius="3" Padding="4,1" Margin="7,0,0,0" VerticalAlignment="Center"><TextBlock Text="APP" Foreground="White" FontSize="9" FontWeight="SemiBold" /></Border>
+                      <Grid x:Name="Speaker" VerticalAlignment="Center" Margin="0,0,6,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <Button Click="Speaker_Click" Padding="0" Background="Transparent" HorizontalContentAlignment="Left" ToolTip="プロフィールを表示"><TextBlock Text="{Binding Speaker}" TextTrimming="CharacterEllipsis" FontSize="13" FontWeight="SemiBold" /></Button>
+                        <Border x:Name="AssistantBadge" Grid.Column="1" Background="#5865F2" CornerRadius="3" Padding="4,1" Margin="7,0,0,0" VerticalAlignment="Center"><TextBlock Text="APP" Foreground="White" FontSize="9" FontWeight="SemiBold" /></Border>
 
-                        <TextBlock Text="{Binding DisplayTime}" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="8,2,0,0" />
-                      </StackPanel>
+                        <TextBlock Grid.Column="2" Text="{Binding DisplayTime}" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="8,2,0,0" />
+                      </Grid>
                       <StackPanel x:Name="MessageActions" Grid.Column="1" Orientation="Horizontal" Opacity="0">
                         <Button Content="↩" ToolTip="この発言へ返信" Style="{StaticResource MessageAction}" Click="ReplyMessage_Click" /><Button Content="⋯" ToolTip="スレッドと発言の操作" Style="{StaticResource MessageAction}" Click="MessageMenu_Click" />
                         <Button Content="コピー" Style="{StaticResource MessageAction}" Click="CopyMessage_Click" />

@@ -25,6 +25,7 @@ public sealed class ComputerSession : ObservableObject
     private ComputerReview? _review;
     private ComputerInstalledApp? _app;
     public string Task { get; init; } = "";
+    internal ComputerTarget? SharedTarget { get; init; }
     public string ModelId { get; init; } = "";
     public Guid? ProjectId { get; init; }
     public string? AccessStamp { get; init; }

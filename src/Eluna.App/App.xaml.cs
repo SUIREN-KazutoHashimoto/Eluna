@@ -40,6 +40,13 @@ public partial class App : Application
                 root = Path.Combine(captureDirectory, "preview-data");
             }
             var store = new AppStore(root);
+            int voiceIndex = Array.IndexOf(e.Args, "--verify-voice");
+            if (voiceIndex >= 0 && voiceIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("ボイス検証には専用の --data-dir が必要です。"); }
+                int modelIndex = Array.IndexOf(e.Args, "--model-meta"); string? metadata = modelIndex >= 0 && modelIndex + 1 < e.Args.Length ? e.Args[modelIndex + 1] : null;
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = VoiceChannelVerification.RunAsync(store, e.Args[voiceIndex + 1], metadata); return;
+            }
             int discordIndex = Array.IndexOf(e.Args, "--verify-discord");
             if (discordIndex >= 0 && discordIndex + 1 < e.Args.Length)
             {

@@ -20,6 +20,8 @@ internal sealed class ComputerDesktop : IComputerDesktop
         (await CallAsync(new("windows", Environment.ProcessId), token)).Targets ?? [];
     public async Task<ComputerObservation> ObserveAsync(ComputerTarget target, CancellationToken token) =>
         (await CallAsync(new("observe", Environment.ProcessId, target), token)).Observation ?? throw new IOException("画面を取得できませんでした。");
+    internal async Task<ComputerObservation> PreviewAsync(ComputerTarget target, CancellationToken token) =>
+        (await CallAsync(new("preview", Environment.ProcessId, target), token)).Observation ?? throw new IOException("共有画面を取得できませんでした。");
     internal async Task<ComputerObservation> ObserveScreenAsync(ComputerTarget target, CancellationToken token) =>
         (await CallAsync(new("observe-screen", Environment.ProcessId, target), token)).Observation ?? throw new IOException("画面を取得できませんでした。");
     public async Task ExecuteAsync(ComputerObservation observation, ComputerAction action, CancellationToken token)
@@ -90,6 +92,7 @@ internal sealed class ComputerDesktop : IComputerDesktop
             {
                 "windows" => new(Targets: ComputerDesktopNative.Windows(request.Parent)),
                 "observe" when request.Target is not null => new(Observation: ComputerDesktopNative.Observe(request.Target, request.Parent, activate: true)),
+                "preview" when request.Target is not null => new(Observation: ComputerDesktopNative.Observe(request.Target, request.Parent)),
                 "observe-screen" when request.Target is not null => new(Observation: ComputerDesktopNative.Observe(request.Target, request.Parent, true, true)),
                 "execute" => Execute(request),
                 _ => throw new InvalidDataException("対応していない操作です。")

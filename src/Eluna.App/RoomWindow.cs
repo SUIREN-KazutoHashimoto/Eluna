@@ -27,8 +27,8 @@ public sealed class RoomWindow : Window
         var cancel = new Button { Content = "閉じる", Margin = new(0, 0, 8, 0) }; cancel.Click += (_, _) => Close(); footer.Children.Add(cancel); SaveButton.SetResourceReference(StyleProperty, "PrimaryButton"); footer.Children.Add(SaveButton);
         var body = new StackPanel(); root.Children.Add(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
         body.Children.Add(new TextBlock { Text = discussion is null ? "会話の場所と参加者" : "次の発言から参加者を変更", FontSize = 22, Margin = new(0, 0, 0, 16) });
-        KindBox.ItemsSource = new[] { new KeyValuePair<string, string>("channel", "チャンネル"), new("dm", "DM · AI一人"), new("group", "グループDM") };
-        KindBox.SelectedValue = room?.Room?.Kind is "dm" or "group" ? room.Room.Kind : "channel"; KindBox.IsEnabled = room is null && discussion is null && origin is null;
+        KindBox.ItemsSource = new[] { new KeyValuePair<string, string>("channel", "テキストチャンネル"), new("voice", "ボイスチャンネル"), new("dm", "DM · AI一人"), new("group", "グループDM") };
+        KindBox.SelectedValue = room?.Room?.Kind is "voice" or "dm" or "group" ? room.Room.Kind : "channel"; KindBox.IsEnabled = room is null && discussion is null && origin is null;
         body.Children.Add(KindBox); NameBox.Text = room?.Title ?? (origin is null ? "新しいチャンネル" : "発言の深掘り"); NameBox.Margin = new(0, 10, 0, 16); body.Children.Add(NameBox);
         System.Windows.Automation.AutomationProperties.SetName(NameBox, "チャンネルまたはDMの名前");
         IEnumerable<Guid> members = discussion?.Discussion.PendingParticipants?.Where(r => r.AgentId is not null).Select(r => r.AgentId!.Value) ?? room?.Room?.Members ?? chat.SelectedConversation?.Room?.Members ?? [];
@@ -55,7 +55,7 @@ public sealed class RoomWindow : Window
                 if (discussion is not null) { await chat.SetDebateParticipantsAsync(discussion, MembersEditor.SelectedIds); }
                 else if (room is null || origin is not null)
                 {
-                    if (origin is null && KindBox.SelectedValue is "channel" && chat.SelectedProject?.Id != capturedProject) { throw new InvalidOperationException("作成先のサーバーへ戻って保存するか、画面を開き直してください。"); }
+                    if (origin is null && KindBox.SelectedValue is "channel" or "voice" && chat.SelectedProject?.Id != capturedProject) { throw new InvalidOperationException("作成先のサーバーへ戻って保存するか、画面を開き直してください。"); }
                     Conversation created = await chat.CreateRoomAsync(NameBox.Text, origin is null ? (string)KindBox.SelectedValue : "thread", MembersEditor.SelectedIds, origin is null ? null : room, origin);
                     await chat.UpdateRoomAsync(created, created.Title, created.Room! with { ReferenceSiblingChats = _siblings.IsChecked == true, ShareHistory = _share.IsChecked == true, AcceptAgentMemory = _accept.IsChecked == true }, _serverAccept.IsChecked == true);
                 }

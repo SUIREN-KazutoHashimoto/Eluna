@@ -203,7 +203,7 @@
                 <ControlTemplate TargetType="ToggleButton">
                   <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="12,9">
                     <Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="20" /></Grid.ColumnDefinitions>
-                      <ContentPresenter Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}" ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}" ContentTemplateSelector="{Binding ItemTemplateSelector, RelativeSource={RelativeSource AncestorType=ComboBox}}" VerticalAlignment="Center" />
+                      <ContentPresenter ClipToBounds="True" Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}" ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}" ContentTemplateSelector="{Binding ItemTemplateSelector, RelativeSource={RelativeSource AncestorType=ComboBox}}" VerticalAlignment="Center" />
                       <TextBlock Grid.Column="1" Text="⌄" Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Right" />
                     </Grid>
                   </Border>
