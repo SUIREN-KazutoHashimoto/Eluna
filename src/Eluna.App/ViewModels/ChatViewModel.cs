@@ -100,6 +100,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
             {
                 if (SelectedConversation is not null) { SelectedConversation.Draft = value; }
                 SendCommand.Refresh();
+                Notify(nameof(ComposerHint));
                 if (_ready) { ScheduleSave(); }
             }
         }
@@ -221,6 +222,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     private void ConversationChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName is nameof(Conversation.Draft) or nameof(Conversation.HasDraft) or nameof(Conversation.NavigationStatus) or nameof(Conversation.HasNavigationStatus) or nameof(Conversation.NavigationHint) or nameof(Conversation.ActivityState)) { return; }
         if (e.PropertyName is nameof(Conversation.Title) or nameof(Conversation.ProjectId) or nameof(Conversation.IsArchived)) { ExperienceChanged(); }
         if (VoiceJoined && !VoiceValid) { _ = LeaveVoiceAsync(); }
         if (ReferenceEquals(sender, SelectedConversation) && e.PropertyName is nameof(Conversation.Title) or nameof(Conversation.Room)) { NotifyShell(); }
@@ -322,6 +324,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     public void ToggleSidebar() { _settings = _settings with { SidebarVisible = !_settings.SidebarVisible }; NotifyAppearance(); _ = PersistSafelyAsync(); }
     private void NotifyAppearance()
     {
+        Notify(nameof(ComposerHint));
         Notify(nameof(ChatFontSize)); Notify(nameof(ChatLineHeight)); Notify(nameof(SidebarVisible)); Notify(nameof(SendTip)); Notify(nameof(Settings)); AppearanceChanged?.Invoke();
     }
     private async Task SendAsync()

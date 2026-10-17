@@ -10,7 +10,7 @@ internal sealed record MessageLocation(Guid Room, Guid Branch, Guid Message, str
 }
 internal static class MessageLocations
 {
-    internal static readonly string[] ReactionEmoji = ["👍", "❤️", "🎉", "🤔", "✅", "👀", "🙏", "😂"];
+    internal static readonly string[] ReactionEmoji = EmojiCatalog.All.Select(e => e.Glyph).ToArray();
     internal static bool Finished(ChatMessage message) => !message.IsGenerating && !message.WasInterrupted && (message.Identity?.Detail is not ("画像生成" or "文書生成") || message.Artifact is not null);
     internal static IEnumerable<MessageLocation> In(Conversation room, IReadOnlyDictionary<Guid, string>? serverNames = null)
     {

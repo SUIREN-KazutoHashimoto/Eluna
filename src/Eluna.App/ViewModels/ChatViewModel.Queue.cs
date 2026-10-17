@@ -30,7 +30,9 @@ public sealed partial class ChatViewModel
         {
             InferenceJob? job = Inferences.Items.FirstOrDefault(j => j.Request.ConversationId == conversation.Id && j.IsPending);
             conversation.Activity = job is null ? "" : job.Label;
+            conversation.ActivityState = job?.State ?? "";
         }
+        RefreshMemberCards();
         foreach (InferenceJob job in Inferences.Items.Where(j => j.State == "canceled"))
         {
             ChatMessage? answer = FindAnswer(job.Request);
@@ -42,6 +44,7 @@ public sealed partial class ChatViewModel
         .FirstOrDefault(b => b.Id == request.BranchId)?.Messages.FirstOrDefault(m => m.Id == request.AnswerId);
     private void NotifyJob(InferenceJob job)
     {
+        RefreshMemberCards();
         Notify(nameof(TypingNotice));
         if (ReferenceEquals(SelectedJob, job)) { Notify(nameof(Status)); Notify(nameof(Metrics)); }
     }

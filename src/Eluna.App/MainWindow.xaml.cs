@@ -33,6 +33,8 @@ public partial class MainWindow : Window
         InitializeMentions();
         InitializeNavigation();
         InitializeMessageExperience();
+        InitializeComposer();
+        InitializeContextMenus();
         _readingSave.Tick += async (_, _) => { _readingSave.Stop(); RememberReadingPosition(); await _readingPositions.SaveAsync(); };
         RootLayout.SizeChanged += (_, _) => { UpdateComposerHeight(); UpdateShellLayout(); };
         HeaderArea.SizeChanged += (_, _) => UpdateComposerHeight();
@@ -46,8 +48,7 @@ public partial class MainWindow : Window
         TextCompositionManager.AddPreviewTextInputStartHandler(InputBox, (_, _) => { _composing = true; MentionPopup.IsOpen = false; RefreshMentionAdornment(); });
         TextCompositionManager.AddPreviewTextInputHandler(InputBox, (_, _) => { _composing = false; RefreshMentionAdornment(); });
         AllowDrop = true;
-        DragOver += (_, e) => { if (e.Data.GetDataPresent(DataFormats.FileDrop)) { e.Effects = _viewModel.CanChange ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; } };
-        Drop += async (_, e) => { if (e.Data.GetData(DataFormats.FileDrop) is string[] paths) { e.Handled = true; await _viewModel.AttachFilesAsync(paths); } };
+        InitializeFileDrop();
         DataObject.AddPastingHandler(InputBox, PasteAttachment);
         MessagesList.AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler(MessagesScroll_Changed));
         Loaded += async (_, _) =>
@@ -155,8 +156,8 @@ public partial class MainWindow : Window
     }
     private void MessageMenu_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button { DataContext: ChatMessage message } button || _viewModel.SelectedConversation is not { } room) { return; }
-        var menu = new ContextMenu { PlacementTarget = button };
+        if (sender is not FrameworkElement { DataContext: ChatMessage message } button || _viewModel.SelectedConversation is not { } room) { return; }
+        var menu = new ContextMenu { PlacementTarget = button, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
         var thread = new MenuItem { Header = "この発言からスレッドを作成", IsEnabled = room.Room?.Kind != "thread" };
         Guid branch = room.ActiveBranch.Id;
         button.ContextMenu = menu;
@@ -270,16 +271,17 @@ public partial class MainWindow : Window
     }
     private void HistoryMenu_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button { DataContext: Conversation conversation } button) { return; }
-        var menu = new ContextMenu { PlacementTarget = button };
+        if (sender is not FrameworkElement { DataContext: Conversation conversation } button) { return; }
+        var menu = new ContextMenu { PlacementTarget = button, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        button.ContextMenu = menu;
         void Item(string label, Action action) { var item = new MenuItem { Header = label }; item.Click += (_, _) => action(); menu.Items.Add(item); }
         Item("名前を変更", async () => { var dialog = new TextPromptWindow("会話の名前", conversation.Title) { Owner = this }; if (dialog.ShowDialog() == true) { await _viewModel.RenameConversationAsync(conversation, dialog.Result); } });
         Item("アクセス権", () => new RoomPermissionsWindow(_viewModel, conversation) { Owner = this }.Show());
         Item("メンバーを招待", () => OpenInvitations(conversation));
         Item("既読にする", () => _viewModel.MarkRead(conversation.Id));
         Item(conversation.Experience.Muted ? "ミュートを解除" : "未読一覧からミュート", async () => await _viewModel.SetMutedAsync(conversation.Id, !conversation.Experience.Muted));
-        Item(conversation.IsPinned ? "ピン留めを解除" : "ピン留め", async () => await _viewModel.TogglePinAsync(conversation));
-        Item(conversation.IsArchived ? "保管から戻す" : "アーカイブ", async () => await _viewModel.ToggleArchiveAsync(conversation));
+        Item(conversation.IsPinned ? "ピン留めを解除" : "ピン留め", async () => await PinChannelWithUndoAsync(conversation));
+        Item(conversation.IsArchived ? "保管から戻す" : "アーカイブ", async () => await ArchiveWithUndoAsync(conversation));
         var move = new MenuItem { Header = "プロジェクトへ移動" };
         foreach (ProjectChoice choice in _viewModel.ProjectChoices)
         {
@@ -321,7 +323,7 @@ public partial class MainWindow : Window
     }
     private void CopyMessage(ChatMessage message)
     {
-        try { Clipboard.SetText(message.Content); }
+        try { Clipboard.SetText(message.Content); ShowToast("発言をコピーしました。"); }
         catch (System.Runtime.InteropServices.COMException) { _viewModel.Error = "コピーできませんでした。もう一度試してください。"; }
     }
     private async void EditMessage_Click(object sender, RoutedEventArgs e)
@@ -342,6 +344,8 @@ public partial class MainWindow : Window
     private async void Window_KeyDown(object sender, KeyEventArgs e)
     {
         if (_composing) { return; }
+        if (Keyboard.FocusedElement is MenuItem || e.OriginalSource is MenuItem) { return; }
+        if (ComposerShortcut(e)) { return; }
         if (InputBox.IsKeyboardFocusWithin && MentionKey(e)) { return; }
         if (NavigationKey(e)) { return; }
         if (e.Key == Key.Escape)

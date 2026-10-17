@@ -26,17 +26,14 @@ public partial class MainWindow
     private void PinMessage_Click(object sender, RoutedEventArgs e)
     { if (sender is FrameworkElement { DataContext: ChatMessage message } && _viewModel.SelectedConversation is { } room) { _ = ToggleMessagePinAsync(room.Id, room.ActiveBranch.Id, message.Id); } }
     private async Task ToggleMessagePinAsync(Guid room, Guid branch, Guid message)
-    { try { await _viewModel.ToggleMessagePinAsync(room, branch, message); } catch (Exception ex) { _viewModel.Error = ex.Message; } }
+    { try { await _viewModel.ToggleMessagePinAsync(room, branch, message); Conversation target = RequireFeedbackRoom(room); bool pinned = MessageLocations.In(target).Any(m => m.Branch == branch && m.Message == message && m.Pinned); ShowToast(pinned ? "「" + target.Title + "」の発言をピン留めしました。" : "発言のピン留めを解除しました。", UndoMessagePin(room, branch, message, pinned)); } catch (Exception ex) { _viewModel.Error = ex.Message; } }
     private void ReactMessage_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { DataContext: ChatMessage message } button || _viewModel.SelectedConversation is not { } room) { return; }
-        Guid branch = room.ActiveBranch.Id; var menu = new ContextMenu { PlacementTarget = button };
-        button.ContextMenu = menu;
-        foreach (string emoji in MessageLocations.ReactionEmoji) { var item = new MenuItem { Header = emoji, FontSize = 22 }; item.Click += async (_, _) => await ToggleReactionAsync(room.Id, branch, message.Id, emoji); menu.Items.Add(item); }
-        menu.IsOpen = true;
+        OpenEmojiPicker(button, message.Id);
     }
-    private async Task ToggleReactionAsync(Guid room, Guid branch, Guid message, string emoji)
-    { try { await _viewModel.ToggleReactionAsync(room, branch, message, emoji); } catch (Exception ex) { _viewModel.Error = ex.Message; } }
+    private async Task<bool> ToggleReactionAsync(Guid room, Guid branch, Guid message, string emoji)
+    { try { await _viewModel.ToggleReactionAsync(room, branch, message, emoji); bool added = RequireFeedbackRoom(room).Experience.Reactions?.Any(r => r.Branch == branch && r.Message == message && r.Emoji == emoji) == true; ShowToast(emoji + (added ? " リアクションを追加しました。" : " リアクションを取り消しました。")); return true; } catch (Exception ex) { _viewModel.Error = ex.Message; return false; } }
     private async void Reaction_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: ReactionBadge badge } element || _viewModel.SelectedConversation is not { } room) { return; }

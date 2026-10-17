@@ -153,9 +153,10 @@ public sealed class MarkdownView : UserControl
         return paragraph;
     }
 
-    private void AddInlines(InlineCollection inlines, string text)
+    private void AddInlines(InlineCollection inlines, string text, int depth = 0)
     {
-        string pattern = @"(?<reference>\[(?<referenceKind>[SK])(?<referenceNumber>\d{1,3})\](?!\())|(?<link>\[(?<label>[^\]\n]+)\]\((?:<(?<url>https?://[^\s>]+)>|(?<url>https?://[^\s)]+))\))|(?<code>`(?<codeText>[^`]+)`)|(?<bold>\*\*(?<boldText>.+?)\*\*)|(?<italic>(?<!\*)\*(?<italicText>[^*\n]+)\*(?!\*))";
+        if (depth > 8) { AddText(inlines, text); return; }
+        string pattern = @"(?<escaped>\\(?<escapeChar>[\\`*_{}\[\]()#+\-.!>~]))|(?<reference>\[(?<referenceKind>[SK])(?<referenceNumber>\d{1,3})\](?!\())|(?<link>\[(?<label>[^\]\n]+)\]\((?:<(?<url>https?://[^\s>]+)>|(?<url>https?://[^\s)]+))\))|(?<code>`(?<codeText>[^`]+)`)|(?<strongEm>\*\*\*(?<strongEmText>.+?)\*\*\*)|(?<bold>\*\*(?<boldText>.+?)\*\*)|(?<strike>~~(?<strikeText>.+?)~~)|(?<italic>(?<!\*)\*(?<italicText>[^*\n]+)\*(?!\*))";
         int start = 0;
         Match[] matches;
         try { matches = Regex.Matches(text, pattern, RegexOptions.None, TimeSpan.FromMilliseconds(200)).ToArray(); }
@@ -163,7 +164,8 @@ public sealed class MarkdownView : UserControl
         foreach (Match match in matches)
         {
             if (match.Index > start) { AddText(inlines, text[start..match.Index]); }
-            if (match.Groups["reference"].Success)
+            if (match.Groups["escaped"].Success) { inlines.Add(new Run(match.Groups["escapeChar"].Value)); }
+            else if (match.Groups["reference"].Success)
             {
                 var link = new Hyperlink(new Run(match.Value)) { ToolTip = "生成時の根拠を開く" }; link.SetResourceReference(TextElement.ForegroundProperty, "AccentBrush");
                 link.Click += (_, e) => { ReferenceClicked?.Invoke(this, new(match.Groups["referenceKind"].Value, int.Parse(match.Groups["referenceNumber"].Value, System.Globalization.CultureInfo.InvariantCulture))); e.Handled = true; }; inlines.Add(link);
@@ -189,8 +191,10 @@ public sealed class MarkdownView : UserControl
                 run.SetResourceReference(TextElement.BackgroundProperty, "SurfaceBrush");
                 inlines.Add(run);
             }
-            else if (match.Groups["bold"].Success) { var bold = new Bold(); AddText(bold.Inlines, match.Groups["boldText"].Value); inlines.Add(bold); }
-            else { var italic = new Italic(); AddText(italic.Inlines, match.Groups["italicText"].Value); inlines.Add(italic); }
+            else if (match.Groups["strongEm"].Success) { var bold = new Bold(); var italic = new Italic(); AddInlines(italic.Inlines, match.Groups["strongEmText"].Value, depth + 1); bold.Inlines.Add(italic); inlines.Add(bold); }
+            else if (match.Groups["bold"].Success) { var bold = new Bold(); AddInlines(bold.Inlines, match.Groups["boldText"].Value, depth + 1); inlines.Add(bold); }
+            else if (match.Groups["strike"].Success) { var strike = new Span { TextDecorations = TextDecorations.Strikethrough }; AddInlines(strike.Inlines, match.Groups["strikeText"].Value, depth + 1); inlines.Add(strike); }
+            else { var italic = new Italic(); AddInlines(italic.Inlines, match.Groups["italicText"].Value, depth + 1); inlines.Add(italic); }
             start = match.Index + match.Length;
         }
         if (start < text.Length) { AddText(inlines, text[start..]); }

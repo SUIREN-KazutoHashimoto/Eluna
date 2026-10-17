@@ -60,11 +60,11 @@ internal static class SocialChatVerification
             IReadOnlyList<AgentAccount> targets = chat.TargetAgents(room, "相談は @Nova と @{設計 ミオ} にお願い。"); Check(targets.Select(a => a.Id).ToHashSet().SetEquals([nova.Id, mio.Id]), "Multiple mentions in prose did not route to the named peers.");
             var message = new ChatMessage { Role = "user", Content = "@Nova と @{設計 ミオ}、この **案** を一緒に考えよう。", Identity = new(null, chat.Self.Name, chat.Self.Icon, Time: DateTimeOffset.UtcNow) }; room.Messages.Add(message);
             main.Width = 1280; main.Height = 900; await PrototypePreview.RenderAsync(main, Path.Combine(output, "peer-chat.png"));
-            MarkdownView? body = Find<MarkdownView>(main).FirstOrDefault(v => ReferenceEquals(v.DataContext, message)); Check(body is not null && body.PlainText, "Local messages did not use the shared mention renderer.");
+            MarkdownView? body = Find<MarkdownView>(main).FirstOrDefault(v => ReferenceEquals(v.DataContext, message)); Check(body is not null && !body.PlainText, "Local members did not use the shared Markdown/mention renderer.");
             await Until(() => Find<RichTextBox>(body!).Any(r => r.Document.Blocks.OfType<Paragraph>().SelectMany(p => Links(p.Inlines)).Any()));
             RichTextBox reader = Find<RichTextBox>(body!).First(); Hyperlink mention = reader.Document.Blocks.OfType<Paragraph>().SelectMany(p => Links(p.Inlines)).First();
             Check(mention.Background is not null && mention.Foreground.ToString() != ((SolidColorBrush)Application.Current.Resources["TextBrush"]).ToString(), "Mentions were indistinguishable from body text.");
-            Check(new TextRange(reader.Document.ContentStart, reader.Document.ContentEnd).Text.Contains("**案**", StringComparison.Ordinal), "Local text was interpreted as Markdown and changed its content.");
+            Check(message.Content.Contains("**案**", StringComparison.Ordinal) && new TextRange(reader.Document.ContentStart, reader.Document.ContentEnd).Text.Contains("案", StringComparison.Ordinal) && !new TextRange(reader.Document.ContentStart, reader.Document.ContentEnd).Text.Contains("**案**", StringComparison.Ordinal), "Local Markdown formatting was not rendered or the stored source text changed.");
             mention.RaiseEvent(new RoutedEventArgs(Hyperlink.ClickEvent)); Check(main.OwnedWindows.OfType<AgentProfileWindow>().Any(w => w.IsVisible), "Mention click did not open a profile."); foreach (AgentProfileWindow profile in main.OwnedWindows.OfType<AgentProfileWindow>().ToArray()) { profile.Close(); }
             async Task<ChatMessage> Send(string text)
             {
@@ -101,7 +101,7 @@ internal static class SocialChatVerification
                 await PrototypePreview.RenderAsync(main, Path.Combine(output, "real-character-conversation.png")); await File.WriteAllTextAsync(Path.Combine(output, "character.json"), JsonSerializer.Serialize(generated, AppStore.JsonOptions), token); await Progress("real-character-generation-conversation-complete");
             }
             await chat.PersistSafelyAsync(); AppState saved = await store.LoadAsync(); AppStore.Validate(saved); Check(saved.Self == chat.Self && saved.Conversations.Single(c => c.Id == room.Id).Room!.Members.Contains(rea.Id), "Self or invitations were lost on persistence.");
-            await File.WriteAllTextAsync(Path.Combine(output, "result.txt"), "Social chat: local peer/profile, typed completion/invite/prose routing, styled clickable mentions/plain text, captured UI invitation, AI invite/idempotency/ACL, themes/minimum/130%, persistence" + (metadata is null ? "" : ", real character generation/cancel/save/conversation") + ": OK", token);
+            await File.WriteAllTextAsync(Path.Combine(output, "result.txt"), "Social chat: local peer/profile, typed completion/invite/prose routing, styled clickable mentions/Markdown source, captured UI invitation, AI invite/idempotency/ACL, themes/minimum/130%, persistence" + (metadata is null ? "" : ", real character generation/cancel/save/conversation") + ": OK", token);
         }
         catch (Exception ex) { Environment.ExitCode = 1; await File.WriteAllTextAsync(Path.Combine(output, "result.txt"), ex.ToString()); }
         finally { if (main is not null) { foreach (Window child in main.OwnedWindows.Cast<Window>().ToArray()) { child.Close(); } await main.ViewModel.ShutdownAsync(); main.Close(); } Application.Current.Shutdown(); }

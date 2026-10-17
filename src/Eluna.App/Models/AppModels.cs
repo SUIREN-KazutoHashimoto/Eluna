@@ -135,14 +135,14 @@ public sealed class ConversationBranch
 public sealed class Conversation : ObservableObject
 {
     private RoomExperience _experience = new();
-    public RoomExperience Experience { get => _experience; internal set { if (Set(ref _experience, value)) { Notify(nameof(HasUnread)); Notify(nameof(UnreadCount)); Notify(nameof(UnreadLabel)); Notify(nameof(UnreadHint)); Notify(nameof(HasMentions)); } } }
+    public RoomExperience Experience { get => _experience; internal set { if (Set(ref _experience, value)) { Notify(nameof(HasUnread)); Notify(nameof(UnreadCount)); Notify(nameof(UnreadLabel)); Notify(nameof(UnreadHint)); Notify(nameof(HasMentions)); NavigationDetailChanged(); } } }
     public int UnreadCount => Experience.Unread?.Count ?? 0;
     public bool HasUnread => UnreadCount > 0;
     public bool HasMentions => Experience.Unread?.Any(u => u.Mention) == true;
     public string UnreadLabel => HasMentions ? "@" + Experience.Unread!.Count(u => u.Mention) : UnreadCount > 99 ? "99+" : UnreadCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
     public string UnreadHint => $"未読 {UnreadCount} 件" + (UnreadCount >= 1000 ? "以上（最新1000件を保持）" : "") + (HasMentions ? $" · メンション {Experience.Unread!.Count(u => u.Mention)} 件" : "") + (Experience.Muted ? " · ミュート中" : "");
     private RoomProfile? _room;
-    public RoomProfile? Room { get => _room; set { if (Set(ref _room, value)) { Notify(nameof(NavigationLabel)); Notify(nameof(HistoryGroup)); } } }
+    public RoomProfile? Room { get => _room; set { if (Set(ref _room, value)) { Notify(nameof(NavigationLabel)); Notify(nameof(HistoryGroup)); Notify(nameof(NavigationHint)); } } }
     public string NavigationLabel => (Room?.Kind switch { "voice" => "◖ ", "dm" => "@ ", "group" => "◉ ", "thread" => "↳ ", _ => "# " }) + Title;
     private string _activity = "";
     public string Activity { get => _activity; internal set { if (Set(ref _activity, value)) { Notify(nameof(HistoryDetail)); } } }
@@ -158,13 +158,20 @@ public sealed class Conversation : ObservableObject
     private DateTimeOffset _updatedAt = DateTimeOffset.UtcNow;
     public Guid Id { get; init; } = Guid.NewGuid();
     public Guid? ProjectId { get => _projectId; set => Set(ref _projectId, value); }
-    public string Title { get => _title; set { if (Set(ref _title, value)) { Notify(nameof(NavigationLabel)); } } }
+    public string Title { get => _title; set { if (Set(ref _title, value)) { Notify(nameof(NavigationLabel)); Notify(nameof(NavigationHint)); } } }
     public bool IsPinned { get => _isPinned; set { if (Set(ref _isPinned, value)) { Notify(nameof(PinLabel)); Notify(nameof(HistoryGroup)); } } }
     public string HistoryGroup => IsPinned ? "ピン留め" : Room?.Kind switch { "voice" => "ボイスチャンネル", "dm" => "DM", "group" => "グループDM", "thread" => "スレッド", "legacy" => "移行した会話", "channel" => "チャンネル", _ => "会話" };
     public string PinLabel => IsPinned ? "★ " : "";
     public bool IsArchived { get => _isArchived; set => Set(ref _isArchived, value); }
     public DateTimeOffset UpdatedAt { get => _updatedAt; set { if (Set(ref _updatedAt, value)) { Notify(nameof(HistoryDetail)); Notify(nameof(HistoryGroup)); } } }
-    public string Draft { get; set; } = "";
+    private string _draft = "", _activityState = "";
+    public string Draft { get => _draft; set { if (Set(ref _draft, value)) { NavigationDetailChanged(); } } }
+    public string ActivityState { get => _activityState; internal set { if (Set(ref _activityState, value)) { NavigationDetailChanged(); } } }
+    public bool HasDraft => !string.IsNullOrWhiteSpace(Draft) || DraftAttachments.Count > 0;
+    public string NavigationStatus => string.Join(" · ", new[] { ActivityState switch { "active" => "返信中…", "queued" => "順番待ち", "paused" => "再開待ち", _ => "" }, HasDraft ? "下書き" : "", Experience.Muted ? "ミュート" : "" }.Where(s => s.Length > 0));
+    public bool HasNavigationStatus => NavigationStatus.Length > 0;
+    public string NavigationHint => Title + "\n" + HistoryGroup + (NavigationStatus.Length > 0 ? "\n" + NavigationStatus : "") + (HasUnread ? "\n" + UnreadHint : "");
+    private void NavigationDetailChanged() { Notify(nameof(HasDraft)); Notify(nameof(NavigationStatus)); Notify(nameof(HasNavigationStatus)); Notify(nameof(NavigationHint)); }
     public ObservableCollection<ChatAttachment> DraftAttachments { get; } = [];
     public List<Guid> SkillIds { get; set; } = [];
     public string? SkillsMode { get; set; }
@@ -181,6 +188,7 @@ public sealed class Conversation : ObservableObject
 
     public Conversation()
     {
+        DraftAttachments.CollectionChanged += (_, _) => NavigationDetailChanged();
         _activeBranch = new();
         Branches.Add(_activeBranch);
     }
@@ -253,7 +261,7 @@ public sealed record SavedConversation(Guid Id, string Title, List<SavedMessage>
 public sealed record AppSettings(string? ModelId = null, string Compute = "auto", int ContextSize = 4096, string InferenceMode = InferenceModes.DefaultId,
     double ChatFontSize = 14, double LineHeight = 22, string Theme = "dark", bool SidebarVisible = true, bool ControlEnterToSend = false,
     string SystemInstruction = "あなたは親切で正確なアシスタントです。ユーザーの言語で簡潔に答えてください。",
-    string WorkMode = "chat", WorkOptions? WorkOptions = null, Guid? SelectedProjectId = null, int MaxConcurrentInferences = 1, string SkillMode = "auto", double UiScale = 1, int MaxConcurrentDownloads = 1, int MaxConcurrentMedia = 1, bool ComputerUseKeepAwake = true, bool ReduceMotion = false);
+    string WorkMode = "chat", WorkOptions? WorkOptions = null, Guid? SelectedProjectId = null, int MaxConcurrentInferences = 1, string SkillMode = "auto", double UiScale = 1, int MaxConcurrentDownloads = 1, int MaxConcurrentMedia = 1, bool ComputerUseKeepAwake = true, bool ReduceMotion = false, List<string>? RecentEmoji = null);
 public sealed record AppState(int SchemaVersion, AppSettings Settings, List<SavedConversation> Conversations,
     List<KnowledgeProject>? Projects = null, List<MemoryNote>? CommonMemories = null, List<SavedInferenceJob>? InferenceJobs = null, List<SkillRegistration>? Skills = null,
     List<AgentAccount>? Agents = null, List<AgentMemory>? AgentMemories = null, LocalMember? Self = null);

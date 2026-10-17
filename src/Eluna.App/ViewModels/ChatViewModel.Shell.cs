@@ -6,6 +6,29 @@ namespace Eluna.App.ViewModels;
 public sealed partial class ChatViewModel
 {
     public ObservableCollection<AgentAccount> RoomMembers { get; } = [];
+    public ObservableCollection<MemberCard> RoomMemberCards { get; } = [];
+    private string MemberStatus(AgentAccount account)
+    {
+        if (account.IsLocal) { return "会話に参加中"; }
+        if (!account.Enabled) { return "無効"; }
+        foreach (InferenceJob job in Inferences.Items.Where(j => j.State == "active"))
+        {
+            ChatMessage? answer = FindAnswer(job.Request); if (answer?.Work?.Stage is "debate-wait" or "plan" or "paused") { continue; }
+            if (answer?.Team is { } team) { if (team.ActiveRoomId == SelectedConversation?.Id && team.ActiveAgentId == account.Id) { return "入力中…"; } continue; }
+            if (job.Request.ConversationId == SelectedConversation?.Id && job.Request.BranchId == SelectedBranch?.Id && (answer?.Work?.Turns.LastOrDefault(t => t.Incomplete)?.AgentId ?? job.Request.Agent?.Id) == account.Id) { return "入力中…"; }
+        }
+        return Inferences.Items.Any(j => j.State is "queued" or "paused" && j.Request.ConversationId == SelectedConversation?.Id && j.Request.BranchId == SelectedBranch?.Id && j.Request.Agent?.Id == account.Id) ? "順番待ち" : "";
+    }
+    private void RefreshMemberCards()
+    {
+        for (int i = 0; i < RoomMembers.Count; i++)
+        {
+            AgentAccount account = RoomMembers[i]; MemberCard? card = RoomMemberCards.FirstOrDefault(c => c.Account.Id == account.Id);
+            if (card is null) { card = new(account); RoomMemberCards.Insert(i, card); } else if (RoomMemberCards.IndexOf(card) != i) { RoomMemberCards.Move(RoomMemberCards.IndexOf(card), i); }
+            card.Update(account, MemberStatus(account));
+        }
+        while (RoomMemberCards.Count > RoomMembers.Count) { RoomMemberCards.RemoveAt(RoomMemberCards.Count - 1); }
+    }
     public string ServerTitle => SelectedProject?.Name ?? "ダイレクトメッセージ";
     public string ChannelTitle => SelectedConversation?.Title ?? "会話";
     public string ChannelSymbol => SelectedConversation?.Room?.Kind switch { "voice" => "◖", "dm" or "group" => "@", "thread" => "↳", _ => "#" };
@@ -26,6 +49,7 @@ public sealed partial class ChatViewModel
     }
     private void NotifyShell()
     {
+        RefreshMemberCards();
         NotifyVoice();
         Notify(nameof(ServerTitle)); Notify(nameof(ChannelTitle)); Notify(nameof(ChannelSymbol)); Notify(nameof(ChannelDescription)); Notify(nameof(ChannelPlaceholder)); Notify(nameof(ChannelWelcome)); Notify(nameof(MemberHeading)); Notify(nameof(TypingNotice)); Notify(nameof(ChannelListHeading));
     }

@@ -36,16 +36,11 @@ public partial class MainWindow
         button.ContextMenu = menu; menu.IsOpen = true;
     }
     private void Emoji_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not Button button) { return; }
-        var menu = new ContextMenu { PlacementTarget = button };
-        foreach (string emoji in new[] { "😀", "👍", "🎉", "❤️", "🤔", "🙏", "✅", "👀" })
-        { var item = new MenuItem { Header = emoji, FontSize = 22 }; item.Click += (_, _) => InsertMessageText(emoji); menu.Items.Add(item); }
-        button.ContextMenu = menu; menu.IsOpen = true;
-    }
+    { if (sender is FrameworkElement target) { OpenEmojiPicker(target); } }
     private void Member_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: AgentAccount member }) { OpenProfile(member.Id); }
+        if (sender is FrameworkElement { DataContext: MemberCard card }) { OpenProfile(card.Account.Id); }
+        else if (sender is FrameworkElement { DataContext: AgentAccount member }) { OpenProfile(member.Id); }
     }
     private void Speaker_Click(object sender, RoutedEventArgs e)
     { if (sender is FrameworkElement { DataContext: ChatMessage message }) { if (message.Role == "user" && message.Identity?.AgentId is null) { SelfProfile_Click(sender, e); } else if (message.Identity?.AgentId is Guid id) { OpenProfile(id); } } }

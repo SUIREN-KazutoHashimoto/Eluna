@@ -166,6 +166,7 @@ public sealed class AppStore
         KnowledgeService.Validate(state.Projects, state.CommonMemories);
         SkillValidation.State(state);
         WorkspaceService.Validate(state);
+        if (state.Settings.RecentEmoji is { } recent && (recent.Count > 24 || recent.Any(g => g is null || !EmojiCatalog.Contains(g)) || recent.Distinct(StringComparer.Ordinal).Count() != recent.Count)) { throw new InvalidDataException("最近使った絵文字の形式または件数が不正です。"); }
         foreach (SavedConversation conversation in state.Conversations) { MessageLocations.Validate(conversation); }
         HashSet<Guid> projectIds = (state.Projects ?? []).Select(p => p.Id).ToHashSet();
         if (state.Settings.SelectedProjectId is Guid selected && !projectIds.Contains(selected) || state.Conversations.Any(c => c.ProjectId is Guid id && !projectIds.Contains(id)))
