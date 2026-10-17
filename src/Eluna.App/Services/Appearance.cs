@@ -28,6 +28,7 @@ public static class Appearance
         string[] colors = light ? ["#E3E5E8", "#F2F3F5", "#EBEDEF", "#DFE1E5", "#D9DCE1", "#313338", "#5C5E66", "#5865F2", "#FFFFFF", "#6843A0", "#79550E", "#36733A", "#23667C"]
             : ["#1E1F22", "#2B2D31", "#232428", "#404249", "#26272D", "#F2F3F5", "#B5BAC1", "#5865F2", "#FFFFFF", "#B0ADF6", "#D1B47B", "#96BA92", "#99CCE8"];
         for (int i = 0; i < names.Length; i++) { Application.Current.Resources[names[i]] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(colors[i])); }
+        Application.Current.Resources["SelectionStrokeBrush"] = Brushes.Transparent;
         Application.Current.Resources["ChatBackgroundBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(light ? "#FFFFFF" : "#313338"));
         Application.Current.Resources["ChatHoverBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(light ? "#F2F3F5" : "#2E3035"));
         Application.Current.Resources["ChatInputBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(light ? "#EBEDEF" : "#383A40"));
@@ -39,7 +40,8 @@ public static class Appearance
             Application.Current.Resources["MentionTextBrush"] = SystemColors.HighlightTextBrush; Application.Current.Resources["MentionBackgroundBrush"] = SystemColors.HighlightBrush;
             foreach (string key in new[] { "BackgroundBrush", "SidebarBrush", "SurfaceBrush", "ChatBackgroundBrush", "ChatInputBrush", "ErrorBackgroundBrush" }) { Application.Current.Resources[key] = SystemColors.WindowBrush; }
             foreach (string key in new[] { "TextBrush", "MutedBrush", "StrokeBrush", "CodeKeywordBrush", "CodeStringBrush", "CodeCommentBrush", "CodeNumberBrush" }) { Application.Current.Resources[key] = SystemColors.WindowTextBrush; }
-            foreach (string key in new[] { "AccentBrush", "HoverBrush", "ChatHoverBrush" }) { Application.Current.Resources[key] = SystemColors.HighlightBrush; }
+            Application.Current.Resources["HoverBrush"] = SystemColors.WindowBrush; Application.Current.Resources["ChatHoverBrush"] = SystemColors.WindowBrush;
+            Application.Current.Resources["AccentBrush"] = SystemColors.HighlightBrush; Application.Current.Resources["SelectionStrokeBrush"] = SystemColors.HighlightBrush;
             Application.Current.Resources["OnAccentBrush"] = SystemColors.HighlightTextBrush;
         }
         foreach (Window window in Application.Current.Windows) { SetTitle(window, !light); ScaleFonts(window); }

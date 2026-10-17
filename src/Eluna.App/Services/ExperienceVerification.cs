@@ -8,7 +8,7 @@ using Eluna.App.Models;
 
 namespace Eluna.App.Services;
 
-internal static class ExperienceVerification
+internal static partial class ExperienceVerification
 {
     private static void Check(bool ok, string message) { if (!ok) { throw new InvalidOperationException(message); } }
     private static IEnumerable<T> Find<T>(DependencyObject root) where T : DependencyObject
@@ -52,8 +52,9 @@ internal static class ExperienceVerification
             chat.SelectedConversation = first;
             foreach (string theme in new[] { "dark", "light" }) { Appearance.Apply(theme, 1.3); main.Width = 820; main.Height = 600; await PrototypePreview.RenderAsync(main, Path.Combine(output, "main-minimum-" + theme + ".png")); Check(((Button)main.FindName("QuickSwitcherButton")).ActualWidth <= 280 && ((ListBox)main.FindName("MessagesList")).ActualHeight > 150, "Navigation controls crowded out the conversation."); }
             var guide = new ShortcutsWindow { Owner = main, WindowStartupLocation = WindowStartupLocation.Manual, Left = -20000, Top = -20000 }; guide.Show(); guide.Width = guide.MinWidth; guide.Height = guide.MinHeight; await PrototypePreview.RenderAsync(guide, Path.Combine(output, "shortcuts-minimum.png")); guide.Close();
+            await AuditAsync(main, output, token);
             await chat.PersistSafelyAsync(); AppStore.Validate(await store.LoadAsync());
-            await File.WriteAllTextAsync(Path.Combine(output, "result.txt"), "Experience phase 1: back/forward/draft/scope, quick switch/empty/minimum themes, shortcuts, reduced-motion settings/persistence/stop, server state and press feedback: OK", token);
+            await File.WriteAllTextAsync(Path.Combine(output, "result.txt"), "Experience: back/forward/draft/scope, quick switch/empty/minimum themes, shortcuts, reduced-motion settings/persistence/stop, server state/press/entrance/typing lifecycle, streaming, member scroll/Esc/logical focus, automation names/high-contrast simulation: OK", token);
         }
         catch (Exception ex) { Environment.ExitCode = 1; await File.WriteAllTextAsync(Path.Combine(output, "result.txt"), ex.ToString()); }
         finally { UiMotion.Configure(false); if (main is not null) { foreach (Window child in main.OwnedWindows.Cast<Window>().ToArray()) { child.Close(); } await main.ViewModel.ShutdownAsync(); main.Close(); } Application.Current.Shutdown(); }

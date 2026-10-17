@@ -26,7 +26,7 @@ public partial class MainWindow
     private void PinMessage_Click(object sender, RoutedEventArgs e)
     { if (sender is FrameworkElement { DataContext: ChatMessage message } && _viewModel.SelectedConversation is { } room) { _ = ToggleMessagePinAsync(room.Id, room.ActiveBranch.Id, message.Id); } }
     private async Task ToggleMessagePinAsync(Guid room, Guid branch, Guid message)
-    { try { await _viewModel.ToggleMessagePinAsync(room, branch, message); Conversation target = RequireFeedbackRoom(room); bool pinned = MessageLocations.In(target).Any(m => m.Branch == branch && m.Message == message && m.Pinned); ShowToast(pinned ? "「" + target.Title + "」の発言をピン留めしました。" : "発言のピン留めを解除しました。", UndoMessagePin(room, branch, message, pinned)); } catch (Exception ex) { _viewModel.Error = ex.Message; } }
+    { try { Task saving = _viewModel.ToggleMessagePinAsync(room, branch, message); Conversation target = RequireFeedbackRoom(room); long revision = target.MessagePinsRevision; bool pinned = MessageLocations.In(target).Any(m => m.Branch == branch && m.Message == message && m.Pinned); Func<Task> undo = UndoMessagePin(room, branch, message, pinned); await saving; if (target.MessagePinsRevision != revision || !_viewModel.Conversations.Contains(target)) { return; } ShowToast(pinned ? "「" + target.Title + "」の発言をピン留めしました。" : "発言のピン留めを解除しました。", undo); } catch (Exception ex) { _viewModel.Error = ex.Message; } }
     private void ReactMessage_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { DataContext: ChatMessage message } button || _viewModel.SelectedConversation is not { } room) { return; }

@@ -1,5 +1,7 @@
 # Eluna
 
+日常操作とDiscordを参考にした表示・動きを改善しました。Ctrl+Kの移動、未読とメンションの受信トレイ、発言検索・ピン・リアクション、検索できる絵文字、入力の書式補助、通知と取り消し、下書き・メンバーの状態表示を追加しています。最新の開発版exeは`artifacts/release-experience/Eluna.exe`。[操作と検証範囲](docs/discord-experience.md)を参照してください。以下のexeパスは各機能追加時点の記録です。
+
 キャラクターの自動生成、本人のプロフィール、後からのメンバー招待、AIへの招待依頼、入力途中の候補・色付きメンションを追加しました。会話は全員を名前のある参加者として表示します。[使い方と確認範囲](docs/social-chat-ux.md)、配布確認用exeは`artifacts/release-social/Eluna.exe`です。
 
 チャンネルごとのAI閲覧・発言・招待・作成権限、プロフィールの性格・ロールプレイ・つながり、依頼からのチーム自動編成と担当別の入力中表示を追加しました。操作と制限は[アカウントと自動編成](docs/agent-permissions-autonomy.md)を参照してください。今回の配布確認用exeは`artifacts/release-agents/Eluna.exe`です。以下のexeパスは各機能追加時点の記録です。

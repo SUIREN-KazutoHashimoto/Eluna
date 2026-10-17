@@ -55,7 +55,9 @@ internal static class AgentFeaturesVerification
             Check(deniedArtifact, "Document/image context bypassed permissions.");
             chat.SelectedRecipient = chat.Recipients.Single(r => r.Id == owner.Id); chat.Inferences.Suspended = true; chat.Input = "予約テスト"; chat.SendCommand.Execute(null); await Until(() => chat.Inferences.Items.Count > jobs && chat.Inferences.Items.Last().State == "queued" && chat.CanGenerate);
             InferenceJob queued = chat.Inferences.Items.Last(); Check(queued.State == "queued" && chat.TypingNotice.Length == 0, "Queued work incorrectly showed typing.");
+            Check(chat.RoomMemberCards.Single(c => c.Account.Id == owner.Id).Status == "順番待ち" && source.NavigationStatus.Contains("順番待ち", StringComparison.Ordinal), "Queued member/channel status was missing.");
             await chat.SetChannelPermissionsAsync(source.Id, [new(owner.Id, true, false), new(friend.Id, false, false)]); Check(queued.State == "canceled", "Revoked queued work survived.");
+            Check(chat.RoomMemberCards.All(c => !c.HasActivity) && !source.HasNavigationStatus, "Cancellation left stale member/channel activity.");
             await chat.SetChannelPermissionsAsync(source.Id, [new(owner.Id, true, true, true, true), new(friend.Id, false, false)]); chat.Inferences.Suspended = false;
             await Progress("ui-permissions-complete");
             if (metadata is not null)
@@ -79,12 +81,14 @@ internal static class AgentFeaturesVerification
                         Conversation active = chat.Conversations.Single(c => c.Id == room); chat.SelectedConversation = active;
                         Check(chat.CanStopSelected, "The active worker channel did not expose its stop action.");
                         Check(chat.TypingNotice.Contains(chat.Agents.Single(a => a.Id == actor).Name, StringComparison.Ordinal), "Worker typing label was not in the actual channel."); typingSeen = true;
+                        Check(chat.RoomMemberCards.Single(c => c.Account.Id == actor).Status == "入力中…" && chat.RoomMemberCards.Where(c => c.Account.Id != actor).All(c => c.Status != "入力中…"), "Member list attributed the running task to the wrong account.");
                         if (!File.Exists(Path.Combine(output, "typing.png"))) { main.Width = 1000; main.Height = 720; await PrototypePreview.RenderAsync(main, Path.Combine(output, "typing.png")); }
                         if (!interrupted && current.Assignments.Any(a => a.Complete) && active.Messages.Any(m => m.Identity?.AgentId == actor && m.IsGenerating))
                         {
                             interrupted = true; List<ChannelGrant> original = active.Room?.Permissions ?? [];
                             await chat.SetChannelPermissionsAsync(active.Id, [new(actor, false, false)]); await teamJob.Finished.WaitAsync(token);
                             Check(teamJob.State == "canceled" && answer.Team?.Stage == "paused" && chat.TypingNotice.Length == 0, "Active revocation did not stop the team/typing.");
+                            Check(chat.RoomMemberCards.All(c => c.Status != "入力中…"), "Revocation left an animated member state.");
                             Guid[] completed = answer.Team!.Assignments.Where(a => a.Complete).Select(a => a.AnswerId).ToArray();
                             await chat.SetChannelPermissionsAsync(active.Id, original); await chat.ResumeTeamAsync(answer);
                             await Until(() => chat.Inferences.Items.Last().Request.AnswerId == answer.Id && chat.Inferences.Items.Last() != teamJob && chat.Inferences.Items.Last().State is "active" or "failed" or "complete");
@@ -98,6 +102,7 @@ internal static class AgentFeaturesVerification
                 await teamJob.Finished.WaitAsync(token); Check(teamJob.State == "complete" && answer.Team!.Stage == "complete" && answer.Content.Length > 0, "Team execution/report failed: " + teamJob.Detail + " / " + answer.Team?.Detail);
                 Check(!answer.Content.Contains("作成は不可能", StringComparison.Ordinal) && !answer.Content.Contains("チャンネル作成は完了していない", StringComparison.Ordinal), "The report contradicted the application's confirmed local operations.");
                 Check(typingSeen && interrupted && chat.TypingNotice.Length == 0 && answer.Team!.Assignments.All(a => a.Complete), "Typing cleanup, active revocation or completed assignments failed.");
+                Check(chat.RoomMemberCards.All(c => c.Status != "入力中…"), "Completion left stale member activity.");
                 Check(chat.Inferences.Items.Count(j => j.Request.AnswerId == answer.Id) == 2 && chat.Conversations.Count == originalRooms + 2, "Recursive work or duplicate rooms were created.");
                 foreach (Guid id in answer.Team!.Assignments.Select(a => a.RoomId).Distinct())
                 {

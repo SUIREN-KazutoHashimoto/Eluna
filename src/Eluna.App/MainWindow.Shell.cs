@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 using Eluna.App.Controls;
 using Eluna.App.Models;
 using Eluna.App.Services;
@@ -10,6 +12,19 @@ public partial class MainWindow
 {
     public void OpenSettings(int tab = 0) { var settings = ShowUnique(() => new SettingsWindow(_viewModel) { Owner = this }); settings.SelectTab(tab); }
     private bool _showMembers = true;
+    private void InitializeMemberFocus()
+    {
+        KeyboardNavigation.SetTabNavigation(MembersPopup.Child, KeyboardNavigationMode.Cycle);
+        MembersPopup.Opened += (_, _) => Dispatcher.BeginInvoke(() => { if (MembersPopup.IsOpen) { FocusMember(MembersPopup.Child); } });
+        MembersPopup.Closed += (_, _) => MembersButton.Focus();
+        MembersPopup.Child.PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) { e.Handled = true; MembersPopup.IsOpen = false; } };
+    }
+    private static bool FocusMember(DependencyObject root)
+    {
+        if (root is Button { DataContext: MemberCard } member) { member.Focus(); return true; }
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) { if (FocusMember(VisualTreeHelper.GetChild(root, i))) { return true; } }
+        return false;
+    }
     private void UpdateShellLayout()
     {
         bool show = _showMembers && RootLayout.ActualWidth >= 1120;
@@ -21,7 +36,7 @@ public partial class MainWindow
     private void Members_Click(object sender, RoutedEventArgs e)
     {
         if (RootLayout.ActualWidth < 1120) { MembersPopup.IsOpen = !MembersPopup.IsOpen; }
-        else { _showMembers = !_showMembers; UpdateShellLayout(); }
+        else { _showMembers = !_showMembers; UpdateShellLayout(); if (_showMembers) { Dispatcher.BeginInvoke(() => FocusMember(MembersPane)); } else { MembersButton.Focus(); } }
     }
     private void InsertMessageText(string text)
     { InputBox.Focus(); int caret = InputBox.SelectionStart; InputBox.SelectedText = text; InputBox.CaretIndex = caret + text.Length; }

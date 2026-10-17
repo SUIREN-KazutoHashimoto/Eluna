@@ -4,6 +4,7 @@
   <SolidColorBrush x:Key="SidebarBrush" Color="#171717" />
   <SolidColorBrush x:Key="SurfaceBrush" Color="#303030" />
   <SolidColorBrush x:Key="HoverBrush" Color="#3B3B3B" />
+  <SolidColorBrush x:Key="SelectionStrokeBrush" Color="Transparent" />
   <SolidColorBrush x:Key="StrokeBrush" Color="#424242" />
   <SolidColorBrush x:Key="TextBrush" Color="#ECECEC" />
   <SolidColorBrush x:Key="MentionTextBrush" Color="#DEE0FF" />
@@ -115,7 +116,7 @@
     <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
     <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="MenuItem">
       <Grid>
-        <Border x:Name="Chrome" CornerRadius="7" Padding="14,9">
+        <Border x:Name="Chrome" CornerRadius="7" Padding="14,9" BorderThickness="1" BorderBrush="Transparent">
           <Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
             <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" />
             <TextBlock x:Name="SubmenuArrow" Grid.Column="1" Text="›" Margin="18,0,0,0" Visibility="Collapsed" />
@@ -128,7 +129,7 @@
         </Popup>
       </Grid>
       <ControlTemplate.Triggers>
-        <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource HoverBrush}" /></Trigger>
+        <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource HoverBrush}" /><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource SelectionStrokeBrush}" /></Trigger>
         <Trigger Property="HasItems" Value="True"><Setter TargetName="SubmenuArrow" Property="Visibility" Value="Visible" /></Trigger>
         <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4" /></Trigger>
       </ControlTemplate.Triggers>
@@ -173,9 +174,9 @@
       <Grid SnapsToDevicePixels="True" ClipToBounds="True">
         <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="3" />
         <Border x:Name="PART_Indicator" Background="{TemplateBinding Foreground}" CornerRadius="3" HorizontalAlignment="Left" />
-        <Border x:Name="BusyIndicator" Width="64" HorizontalAlignment="Left" Background="{TemplateBinding Foreground}" CornerRadius="3" Visibility="Collapsed"><Border.RenderTransform><TranslateTransform x:Name="BusyTransform" /></Border.RenderTransform></Border>
+        <Border x:Name="BusyIndicator" services:UiMotion.Feedback="progress" Width="64" HorizontalAlignment="Left" Background="{TemplateBinding Foreground}" CornerRadius="3" Visibility="Collapsed"><Border.RenderTransform><TranslateTransform x:Name="BusyTransform" /></Border.RenderTransform></Border>
       </Grid>
-      <ControlTemplate.Triggers><Trigger Property="IsIndeterminate" Value="True"><Setter TargetName="PART_Indicator" Property="Visibility" Value="Collapsed" /><Setter TargetName="BusyIndicator" Property="Visibility" Value="Visible" /><Trigger.EnterActions><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="BusyTransform" Storyboard.TargetProperty="X" From="-64" To="420" Duration="0:0:1.8" RepeatBehavior="Forever" /></Storyboard></BeginStoryboard></Trigger.EnterActions></Trigger></ControlTemplate.Triggers>
+      <ControlTemplate.Triggers><Trigger Property="IsIndeterminate" Value="True"><Setter TargetName="PART_Indicator" Property="Visibility" Value="Collapsed" /><Setter TargetName="BusyIndicator" Property="Visibility" Value="Visible" /></Trigger></ControlTemplate.Triggers>
     </ControlTemplate></Setter.Value></Setter>
   </Style>
   <Style TargetType="ListBoxItem">
@@ -186,10 +187,10 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="ListBoxItem">
-          <Border x:Name="Chrome" CornerRadius="8" Background="Transparent" Padding="{TemplateBinding Padding}"><ContentPresenter /></Border>
+          <Border x:Name="Chrome" CornerRadius="8" Background="Transparent" Padding="{TemplateBinding Padding}" BorderThickness="1" BorderBrush="Transparent"><ContentPresenter /></Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SurfaceBrush}" /></Trigger>
-            <Trigger Property="IsSelected" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SurfaceBrush}" /></Trigger>
+            <Trigger Property="IsSelected" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SurfaceBrush}" /><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource SelectionStrokeBrush}" /></Trigger>
             <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource AccentBrush}" /><Setter TargetName="Chrome" Property="BorderThickness" Value="1" /></Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>

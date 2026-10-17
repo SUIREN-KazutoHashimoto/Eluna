@@ -35,6 +35,7 @@ public partial class MainWindow : Window
         InitializeMessageExperience();
         InitializeComposer();
         InitializeContextMenus();
+        InitializeMemberFocus();
         _readingSave.Tick += async (_, _) => { _readingSave.Stop(); RememberReadingPosition(); await _readingPositions.SaveAsync(); };
         RootLayout.SizeChanged += (_, _) => { UpdateComposerHeight(); UpdateShellLayout(); };
         HeaderArea.SizeChanged += (_, _) => UpdateComposerHeight();
@@ -355,12 +356,14 @@ public partial class MainWindow : Window
             if (_viewModel.CanStopSelected) { _viewModel.StopCommand.Execute(null); e.Handled = true; }
             return;
         }
-        if (!Keyboard.Modifiers.HasFlag(ModifierKeys.Control) || _composing) { return; }
-        if (e.Key == Key.N) { _viewModel.NewChatCommand.Execute(null); InputBox.Focus(); e.Handled = true; }
-        if (e.Key == Key.B) { _viewModel.ToggleSidebar(); e.Handled = true; }
-        if (e.Key == Key.F) { if (!_viewModel.SidebarVisible) { _viewModel.ToggleSidebar(); } HistorySearchBox.Focus(); e.Handled = true; }
-        if (e.Key == Key.End && Keyboard.FocusedElement is not System.Windows.Controls.Primitives.TextBoxBase) { FollowOutput(true); e.Handled = true; }
-        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+        if (Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            if (e.Key == Key.N) { _viewModel.NewChatCommand.Execute(null); InputBox.Focus(); e.Handled = true; }
+            if (e.Key == Key.B) { _viewModel.ToggleSidebar(); e.Handled = true; }
+            if (e.Key == Key.F) { if (!_viewModel.SidebarVisible) { _viewModel.ToggleSidebar(); } HistorySearchBox.Focus(); e.Handled = true; }
+            if (e.Key == Key.End && Keyboard.FocusedElement is not System.Windows.Controls.Primitives.TextBoxBase) { FollowOutput(true); e.Handled = true; }
+        }
+        if (Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
         {
             ChatMessage? answer = _viewModel.SelectedConversation?.Messages.LastOrDefault(m => m.Role == "assistant");
             if (e.Key == Key.R && answer is not null && _viewModel.CanGenerate) { await _viewModel.RegenerateAsync(answer); e.Handled = true; }

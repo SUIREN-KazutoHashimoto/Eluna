@@ -46,6 +46,7 @@ public static class UiMotion
         private readonly FrameworkElement _element;
         private readonly string _kind;
         private FrameworkElement? _owner;
+        private Window? _window;
         private ScaleTransform? _scale;
         private Transform? _original;
         private Point _origin;
@@ -67,6 +68,13 @@ public static class UiMotion
                 while ((parent = VisualTreeHelper.GetParent(parent)) is not null) { if (_kind == "server" && parent is ListBoxItem || _kind == "toolbar" && parent is Border { Name: "MessageBorder" }) { _owner = (FrameworkElement)parent; break; } }
                 if (_owner is not null) { _owner.MouseEnter += Enter; _owner.MouseLeave += Leave; _owner.GotKeyboardFocus += Focus; _owner.LostKeyboardFocus += Focus; _owner.AddHandler(Selector.SelectedEvent, new RoutedEventHandler(Selection)); _owner.AddHandler(Selector.UnselectedEvent, new RoutedEventHandler(Selection)); }
             }
+            if (_kind == "progress")
+            {
+                DependencyObject? parent = _element; while ((parent = VisualTreeHelper.GetParent(parent)) is not null) { if (parent is ProgressBar bar) { _owner = bar; break; } }
+                if (_owner is not null) { _owner.SizeChanged += ProgressSize; }
+                _element.IsVisibleChanged += ProgressVisibility; _window = Window.GetWindow(_element);
+                if (_window is not null) { _window.Activated += ProgressWindow; _window.Deactivated += ProgressWindow; _window.StateChanged += ProgressWindow; }
+            }
             if (_kind == "entrance") { Reveal(_element); } else { Update(false); }
         }
         private void Enter(object sender, MouseEventArgs e) => Update(true);
@@ -74,16 +82,24 @@ public static class UiMotion
         private void Focus(object sender, KeyboardFocusChangedEventArgs e) => Update(true);
         private void Selection(object sender, RoutedEventArgs e) => Update(true);
         private void EnabledChanged(object sender, DependencyPropertyChangedEventArgs e) => Scale(1);
+        private void ProgressSize(object sender, SizeChangedEventArgs e) => Update(false);
+        private void ProgressVisibility(object sender, DependencyPropertyChangedEventArgs e) => Update(false);
+        private void ProgressWindow(object? sender, EventArgs e) => Update(false);
         private void Press(object sender, MouseButtonEventArgs e) => Scale(.96);
         private void Release(object sender, MouseEventArgs e) => Scale(1);
-        private void Scale(double value)
+        private void Scale(double value, bool animate = true)
         {
             if (_scale is null) { return; }
             double from = _scale.ScaleX; _scale.BeginAnimation(ScaleTransform.ScaleXProperty, null); _scale.BeginAnimation(ScaleTransform.ScaleYProperty, null); _scale.ScaleX = _scale.ScaleY = Enabled ? value : 1;
-            if (Enabled) { var a = new DoubleAnimation(from, value, TimeSpan.FromMilliseconds(100)) { FillBehavior = FillBehavior.Stop }; _scale.BeginAnimation(ScaleTransform.ScaleXProperty, a); _scale.BeginAnimation(ScaleTransform.ScaleYProperty, a); }
+            if (animate && Enabled) { var a = new DoubleAnimation(from, value, TimeSpan.FromMilliseconds(100)) { FillBehavior = FillBehavior.Stop }; _scale.BeginAnimation(ScaleTransform.ScaleXProperty, a); _scale.BeginAnimation(ScaleTransform.ScaleYProperty, a); }
         }
         private void Update(bool animate)
         {
+            if (_kind == "progress" && _element.RenderTransform is TranslateTransform travel)
+            {
+                double width = Math.Max(64, _owner?.ActualWidth ?? 64); travel.BeginAnimation(TranslateTransform.XProperty, null); travel.X = (width - 64) / 2;
+                if (_active && Enabled && _element.IsVisible && _window?.IsActive == true && _window.WindowState != WindowState.Minimized) { travel.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(-64, width, TimeSpan.FromSeconds(1.8)) { RepeatBehavior = RepeatBehavior.Forever }); }
+            }
             if (_kind == "toolbar") { double to = _owner?.IsMouseOver == true || _owner?.IsKeyboardFocusWithin == true ? 1 : 0; _element.IsHitTestVisible = to > 0; if (animate) { Fade(_element, to, 100); } else { _element.BeginAnimation(UIElement.OpacityProperty, null); _element.Opacity = to; } }
             if (_kind == "server" && _element is Border tile && _owner is ListBoxItem item)
             {
@@ -96,13 +112,16 @@ public static class UiMotion
                 }
             }
         }
-        private void Reset() { Scale(1); _element.BeginAnimation(UIElement.OpacityProperty, null); Update(false); }
+        private void Reset() { Scale(1, false); _element.BeginAnimation(UIElement.OpacityProperty, null); Update(false); }
         private void Unloaded(object sender, RoutedEventArgs e)
         {
             if (!_active) { return; }
             _active = false; Changed -= Reset; Reset();
             _element.PreviewMouseLeftButtonDown -= Press; _element.PreviewMouseLeftButtonUp -= Release; _element.MouseLeave -= Leave; _element.LostMouseCapture -= Release; _element.IsEnabledChanged -= EnabledChanged;
             if (_scale is not null) { _element.RenderTransform = _original ?? Transform.Identity; _element.RenderTransformOrigin = _origin; _scale = null; }
+            _element.IsVisibleChanged -= ProgressVisibility;
+            if (_window is not null) { _window.Activated -= ProgressWindow; _window.Deactivated -= ProgressWindow; _window.StateChanged -= ProgressWindow; _window = null; }
+            if (_owner is not null) { _owner.SizeChanged -= ProgressSize; }
             if (_owner is not null) { _owner.MouseEnter -= Enter; _owner.MouseLeave -= Leave; _owner.GotKeyboardFocus -= Focus; _owner.LostKeyboardFocus -= Focus; _owner.RemoveHandler(Selector.SelectedEvent, new RoutedEventHandler(Selection)); _owner.RemoveHandler(Selector.UnselectedEvent, new RoutedEventHandler(Selection)); _owner = null; }
         }
         public void Dispose() { Unloaded(_element, new RoutedEventArgs()); _element.Loaded -= Loaded; _element.Unloaded -= Unloaded; }

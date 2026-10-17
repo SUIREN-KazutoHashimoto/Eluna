@@ -135,7 +135,10 @@ public sealed class ConversationBranch
 public sealed class Conversation : ObservableObject
 {
     private RoomExperience _experience = new();
-    public RoomExperience Experience { get => _experience; internal set { if (Set(ref _experience, value)) { Notify(nameof(HasUnread)); Notify(nameof(UnreadCount)); Notify(nameof(UnreadLabel)); Notify(nameof(UnreadHint)); Notify(nameof(HasMentions)); NavigationDetailChanged(); } } }
+    internal long MessagePinsRevision { get; private set; }
+    internal long ArchiveRevision { get; private set; }
+    internal long ChannelPinRevision { get; private set; }
+    public RoomExperience Experience { get => _experience; internal set { bool pinsChanged = !(_experience.Pins ?? []).SequenceEqual(value.Pins ?? []); if (Set(ref _experience, value)) { if (pinsChanged) { MessagePinsRevision++; } Notify(nameof(HasUnread)); Notify(nameof(UnreadCount)); Notify(nameof(UnreadLabel)); Notify(nameof(UnreadHint)); Notify(nameof(HasMentions)); NavigationDetailChanged(); } } }
     public int UnreadCount => Experience.Unread?.Count ?? 0;
     public bool HasUnread => UnreadCount > 0;
     public bool HasMentions => Experience.Unread?.Any(u => u.Mention) == true;
@@ -159,10 +162,10 @@ public sealed class Conversation : ObservableObject
     public Guid Id { get; init; } = Guid.NewGuid();
     public Guid? ProjectId { get => _projectId; set => Set(ref _projectId, value); }
     public string Title { get => _title; set { if (Set(ref _title, value)) { Notify(nameof(NavigationLabel)); Notify(nameof(NavigationHint)); } } }
-    public bool IsPinned { get => _isPinned; set { if (Set(ref _isPinned, value)) { Notify(nameof(PinLabel)); Notify(nameof(HistoryGroup)); } } }
+    public bool IsPinned { get => _isPinned; set { if (Set(ref _isPinned, value)) { ChannelPinRevision++; Notify(nameof(PinLabel)); Notify(nameof(HistoryGroup)); } } }
     public string HistoryGroup => IsPinned ? "ピン留め" : Room?.Kind switch { "voice" => "ボイスチャンネル", "dm" => "DM", "group" => "グループDM", "thread" => "スレッド", "legacy" => "移行した会話", "channel" => "チャンネル", _ => "会話" };
     public string PinLabel => IsPinned ? "★ " : "";
-    public bool IsArchived { get => _isArchived; set => Set(ref _isArchived, value); }
+    public bool IsArchived { get => _isArchived; set { if (Set(ref _isArchived, value)) { ArchiveRevision++; } } }
     public DateTimeOffset UpdatedAt { get => _updatedAt; set { if (Set(ref _updatedAt, value)) { Notify(nameof(HistoryDetail)); Notify(nameof(HistoryGroup)); } } }
     private string _draft = "", _activityState = "";
     public string Draft { get => _draft; set { if (Set(ref _draft, value)) { NavigationDetailChanged(); } } }
