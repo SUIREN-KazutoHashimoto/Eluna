@@ -1,5 +1,7 @@
 # 完成版に向けた実装・検証の台帳
 
+2026-10-17: 提示画像との比較から、主画面の左右欄・ヘッダー・発言と引用・入力・本人プロフィールを調整。標準本文16、ベクターの種別アイコン、最大化の作業領域補正、PlaceholderとIME状態の連動を追加した。Verify、単体exeの9系統の画面回帰、96 DPI・3440×1392の実最大化、4エンジンの展開起動を通過。最新の開発版は`artifacts/release-discord-reference/Eluna.exe`。[比較・結果・確認外の条件](discord-reference-ui.md)を参照。
+
 2026-10-17: `codex/discord-experience`で日常操作・表示・動きのD01〜D18を実装。移動、未読・受信、検索、ピン・リアクション、絵文字、書式、通知と取り消し、状態・右クリック、動きの軽減と後始末、フォーカス・配色を改善した。必須検証と、単体exeでの9種類のWPF回帰・キャラクターとチームの実モデル・4エンジンの展開起動を通過。最新の開発版は`artifacts/release-experience/Eluna.exe`。[操作・結果・確認外の条件](discord-experience.md)を参照。
 
 2026-10-17: `codex/social-chat-ux`でキャラクターの自動生成、本人のプロフィール、会話の対等な参加者表示、既存チャンネルへのUI／AI招待、入力候補・複数宛先・色付きメンション、プロフィールからDM、参加通知の表示密度を改善。今回のexeは`artifacts/release-social/Eluna.exe`。[仕様と確認範囲](social-chat-ux.md)を参照。

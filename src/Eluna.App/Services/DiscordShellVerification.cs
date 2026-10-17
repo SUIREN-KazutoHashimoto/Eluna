@@ -72,6 +72,7 @@ internal static class DiscordShellVerification
             settings.Close(); Appearance.Apply("dark"); chat.Input = "";
             var creation = Offscreen(new RoomWindow(chat, basicOnly: true) { Owner = main }); await Capture(creation, "create-channel"); Check(!Find<CheckBox>(creation).Any(c => c.IsVisible), "AI memory settings were exposed in the basic creation flow."); creation.Close();
             Conversation dm = await chat.CreateRoomAsync("佐藤", "dm", [design.Id]); chat.SelectedConversation = dm; main.Width = 1280; main.Height = 900; await Capture(main, "dm");
+            await DiscordReferenceVerification.RunAsync(main, output, token);
             await File.WriteAllTextAsync(Path.Combine(output, "verification.json"), JsonSerializer.Serialize(new { shell = true, modelSelectorsRemoved = true, accountModel = true, settingsChannelGuard = true, mentions = true, emoji = true, drafts = true, welcome = true, themes = "dark/light", min = "820x600 / settings660x500", text = "130%", settingsCategories = 10 }, AppStore.JsonOptions), token);
             await File.WriteAllTextAsync(Path.Combine(output, "result.txt"), "Discord shell: no AI controls on main, accounts/model assignment, settings scopes/persistence, members, mentions/emoji/drafts, empty state, themes/minimum/130%: OK", token);
         }

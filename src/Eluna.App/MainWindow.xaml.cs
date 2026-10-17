@@ -36,6 +36,7 @@ public partial class MainWindow : Window
         InitializeComposer();
         InitializeContextMenus();
         InitializeMemberFocus();
+        MaximizedWorkArea.Attach(this);
         _readingSave.Tick += async (_, _) => { _readingSave.Stop(); RememberReadingPosition(); await _readingPositions.SaveAsync(); };
         RootLayout.SizeChanged += (_, _) => { UpdateComposerHeight(); UpdateShellLayout(); };
         HeaderArea.SizeChanged += (_, _) => UpdateComposerHeight();
@@ -54,6 +55,7 @@ public partial class MainWindow : Window
         MessagesList.AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler(MessagesScroll_Changed));
         Loaded += async (_, _) =>
         {
+            RefreshMentionAdornment();
             await _readingPositions.LoadAsync(); string? latest = _readingPositions.Latest?.Key;
             _messagesScroll = FindChild<ScrollViewer>(MessagesList); await _viewModel.InitializeAsync();
             if (latest?.Split('/') is [var conversationId, var branchId] && Guid.TryParse(conversationId, out Guid id) && Guid.TryParse(branchId, out Guid branch) && _viewModel.Conversations.FirstOrDefault(c => c.Id == id && c.ProjectId == _viewModel.Settings.SelectedProjectId) is { } conversation)

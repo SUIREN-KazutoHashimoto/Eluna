@@ -262,7 +262,7 @@ public sealed record SavedConversation(Guid Id, string Title, List<SavedMessage>
     string? Draft = null, string? CustomInstruction = null, List<SavedBranch>? Branches = null, Guid? ActiveBranchId = null,
     DateTimeOffset? UpdatedAt = null, string? Summary = null, List<ChatAttachment>? DraftAttachments = null, Guid? ProjectId = null, List<Guid>? SkillIds = null, string? SkillsMode = null, RoomProfile? Room = null, RoomExperience? Experience = null);
 public sealed record AppSettings(string? ModelId = null, string Compute = "auto", int ContextSize = 4096, string InferenceMode = InferenceModes.DefaultId,
-    double ChatFontSize = 14, double LineHeight = 22, string Theme = "dark", bool SidebarVisible = true, bool ControlEnterToSend = false,
+    double ChatFontSize = 16, double LineHeight = 22, string Theme = "dark", bool SidebarVisible = true, bool ControlEnterToSend = false,
     string SystemInstruction = "あなたは親切で正確なアシスタントです。ユーザーの言語で簡潔に答えてください。",
     string WorkMode = "chat", WorkOptions? WorkOptions = null, Guid? SelectedProjectId = null, int MaxConcurrentInferences = 1, string SkillMode = "auto", double UiScale = 1, int MaxConcurrentDownloads = 1, int MaxConcurrentMedia = 1, bool ComputerUseKeepAwake = true, bool ReduceMotion = false, List<string>? RecentEmoji = null);
 public sealed record AppState(int SchemaVersion, AppSettings Settings, List<SavedConversation> Conversations,

@@ -40,7 +40,11 @@ public partial class MainWindow
         PreviewMouseDown += (_, e) => { if (e.OriginalSource is DependencyObject d && !InputBox.IsAncestorOf(d)) { MentionPopup.IsOpen = false; } };
         Deactivated += (_, _) => MentionPopup.IsOpen = false; Closed += (_, _) => MentionPopup.IsOpen = false;
     }
-    private void RefreshMentionAdornment() => _mentionAdorner?.InvalidateVisual();
+    private void RefreshMentionAdornment()
+    {
+        InputPlaceholder.Visibility = !_composing && InputBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _mentionAdorner?.InvalidateVisual();
+    }
     internal void UpdateMentions(bool requireFocus = true)
     {
         if (_acceptingMention || _composing || requireFocus && !InputBox.IsKeyboardFocusWithin || !_viewModel.IsReady || _viewModel.SelectedConversation is not { } room) { MentionPopup.IsOpen = false; return; }

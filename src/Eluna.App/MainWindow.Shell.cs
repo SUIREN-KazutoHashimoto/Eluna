@@ -5,6 +5,7 @@ using System.Windows.Media;
 using Eluna.App.Controls;
 using Eluna.App.Models;
 using Eluna.App.Services;
+using Eluna.App.ViewModels;
 
 namespace Eluna.App;
 
@@ -15,6 +16,8 @@ public partial class MainWindow
     private void InitializeMemberFocus()
     {
         KeyboardNavigation.SetTabNavigation(MembersPopup.Child, KeyboardNavigationMode.Cycle);
+        _viewModel.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ChatViewModel.SidebarVisible)) { UpdateShellLayout(); } };
+        ServerRail.SizeChanged += (_, _) => UpdateShellLayout();
         MembersPopup.Opened += (_, _) => Dispatcher.BeginInvoke(() => { if (MembersPopup.IsOpen) { FocusMember(MembersPopup.Child); } });
         MembersPopup.Closed += (_, _) => MembersButton.Focus();
         MembersPopup.Child.PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) { e.Handled = true; MembersPopup.IsOpen = false; } };
@@ -27,12 +30,21 @@ public partial class MainWindow
     }
     private void UpdateShellLayout()
     {
-        bool show = _showMembers && RootLayout.ActualWidth >= 1120;
+        bool wide = RootLayout.ActualWidth >= 1120;
+        bool show = _showMembers && wide;
+        ChannelColumn.Width = new(_viewModel.SidebarVisible ? wide ? 304 : 224 : 0);
+        ServerList.MaxHeight = Math.Max(48, ServerRail.ActualHeight - 88);
+        SidebarButton.Visibility = !wide || !_viewModel.SidebarVisible ? Visibility.Visible : Visibility.Collapsed;
+        HeaderPinsButton.Visibility = wide ? Visibility.Visible : Visibility.Collapsed;
+        SearchArea.Width = wide ? 244 : 136;
         ChannelTitleText.MaxWidth = RootLayout.ActualWidth < 1000 ? 140 : 250;
-        ChannelDescriptionText.Visibility = RootLayout.ActualWidth < 1000 ? Visibility.Collapsed : Visibility.Visible;
-        MembersColumn.Width = new(show ? 224 : 0); MembersPane.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        ChannelDescriptionText.Visibility = Visibility.Collapsed;
+        MembersColumn.Width = new(show ? 264 : 0); MembersPane.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         if (RootLayout.ActualWidth >= 1120) { MembersPopup.IsOpen = false; }
     }
+    private void HeaderPins_Click(object sender, RoutedEventArgs e) => OpenMessageCenter("pins");
+    private async void Microphone_Click(object sender, RoutedEventArgs e) => await _viewModel.ToggleMicrophoneAsync();
+    private async void VoiceOutput_Click(object sender, RoutedEventArgs e) => await _viewModel.ToggleVoiceOutputAsync();
     private void Members_Click(object sender, RoutedEventArgs e)
     {
         if (RootLayout.ActualWidth < 1120) { MembersPopup.IsOpen = !MembersPopup.IsOpen; }
