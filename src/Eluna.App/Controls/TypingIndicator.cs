@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using Eluna.App.Services;
 
 namespace Eluna.App.Controls;
 
@@ -11,21 +12,26 @@ public sealed class TypingIndicator : Grid
     public string Text { get => (string)GetValue(TextProperty); set => SetValue(TextProperty, value); }
     private readonly TextBlock _text = new() { FontSize = 11, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, Margin = new(8, 0, 0, 0) };
     private readonly List<System.Windows.Shapes.Ellipse> _dots = [];
+    private Window? _window;
     public TypingIndicator()
     {
         ColumnDefinitions.Add(new() { Width = new(26) }); ColumnDefinitions.Add(new());
         var dots = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center }; Children.Add(dots);
         for (int i = 0; i < 3; i++) { var dot = new System.Windows.Shapes.Ellipse { Width = 4, Height = 4, Margin = new(2, 0, 2, 0) }; dot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "MutedBrush"); dots.Children.Add(dot); _dots.Add(dot); }
         _text.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush"); Grid.SetColumn(_text, 1); Children.Add(_text);
-        Loaded += (_, _) => Refresh(); Unloaded += (_, _) => Stop();
+        Loaded += (_, _) => { UiMotion.Changed += Refresh; _window = Window.GetWindow(this); if (_window is not null) { _window.Activated += Active; _window.Deactivated += Inactive; _window.StateChanged += Active; } Refresh(); };
+        Unloaded += (_, _) => { UiMotion.Changed -= Refresh; if (_window is not null) { _window.Activated -= Active; _window.Deactivated -= Inactive; _window.StateChanged -= Active; _window = null; } Stop(); };
+        IsVisibleChanged += (_, _) => Refresh();
         System.Windows.Automation.AutomationProperties.SetLiveSetting(this, System.Windows.Automation.AutomationLiveSetting.Polite);
     }
     private static void Changed(DependencyObject d, DependencyPropertyChangedEventArgs e) => ((TypingIndicator)d).Refresh();
+    private void Active(object? sender, EventArgs e) => Refresh();
+    private void Inactive(object? sender, EventArgs e) => Stop();
     private void Stop() { foreach (var dot in _dots) { dot.BeginAnimation(OpacityProperty, null); } }
     private void Refresh()
     {
         _text.Text = Text; ToolTip = Text; Visibility = string.IsNullOrEmpty(Text) ? Visibility.Collapsed : Visibility.Visible; Stop();
-        if (!IsLoaded || Visibility != Visibility.Visible || !SystemParameters.ClientAreaAnimation) { return; }
+        if (!IsLoaded || !IsVisible || !UiMotion.Enabled || _window is { IsActive: false } || _window?.WindowState == WindowState.Minimized) { return; }
         for (int i = 0; i < _dots.Count; i++) { _dots[i].BeginAnimation(OpacityProperty, new DoubleAnimation(0.25, 1, TimeSpan.FromSeconds(0.45)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, BeginTime = TimeSpan.FromSeconds(i * .15) }); }
     }
 }

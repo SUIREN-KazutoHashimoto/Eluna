@@ -33,6 +33,7 @@ public partial class SettingsWindow : Window
         LineBox.ItemsSource = new[] { 18.0, 22, 25, 28, 32, 36, 42, 50, 60, viewModel.Settings.LineHeight }.Distinct().Order().ToArray(); LineBox.SelectedItem = viewModel.Settings.LineHeight;
         ControlEnterBox.IsChecked = viewModel.Settings.ControlEnterToSend;
         ComputerAwakeBox.IsChecked = viewModel.Settings.ComputerUseKeepAwake;
+        ReduceMotionBox.IsChecked = viewModel.Settings.ReduceMotion;
         InstructionBox.Text = viewModel.Settings.SystemInstruction;
         UiScaleBox.ItemsSource = new[] { new KeyValuePair<double, string>(1, "100%"), new(1.15, "115%"), new(1.3, "130%"), new(1.5, "150%") }; UiScaleBox.SelectedValue = viewModel.Settings.UiScale;
         CommonMemoryEditor.LoadNotes(viewModel.CommonMemories); SettingsTabs.SelectedIndex = initialTab;
@@ -49,12 +50,13 @@ public partial class SettingsWindow : Window
         AddHandler(Selector.SelectionChangedEvent, new SelectionChangedEventHandler((_, _) => Edited()));
         ControlEnterBox.Click += (_, _) => Edited(); CommonMemoryEditor.Changed += (_, _) => Edited();
         ComputerAwakeBox.Click += (_, _) => Edited();
+        ReduceMotionBox.Click += (_, _) => Edited();
         Closing += ReviewChildren;
         UnsavedChanges.Protect(this, () => Snapshot() != _baseline, SaveAsync);
         Closed += (_, _) => LicenseView.Dispose();
     }
     private string ChannelSnapshot() => JsonSerializer.Serialize(new { Work = (WorkModeBox.SelectedItem as WorkMode)?.Id, Thinking = (ThinkingBox.SelectedItem as InferenceMode)?.Id, Recipient = (SettingRecipientBox.SelectedItem as AgentChoice)?.Id, ChannelInstructionBox.Text });
-    private string Snapshot() => JsonSerializer.Serialize(new { ComputeBox.SelectedItem, Context = ContextBox.SelectedItem, Concurrency = ConcurrencyBox.SelectedItem, DownloadConcurrency = DownloadConcurrencyBox.SelectedItem, MediaConcurrency = MediaConcurrencyBox.SelectedItem, Font = FontBox.SelectedItem, Line = LineBox.SelectedItem, Theme = ThemeBox.SelectedIndex, UiScale = UiScaleBox.SelectedValue, ControlEnterBox.IsChecked, ComputerUseKeepAwake = ComputerAwakeBox.IsChecked, InstructionBox.Text, Memories = CommonMemoryEditor.GetNotes(), Channel = ChannelSnapshot() });
+    private string Snapshot() => JsonSerializer.Serialize(new { ComputeBox.SelectedItem, Context = ContextBox.SelectedItem, Concurrency = ConcurrencyBox.SelectedItem, DownloadConcurrency = DownloadConcurrencyBox.SelectedItem, MediaConcurrency = MediaConcurrencyBox.SelectedItem, Font = FontBox.SelectedItem, Line = LineBox.SelectedItem, Theme = ThemeBox.SelectedIndex, UiScale = UiScaleBox.SelectedValue, ControlEnterBox.IsChecked, ComputerUseKeepAwake = ComputerAwakeBox.IsChecked, ReduceMotion = ReduceMotionBox.IsChecked, InstructionBox.Text, Memories = CommonMemoryEditor.GetNotes(), Channel = ChannelSnapshot() });
     private void Edited() { bool dirty = Snapshot() != _baseline; SaveStateText.Text = dirty ? "未保存の変更があります" : "保存済み"; Title = dirty ? "設定 · 変更あり · Eluna" : "設定 · Eluna"; }
     private async void Save_Click(object sender, RoutedEventArgs e) => await SaveAsync();
     private async Task<bool> SaveAsync()
@@ -84,6 +86,7 @@ public partial class SettingsWindow : Window
                 LineHeight = line,
                 Theme = theme.Key,
                 UiScale = scale,
+                ReduceMotion = ReduceMotionBox.IsChecked == true,
                 ControlEnterToSend = ControlEnterBox.IsChecked == true,
                 ComputerUseKeepAwake = ComputerAwakeBox.IsChecked == true,
                 SystemInstruction = InstructionBox.Text,

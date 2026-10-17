@@ -31,6 +31,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent(); _store = store; _readingPositions = new(store.Root); _viewModel = new(store, downloads); DataContext = _viewModel;
         InitializeMentions();
+        InitializeNavigation();
         _readingSave.Tick += async (_, _) => { _readingSave.Stop(); RememberReadingPosition(); await _readingPositions.SaveAsync(); };
         RootLayout.SizeChanged += (_, _) => { UpdateComposerHeight(); UpdateShellLayout(); };
         HeaderArea.SizeChanged += (_, _) => UpdateComposerHeight();
@@ -40,7 +41,7 @@ public partial class MainWindow : Window
         _viewModel.NavigationStarting += RememberReadingPosition;
         _viewModel.PlanReviewRequested += ReviewPlanAsync;
         _viewModel.SkillExecutionReviewRequested += ReviewSkillExecutionAsync;
-        _viewModel.AppearanceChanged += () => Appearance.Apply(_viewModel.Settings.Theme, _viewModel.Settings.UiScale);
+        _viewModel.AppearanceChanged += () => { UiMotion.Configure(_viewModel.Settings.ReduceMotion); Appearance.Apply(_viewModel.Settings.Theme, _viewModel.Settings.UiScale); };
         TextCompositionManager.AddPreviewTextInputStartHandler(InputBox, (_, _) => { _composing = true; MentionPopup.IsOpen = false; RefreshMentionAdornment(); });
         TextCompositionManager.AddPreviewTextInputHandler(InputBox, (_, _) => { _composing = false; RefreshMentionAdornment(); });
         AllowDrop = true;
@@ -332,6 +333,7 @@ public partial class MainWindow : Window
     {
         if (_composing) { return; }
         if (InputBox.IsKeyboardFocusWithin && MentionKey(e)) { return; }
+        if (NavigationKey(e)) { return; }
         if (e.Key == Key.Escape)
         {
             if (MembersPopup.IsOpen) { MembersPopup.IsOpen = false; MembersButton.Focus(); e.Handled = true; return; }

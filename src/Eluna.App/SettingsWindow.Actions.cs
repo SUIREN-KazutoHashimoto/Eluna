@@ -9,6 +9,7 @@ namespace Eluna.App;
 
 public partial class SettingsWindow
 {
+    private void Shortcuts_Click(object sender, RoutedEventArgs e) => new ShortcutsWindow { Owner = this }.Show();
     private ChatMessage? _message;
     private bool _reviewingChildren;
     private async void ReviewChildren(object? sender, CancelEventArgs e)

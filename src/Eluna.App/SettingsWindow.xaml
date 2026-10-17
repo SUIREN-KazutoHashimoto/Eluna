@@ -8,6 +8,8 @@
         <Grid Margin="0,0,0,22"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="16" /><ColumnDefinition /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="メッセージの文字サイズ" Margin="0,0,0,8" /><ComboBox x:Name="FontBox" AutomationProperties.Name="会話の文字サイズ" /></StackPanel><StackPanel Grid.Column="2"><TextBlock Text="行の高さ" Margin="0,0,0,8" /><ComboBox x:Name="LineBox" AutomationProperties.Name="会話の行の高さ" /></StackPanel></Grid>
         <TextBlock Text="アプリ全体の文字の拡大" Margin="0,0,0,8" /><ComboBox x:Name="UiScaleBox" DisplayMemberPath="Value" SelectedValuePath="Key" AutomationProperties.Name="アプリ全体の文字の拡大" Margin="0,0,0,22" />
         <CheckBox x:Name="ControlEnterBox" Margin="0,0,0,22"><TextBlock Text="Ctrl+Enterで送信する（Enterは改行）" TextWrapping="Wrap" /></CheckBox>
+        <CheckBox x:Name="ReduceMotionBox" AutomationProperties.Name="動きを減らす"><TextBlock Text="動きを減らす" TextWrapping="Wrap" /></CheckBox><TextBlock Text="フェード・押下・ホバー・入力中の動きを停止します。オフの場合もWindowsでアニメーションを無効にしている場合や、高コントラストでは動きを使いません。" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,8,0,20" />
+        <Button Content="キーボードショートカット · Ctrl+/" Click="Shortcuts_Click" HorizontalAlignment="Left" Margin="0,0,0,16" />
         <TextBlock Text="ショートカット" FontWeight="SemiBold" Margin="0,0,0,8" /><TextBlock Text="Ctrl+N 新規 / Ctrl+F 検索 / Ctrl+B サイドバー / Esc 停止 / Ctrl+Shift+R 再生成 / Ctrl+Shift+C コピー" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" FontSize="12" />
         <Button Content="バージョン・更新内容を確認" Click="Updates_Click" HorizontalAlignment="Left" Margin="0,24,0,0" />
       </StackPanel></ScrollViewer></TabItem>
