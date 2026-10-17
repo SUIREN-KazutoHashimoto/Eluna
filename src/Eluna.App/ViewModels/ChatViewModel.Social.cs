@@ -112,6 +112,7 @@ public sealed partial class ChatViewModel
         var json = new StringBuilder();
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromMinutes(3));
         int? explicitCall = turn.Prompted ? SocialConversation.ExplicitCall(recent.LastOrDefault()?.Content ?? "", members, actor.Id) : null;
+        string? requestedEmoji = turn.Prompted && explicitCall is null ? SocialConversation.ExplicitReaction(recent.LastOrDefault()?.Content ?? "") : null;
         string instruction = knowledge.Instruction + "\n" + SocialConversation.Instruction(actor, turn.Prompted) + (explicitCall is int target ? "\nThis is an explicit request to ask " + members[target].Name + " for their opinion. Generate the actual question to them using kind ask, call [" + target + "]. Do not merely promise to ask." : "");
         string referenceText = knowledge.References.Count == 0 ? "" : "\n" + knowledge.ReferenceText;
         string input = SocialConversation.Input(recent, members, turn) + referenceText;
@@ -121,11 +122,13 @@ public sealed partial class ChatViewModel
         { int length = referenceText.Length / 2; if (char.IsHighSurrogate(referenceText[length - 1])) { length--; } referenceText = referenceText[..length]; input = SocialConversation.Input(recent, members, turn) + referenceText; }
         await foreach (GenerationUpdate piece in engine.GenerateAsync([new("user", input)],
             InferenceModes.Find(job.Request.Settings.InferenceMode), deadline.Token,
-            instruction, Math.Min(1024, turn.RemainingTokens), SocialConversation.CreateSchema(recent.Count, members.Count, members.FindIndex(a => a.Id == actor.Id), actor.Artist?.Enabled == true, explicitCall), preserveSampling: true))
+            instruction, Math.Min(1024, turn.RemainingTokens), SocialConversation.CreateSchema(recent.Count, members.Count, members.FindIndex(a => a.Id == actor.Id), actor.Artist?.Enabled == true, explicitCall, requestedEmoji), preserveSampling: true))
         { json.Append(piece.Content); }
         token.ThrowIfCancellationRequested();
         SocialDecisionObserved?.Invoke(job.Request.Id, json.ToString());
+        DiagnosticScope.Current?.Content("conversation", "decision", json.ToString());
         SocialAction action = SocialConversation.Parse(json.ToString(), recent.Count, members.Count, actor.Artist?.Enabled == true);
+        DiagnosticScope.Current?.Write("info", "conversation", "action", "kind=" + action.Kind + "; calls=" + string.Join(",", action.Call) + "; reply=" + action.Reply);
 
         Guid? reply = action.Reply >= 0 ? recent[action.Reply].Id : null;
         var calls = action.Kind == "ask" ? action.Call.Select(i => members[i].Id).Where(id => id != actor.Id).Distinct().ToList() : new List<Guid>();

@@ -35,7 +35,7 @@ public sealed partial class ChatViewModel
         token.ThrowIfCancellationRequested();
         return await EnqueueMediaAsync(actor.Name + " が描いています", new("image", imagePrompt, "", room.ProjectId, NewMediaOutput(".png"),
             Image: new(model, imagePrompt, "blurry, low quality, watermark", Compute: job.Request.Settings.Compute == "cpu" ? "cpu" : "auto"),
-            ConversationId: room.Id, BranchId: job.Request.BranchId, Agent: actor, Caption: caption, ReplyTo: reply, ArtistGenerated: true));
+            ConversationId: room.Id, BranchId: job.Request.BranchId, Agent: actor, Caption: caption, ReplyTo: reply, ArtistGenerated: true), WorkspaceService.StableId(job.Request.Id, "artist-image"));
     }
     private async Task<bool> TryArtistRequestAsync(Conversation context, ChatMessage answer, InferenceJob job, LlamaService engine, CancellationToken token)
     {

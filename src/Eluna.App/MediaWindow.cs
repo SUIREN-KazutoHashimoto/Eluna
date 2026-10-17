@@ -90,7 +90,8 @@ public sealed class MediaWindow : Window
         _document.LostKeyboardFocus += async (_, _) => { try { await SaveDraftAsync(); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Status = "下書きを保存できませんでした。保存先を指定して書き出してください。"; } };
         Note(docPanel, "DOCXは見出し・表付きの編集可能な文書です。PDFは日本語の見た目を保つ画像PDFで、文字選択には対応しません。");
 
-        var imagePanel = Panel("画像生成");
+        var imagePanel = Panel("画像モデルの準備・動作確認");
+        Note(imagePanel, "チャットで絵を依頼すると、絵描きスキルを持つアカウントが説明を考えて画像を返します。この画面のテスト生成はチャンネルへ自動投稿しません。");
         Note(imagePanel, "Stable Diffusion 1.5 / SDXLの一体型GGUFを使用します。分離したFLUX等の複数ファイル構成はこの画面では扱いません。初期の動作確認はSD 1.5です。");
         TextBox model = Field(imagePanel, "画像生成モデル", ReadImageModel());
         var modelButtons = Row(imagePanel);
@@ -120,7 +121,7 @@ public sealed class MediaWindow : Window
         var seed = new TextBox { Text = "-1", Width = 120, ToolTip = "シード（-1はランダム）" }; LabeledOption(options, "シード（-1は毎回変更）", seed);
         var compute = new ComboBox { ItemsSource = new[] { "自動（GPU優先）", "CPU" }, SelectedIndex = 0, Width = 170, Margin = new(8, 0, 0, 0) }; LabeledOption(options, "実行先", compute);
         var preview = new Image { MaxHeight = 450, Stretch = Stretch.Uniform, Margin = new(0, 14, 0, 0) };
-        Button(Row(imagePanel), "画像を生成", async () =>
+        Button(Row(imagePanel), "動作確認用の画像を生成", async () =>
         {
             if (!long.TryParse(seed.Text, out long value)) { throw new InvalidDataException("シードには整数を入力してください。"); }
             string[] dimensions = ((string)size.SelectedItem).Split('×');

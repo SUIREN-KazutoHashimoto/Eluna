@@ -103,6 +103,8 @@ public sealed partial class ChatViewModel
             var request = new SavedInferenceJob(Guid.NewGuid(), conversation.Id, branch.Id, answer.Id, conversation.Title,
                 DateTimeOffset.UtcNow, model, models, settings, knowledge.Instruction, knowledge.References, previousWork?.Save(), resumeAnswer is not null, skillRequest, agent,
                 WorkspaceService.AccessStamp(snapshot, conversation.Id, agent?.Id, knowledge.References), social);
+            answer.DiagnosticsId = request.Id;
+            _store.Trace.Write("info", "queue", "inference.queued", "model=" + model.Id + "; trigger=" + (social?.TriggerId ?? answer.Identity?.ReplyTo), request.Id, conversation.Id, agent?.Id);
             InferenceJob job = Inferences.Add(request, paused: true);
             job.PropertyChanged += (_, _) => NotifyJob(job);
             await _store.SaveAsync(CaptureState());
@@ -115,6 +117,8 @@ public sealed partial class ChatViewModel
     private async Task ExecuteInferenceAsync(InferenceJob job, CancellationToken token)
     {
         SavedInferenceJob request = job.Request;
+        using var diagnostic = DiagnosticScope.Start(_store.Trace, request.Id, request.ConversationId, request.Agent?.Id);
+        DiagnosticScope.Current!.Write("info", "queue", "inference.started", "model=" + request.Model.Id + "; mode=" + request.Settings.WorkMode);
         Conversation source = Conversations.FirstOrDefault(c => c.Id == request.ConversationId) ?? throw new InvalidOperationException("予約先の会話がありません。");
         ChannelAccess.RequireSpeaker(CaptureState(), source.Save(), request.Agent?.Id);
         if (request.AccessStamp is not null && request.AccessStamp != WorkspaceService.AccessStamp(CaptureState(), source.Id, request.Agent?.Id, request.References))
@@ -162,14 +166,16 @@ public sealed partial class ChatViewModel
             else { await GenerateAnswerCoreAsync(context, answer, job, engine, token, request.PreviousWork is null ? null : WorkSession.Restore(request.PreviousWork)); }
             token.ThrowIfCancellationRequested();
             if (answer.Identity is { } identity) { answer.Identity = identity with { Time = DateTimeOffset.UtcNow }; }
+            DiagnosticScope.Current!.Write("info", "queue", "inference.completed", "characters=" + answer.Content.Length + "; " + job.Metrics);
             answer.IsGenerating = false;
             if (answer.Content.Length > 0 || answer.Artifact is not null) { answer.Pending = false; ScrollJob(job, false); }
         }
         catch (ConversationBudgetException) { answer.Content = ""; job.Detail = "会話の生成予算に達したため、ここで会話を区切りました"; }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
-        { answer.Notice = "生成を停止しました"; answer.WasInterrupted = true; throw; }
+        { DiagnosticScope.Current!.Write("info", "queue", "inference.canceled"); answer.Notice = "生成を停止しました"; answer.WasInterrupted = true; throw; }
         catch (Exception ex)
         {
+            DiagnosticScope.Current!.Failure("queue", "inference.failed", ex);
             engine.Stop(); answer.Notice = "処理を完了できませんでした。推論一覧から再試行またはキャンセルしてください。";
             answer.WasInterrupted = true;
             _lastError = ex; if (SelectedConversation?.Id == source.Id) { SetError(DiagnosticsService.Explain(ex), () => { if (job.CanResume) { Inferences.Resume(job); } return Task.CompletedTask; }); }
@@ -198,9 +204,10 @@ public sealed partial class ChatViewModel
         Inferences.Limit = _settings.MaxConcurrentInferences;
         foreach (SavedInferenceJob request in requests)
         {
+            _store.Trace.Write("info", "queue", "inference.restored.paused", "model=" + request.Model.Id, request.Id, request.ConversationId, request.Agent?.Id);
             InferenceJob job = Inferences.Add(request, paused: true);
             job.PropertyChanged += (_, _) => NotifyJob(job);
-            if (FindAnswer(request) is ChatMessage answer) { answer.Pending = true; answer.Notice = "再開待ち · 推論一覧から再開またはキャンセルしてください"; }
+            if (FindAnswer(request) is ChatMessage answer) { answer.DiagnosticsId ??= request.Id; answer.Pending = true; answer.Notice = "再開待ち · 推論一覧から再開またはキャンセルしてください"; }
         }
     }
     public bool CanResumeWorkAtSource(ChatMessage answer) => CanGenerate && Conversations.Any(c => !Inferences.Contains(c.Id) && c.Branches.Any(b => b.Messages.Contains(answer)));

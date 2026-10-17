@@ -56,14 +56,14 @@ internal static class WorkspaceChecks
         AppState oldState = new(1, new(), [legacy.Save()]); var store = new AppStore(root); await store.SaveAsync(oldState);
         byte[] original = await File.ReadAllBytesAsync(Path.Combine(root, "state.json"));
         AppState upgraded = WorkspaceService.Upgrade(await store.LoadAsync()); AppStore.Validate(upgraded); await store.SaveAsync(upgraded);
-        Check((await File.ReadAllBytesAsync(Path.Combine(root, "state.json"))).SequenceEqual(original) && File.Exists(Path.Combine(root, "state-workspace.json")), "Migration overwrote the old state file.");
+        Check((await File.ReadAllBytesAsync(Path.Combine(root, "state.json"))).SequenceEqual(original) && File.Exists(Path.Combine(root, "state-social.json")), "Migration overwrote the old state file.");
         AppState restored = await store.LoadAsync();
-        Check(restored.SchemaVersion == 4 && restored.Conversations.Single().Branches!.Count == 2 && restored.Conversations.Single().Room!.Kind == "legacy", "Migration discarded branch history or room identity.");
+        Check(restored.SchemaVersion == 5 && restored.Conversations.Single().Branches!.Count == 2 && restored.Conversations.Single().Room!.Kind == "legacy", "Migration discarded branch history or room identity.");
         Check(ChatMessage.Restore(source.Messages[1].Save()).Speaker == "当時の名前" && ChatMessage.Restore(source.Messages[1].Save()).SpeakerDetail.Contains("当時のモデル", StringComparison.Ordinal), "Profile/model changes lost historical speaker snapshots.");
         Check(WorkspaceService.Messages(new(Guid.NewGuid(), "同じ本文の旧発言", [new("user", "同じ本文"), new("user", "同じ本文")])).Count() == 2, "Legacy messages without IDs were merged by content.");
         SavedMessage[] broadcast = WorkspaceService.AddressAgent([new("user", "全員への元の質問"), new("assistant", "最初の参加者の回答")], accounts[1]);
         Check(broadcast.Length == 3 && broadcast[^1].Role == "user" && broadcast[^1].Content.Contains(accounts[1].Name, StringComparison.Ordinal) && broadcast[0].Content == "全員への元の質問" && broadcast[1].Content == "最初の参加者の回答" && broadcast[^1].Content.Contains("対等な参加者", StringComparison.Ordinal), "A later reply lost the conversation or was not prompted as its own peer participant.");
-        await File.WriteAllTextAsync(Path.Combine(root, "state-workspace.json"), "{broken");
+        await File.WriteAllTextAsync(Path.Combine(root, "state-social.json"), "{broken");
         AppState recovered = await store.LoadAsync();
         Check(recovered.Conversations.Single().Id == legacy.Id && store.RecoveryNotice is not null && Directory.GetFiles(root, "state.broken-*.json").Length > 0 && (await File.ReadAllBytesAsync(Path.Combine(root, "state.json"))).SequenceEqual(original), "Corrupt workspace recovery lost the original history.");
         await CheckBackupAsync(Path.Combine(root, "workspace-backup"), threaded);

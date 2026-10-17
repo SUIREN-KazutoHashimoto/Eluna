@@ -61,6 +61,7 @@ public sealed class ChatMessage : ObservableObject
     public bool HasReply => Identity?.ReplyTo is not null;
     public bool IsProjection { get; internal set; }
     public bool WasInterrupted { get; internal set; }
+    public Guid? DiagnosticsId { get; internal set; }
     private bool _pending;
     public bool Pending { get => _pending; internal set => Set(ref _pending, value); }
     private GeneratedArtifact? _artifact;
@@ -106,7 +107,7 @@ public sealed class ChatMessage : ObservableObject
     public bool HasSkills => Skills.Count > 0;
     public string SkillsLabel => "使用スキル · " + string.Join(" / ", Skills.Select(s => s.Name));
     public string KnowledgeLabel => $"渡したナレッジ · {Knowledge.Count}件";
-    public SavedMessage Save() => new(Role, Content, Mode, ThinkingSeconds, HasNotice ? Notice : null, Id, IsGenerating || WasInterrupted || Pending, Work?.Save(), Attachments.Count > 0 ? Attachments : null, HasKnowledge ? Knowledge : null, HasSkills ? Skills : null, Computer?.Save(), Identity, Artifact, Team, Pending);
+    public SavedMessage Save() => new(Role, Content, Mode, ThinkingSeconds, HasNotice ? Notice : null, Id, IsGenerating || WasInterrupted || Pending, Work?.Save(), Attachments.Count > 0 ? Attachments : null, HasKnowledge ? Knowledge : null, HasSkills ? Skills : null, Computer?.Save(), Identity, Artifact, Team, Pending, DiagnosticsId);
     public static ChatMessage Restore(SavedMessage saved) => new()
     {
         Id = saved.Id ?? Guid.NewGuid(),
@@ -114,6 +115,7 @@ public sealed class ChatMessage : ObservableObject
         Identity = saved.Identity,
         WasInterrupted = saved.Incomplete,
         Pending = saved.Pending,
+        DiagnosticsId = saved.DiagnosticsId,
         Artifact = saved.Artifact,
         Team = saved.Team is { Stage: "running" or "report" } team ? team with { Stage = "paused", ActiveRoomId = null, ActiveAgentId = null } : saved.Team,
         Content = saved.Content,
@@ -255,7 +257,7 @@ public sealed class Conversation : ObservableObject
 }
 
 public sealed record SavedMessage(string Role, string Content, string? Mode = null, double? ThinkingSeconds = null, string? Notice = null,
-    Guid? Id = null, bool Incomplete = false, SavedWork? Work = null, List<ChatAttachment>? Attachments = null, List<KnowledgeReference>? Knowledge = null, List<AppliedSkill>? Skills = null, SavedComputerTask? Computer = null, MessageIdentity? Identity = null, GeneratedArtifact? Artifact = null, TeamRun? Team = null, bool Pending = false)
+    Guid? Id = null, bool Incomplete = false, SavedWork? Work = null, List<ChatAttachment>? Attachments = null, List<KnowledgeReference>? Knowledge = null, List<AppliedSkill>? Skills = null, SavedComputerTask? Computer = null, MessageIdentity? Identity = null, GeneratedArtifact? Artifact = null, TeamRun? Team = null, bool Pending = false, Guid? DiagnosticsId = null)
 {
     [System.Text.Json.Serialization.JsonIgnore]
     public string PromptText => (Identity is null ? "" : "［発言者: " + Identity.Name + "］\n") + (Incomplete ? "［中断した未完了の発言］\n" : "") + Content +
@@ -269,7 +271,7 @@ public sealed record SavedConversation(Guid Id, string Title, List<SavedMessage>
 public sealed record AppSettings(string? ModelId = null, string Compute = "auto", int ContextSize = 4096, string InferenceMode = InferenceModes.DefaultId,
     double ChatFontSize = 16, double LineHeight = 22, string Theme = "dark", bool SidebarVisible = true, bool ControlEnterToSend = false,
     string SystemInstruction = "あなたは親切で正確なアシスタントです。ユーザーの言語で簡潔に答えてください。",
-    string WorkMode = "chat", WorkOptions? WorkOptions = null, Guid? SelectedProjectId = null, int MaxConcurrentInferences = 1, string SkillMode = "auto", double UiScale = 1, int MaxConcurrentDownloads = 1, int MaxConcurrentMedia = 1, bool ComputerUseKeepAwake = true, bool ReduceMotion = false, List<string>? RecentEmoji = null);
+    string WorkMode = "chat", WorkOptions? WorkOptions = null, Guid? SelectedProjectId = null, int MaxConcurrentInferences = 1, string SkillMode = "auto", double UiScale = 1, int MaxConcurrentDownloads = 1, int MaxConcurrentMedia = 1, bool ComputerUseKeepAwake = true, bool ReduceMotion = false, List<string>? RecentEmoji = null, bool DeveloperMode = false, LogOptions? Logs = null, UpdateOptions? Updates = null);
 public sealed record AppState(int SchemaVersion, AppSettings Settings, List<SavedConversation> Conversations,
     List<KnowledgeProject>? Projects = null, List<MemoryNote>? CommonMemories = null, List<SavedInferenceJob>? InferenceJobs = null, List<SkillRegistration>? Skills = null,
     List<AgentAccount>? Agents = null, List<AgentMemory>? AgentMemories = null, LocalMember? Self = null);

@@ -52,7 +52,7 @@ public sealed class MarkdownView : UserControl
         _reader.SetResourceReference(ForegroundProperty, "TextBrush");
         var layout = new DockPanel();
         _resume = new Button { Content = "選択中の更新を表示（選択を解除）", Visibility = Visibility.Collapsed, Padding = new(8, 3, 8, 3), FontSize = 11, HorizontalAlignment = HorizontalAlignment.Left };
-        DockPanel.SetDock(_resume, Dock.Top); layout.Children.Add(_resume); layout.Children.Add(_reader); Content = layout;
+        DockPanel.SetDock(_resume, Dock.Top); layout.Children.Add(_resume); var body = new Grid(); body.Children.Add(_reader); body.Children.Add(new RichEmojiLayer(_reader)); layout.Children.Add(body); Content = layout;
         _resume.Click += (_, _) => { _reader.Selection.Select(_reader.Document.ContentEnd, _reader.Document.ContentEnd); foreach (CodeView code in Codes()) { code.ClearSelection(); } Render(); };
         _reader.SelectionChanged += (_, _) => { if (_dirty && _reader.Selection.IsEmpty) { _renderTimer?.Start(); } };
         _renderTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(150), DispatcherPriority.Background, (_, _) => { _renderTimer!.Stop(); Render(); }, Dispatcher);
@@ -202,7 +202,7 @@ public sealed class MarkdownView : UserControl
 
     private void AddText(InlineCollection inlines, string text)
     {
-        void Plain(string part) { string[] lines = part.Split('\n'); for (int i = 0; i < lines.Length; i++) { if (i > 0) { inlines.Add(new LineBreak()); } inlines.Add(new Run(lines[i])); } }
+        void Plain(string part) { string[] lines = part.Split('\n'); for (int i = 0; i < lines.Length; i++) { if (i > 0) { inlines.Add(new LineBreak()); } int at = 0; foreach (var element in EmojiRasterizer.Elements(lines[i]).Where(e => e.Emoji)) { if (element.Index > at) { inlines.Add(new Run(lines[i][at..element.Index])); } inlines.Add(new EmojiRun(element.Text) { FontFamily = new FontFamily("Segoe UI Emoji") }); at = element.Index + element.Text.Length; } if (at < lines[i].Length) { inlines.Add(new Run(lines[i][at..])); } } }
         int at = 0;
         foreach (MentionToken token in MentionService.Scan(text, Accounts ?? []))
         {

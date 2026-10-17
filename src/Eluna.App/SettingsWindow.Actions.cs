@@ -36,7 +36,7 @@ public partial class SettingsWindow
     }
     public void ShowMessage(ChatMessage message)
     {
-        _message = message;
+        _message = message; _messageLogs?.Show(message);
         MessageInfoBox.Text = message.Speaker + "\n" + message.SpeakerDetail + "\n" + message.ModeLabel + "\n" + message.Notice + "\n" + message.SkillsLabel;
         if (message.Work is not null) { DiscussionPanel.Work = message.Work; }
     }

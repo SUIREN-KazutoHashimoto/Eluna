@@ -17,6 +17,7 @@ public partial class MainWindow
     private bool _acceptingMention;
     private string? _dismissedMention;
     private MentionAdorner? _mentionAdorner;
+    private InputEmojiAdorner? _emojiAdorner;
     internal sealed record MemberSuggestion(AgentAccount? Account, string Name, string Detail, bool All = false);
     private void InitializeMentions()
     {
@@ -24,7 +25,7 @@ public partial class MainWindow
         InputBox.Loaded += (_, _) =>
         {
             if (_mentionAdorner is not null || AdornerLayer.GetAdornerLayer(InputBox) is not { } layer) { return; }
-            _mentionAdorner = new MentionAdorner(InputBox, () => _viewModel.MentionAccounts, () => _composing) { IsHitTestVisible = false }; layer.Add(_mentionAdorner);
+            _mentionAdorner = new MentionAdorner(InputBox, () => _viewModel.MentionAccounts, () => _composing) { IsHitTestVisible = false }; layer.Add(_mentionAdorner); _emojiAdorner = new InputEmojiAdorner(InputBox, () => _composing); layer.Add(_emojiAdorner);
         };
         InputBox.TextChanged += (_, _) => RefreshMentionAdornment(); InputBox.SelectionChanged += (_, _) => RefreshMentionAdornment(); InputBox.SizeChanged += (_, _) => RefreshMentionAdornment();
         InputBox.AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler((_, _) => RefreshMentionAdornment()));
@@ -43,7 +44,7 @@ public partial class MainWindow
     private void RefreshMentionAdornment()
     {
         InputPlaceholder.Visibility = !_composing && InputBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-        _mentionAdorner?.InvalidateVisual();
+        _mentionAdorner?.InvalidateVisual(); _emojiAdorner?.InvalidateVisual();
     }
     internal void UpdateMentions(bool requireFocus = true)
     {

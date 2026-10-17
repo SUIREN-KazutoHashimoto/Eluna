@@ -83,7 +83,8 @@ public sealed partial class ChatViewModel
                 ChannelAccess.RequireSpeaker(CaptureState(), room.Save(), actor.Id);
                 if (run.TokensUsed > 6192) { Update(run with { Stage = "limited", ActiveRoomId = null, ActiveAgentId = null, Detail = "担当に必要な出力予算が残っていません。作業先に途中結果を保存しました。" }); return true; }
                 ConversationBranch branch = room.Branches.First(b => b.Id == assignment.BranchId);
-                ChatMessage response = branch.Messages.First(m => m.Id == assignment.AnswerId);
+                ChatMessage response = branch.Messages.First(m => m.Id == assignment.AnswerId); response.DiagnosticsId = job.Request.Id;
+                using var trace = DiagnosticScope.Start(_store.Trace, job.Request.Id, room.Id, actor.Id);
                 LocalModel model = AccountDefaults.ModelFor(actor, Models.FirstOrDefault(m => m.Id == (actor.ModelId ?? job.Request.Model.Id)) ?? throw new InvalidOperationException(actor.Name + "のモデルがありません。"));
                 model = model with { Preferences = model.Options with { MaxOutputTokens = Math.Min(512, model.Options.MaxOutputTokens) } };
                 Update(run with { Stage = "running", ActiveRoomId = room.Id, ActiveAgentId = actor.Id, Detail = room.Title + " / " + actor.Name });

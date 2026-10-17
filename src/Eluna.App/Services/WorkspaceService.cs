@@ -11,11 +11,11 @@ internal static class WorkspaceService
     internal static readonly Guid DefaultAgent = Guid.Parse("5663b202-915f-4bba-8d48-aee04e3d696a");
     internal static AppState Upgrade(AppState state)
     {
-        if (state.Agents is not null) { return state; }
+        if (state.Agents is not null) { return state with { SchemaVersion = 5 }; }
         if (state.Conversations.Count == 0 && state.Projects is not { Count: > 0 }) { return AccountDefaults.FirstRun(state); }
         return state with
         {
-            SchemaVersion = 4,
+            SchemaVersion = 5,
             Agents = [new(DefaultAgent, "Eluna", ModelId: state.Settings.ModelId)],
             AgentMemories = [],
             Conversations = state.Conversations.Select(c => c with
@@ -103,6 +103,7 @@ internal static class WorkspaceService
         SavedMessage Message(SavedMessage m) => m with
         {
             Id = m.Id is Guid id ? Map(id) : null,
+            DiagnosticsId = null,
             Work = Work(m.Work),
             Team = m.Team is null ? null : m.Team with { Id = Map(m.Team.Id), CoordinatorId = agents[m.Team.CoordinatorId], ProjectId = m.Team.ProjectId is Guid teamProject ? projects.GetValueOrDefault(teamProject) : null, Stage = m.Team.Stage == "complete" ? "complete" : "paused", ActiveAgentId = null, ActiveRoomId = null, Assignments = m.Team.Assignments.Select(a => a with { RoomId = rooms.GetValueOrDefault(a.RoomId, a.RoomId), BranchId = Map(a.BranchId), AgentId = agents[a.AgentId], AnswerId = Map(a.AnswerId) }).ToList() },
             Knowledge = References(m.Knowledge),

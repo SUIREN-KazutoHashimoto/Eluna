@@ -88,6 +88,7 @@ internal static class SocialAutonomyChecks
         AppState loaded = await store.LoadAsync();
         Check(loaded.Agents![0].Generation == account.Generation && loaded.Agents[0].Social == account.Social && loaded.Conversations[0].Experience?.SocialPaused == true && loaded.Conversations[0].Experience?.Reactions?.Count == 2,
             "Account tuning, multiple reaction authors or stopped state failed persistence.");
+        Check(SocialConversation.ExplicitReaction("今の話に👍のリアクションだけ付けて") == "👍" && SocialConversation.ExplicitReaction("「👍のリアクションだけ付けて」を翻訳して") is null && SocialConversation.ExplicitReaction("👍リアクションだけはしないで") is null, "Explicit emoji-only requests ignored quoting or negation.");
         Console.WriteLine("Social autonomy: twelve starter accounts, 50-member union limit including self, per-account settings, hours/cooldowns, action protocol and incidental mentions, unpublished drafts/unread delivery and multi-author reactions persistence: OK");
     }
 }

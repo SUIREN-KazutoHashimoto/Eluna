@@ -46,6 +46,7 @@ public sealed class ResearchRunner
         Func<Task> checkpoint, Action<string> progress, Action<string> output, CancellationToken cancellationToken)
     {
         ValidateOptions(work.Options);
+        TraceOperation? trace = DiagnosticScope.Current; trace?.Write("info", "research", "started", "work=" + work.Id + "; mode=" + work.Mode);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         double priorSeconds = work.SecondsUsed;
         double remaining = work.Options.SecondsLimit - priorSeconds;
@@ -64,7 +65,7 @@ public sealed class ResearchRunner
             catch (OperationCanceledException) when (heartbeatStop.IsCancellationRequested) { }
         }
         Task heartbeat = Heartbeat();
-        async Task Save() { Refresh(); await checkpoint(); }
+        async Task Save() { Refresh(); trace?.Write("debug", "research", "checkpoint", "stage=" + work.Stage + "; searches=" + work.SearchesUsed + "; pages=" + work.PagesUsed + "; tokens=" + work.TokensUsed); await checkpoint(); }
         async Task Step(string stage, string title, string detail = "")
         {
             token.ThrowIfCancellationRequested(); work.Stage = stage;
@@ -366,7 +367,7 @@ public sealed class ResearchRunner
         { work.Stage = cancellationToken.IsCancellationRequested ? "paused" : "limited"; work.Activities.Add(new(DateTimeOffset.UtcNow, "warning", work.Stage == "paused" ? "停止しました" : "時間の上限に達しました", "取得済みの資料と完了した工程を保存しました。")); }
         catch
         { work.Stage = "failed"; throw; }
-        finally { heartbeatStop.Cancel(); await heartbeat; clock.Stop(); Refresh(); work.IsRunning = false; await checkpoint(); }
+        finally { trace?.Write("info", "research", "finished", "stage=" + work.Stage + "; sources=" + work.Sources.Count + "; tokens=" + work.TokensUsed); heartbeatStop.Cancel(); await heartbeat; clock.Stop(); Refresh(); work.IsRunning = false; await checkpoint(); }
     }
 
     private sealed class WorkLimitException : Exception { }

@@ -68,6 +68,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     public event Action? NavigationStarting;
     public event Action? AppearanceChanged;
     public AppSettings Settings => _settings;
+    internal AppTrace Trace => _store.Trace;
     public string DataDirectory => _store.Root;
     public string ComputeLabel => _busyEngines.FirstOrDefault()?.ComputeLabel ?? _idleEngines.FirstOrDefault()?.ComputeLabel ?? _llama.ComputeLabel;
     public double ChatFontSize => _settings.ChatFontSize * _settings.UiScale;
@@ -187,7 +188,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
 
     public ChatViewModel(AppStore store, DownloadQueue? downloads = null)
     {
-        _store = store; _llama = new(store); Downloads = downloads ?? new(store); Inferences = new(ExecuteInferenceAsync); Inferences.Changed += QueueChanged;
+        _store = store; _llama = new(store); Downloads = downloads ?? new(store); Inferences = new(ExecuteInferenceAsync) { Trace = store.Trace }; Inferences.Changed += QueueChanged;
         Downloads.PropertyChanged += (_, _) => Notify(nameof(ProcessSummary));
         Downloads.Completed += async model => await RefreshModelsAsync(SelectedModel is null ? model : null);
         HistoryView = CollectionViewSource.GetDefaultView(Conversations);
@@ -234,7 +235,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         try
         {
             _ready = false; LoadState(await _store.LoadAsync()); if (Downloads.Items.Count == 0) { await Downloads.LoadAsync(); }
-            await RefreshModelsAsync(); await _llama.InitializeAsync(); await LoadMediaJobsAsync(); Downloads.Limit = _settings.MaxConcurrentDownloads;
+            await RefreshModelsAsync(); await _llama.InitializeAsync(); await EmojiRasterizer.InitializeAsync(_store); await LoadMediaJobsAsync(); Downloads.Limit = _settings.MaxConcurrentDownloads;
             ComputeChoices.Clear();
             ComputeChoices.Add(new("auto", _llama.Devices.Count > 0 ? "自動（GPUを優先）" : "自動（CPU）"));
             ComputeChoices.Add(new("cpu", "CPU"));
@@ -244,6 +245,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
             Error = _store.RecoveryNotice ?? _mediaRecoveryNotice ?? "";
         }
         catch (Exception ex) { _lastError = ex; SetError(DiagnosticsService.Explain(ex), InitializeAsync); Status = "準備できませんでした。再試行できます"; }
+        _store.Trace.Write("info", "app", "initialized", "ready=" + _ready + "; models=" + Models.Count);
         Notify(nameof(IsReady)); RefreshCommands();
     }
     private void LoadState(AppState state)
@@ -253,7 +255,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         state = WorkspaceService.Upgrade(state);
         foreach (Conversation old in Conversations) { old.PropertyChanged -= ConversationChanged; }
         Inferences.Items.Clear(); ReleaseIdleEngines();
-        Conversations.Clear(); _selectedConversation = null; _selectedModel = null; _settings = state.Settings; _self = state.Self ?? new(); Notify(nameof(Self));
+        Conversations.Clear(); _selectedConversation = null; _selectedModel = null; _settings = state.Settings; _store.Trace.Configure(_settings.Logs ?? new()); _self = state.Self ?? new(); Notify(nameof(Self));
         Agents.Clear(); foreach (AgentAccount agent in state.Agents ?? []) { Agents.Add(agent); }
         AgentMemories.Clear(); foreach (AgentMemory memory in state.AgentMemories ?? []) { AgentMemories.Add(memory); }
         Skills.Clear(); foreach (SkillRegistration skill in state.Skills ?? []) { Skills.Add(skill); }
@@ -315,12 +317,12 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         AppStore.Validate(CaptureState() with { Settings = settings, CommonMemories = commonMemories?.ToList() ?? _commonMemories });
         if (settings.Compute != _settings.Compute || settings.ContextSize != _settings.ContextSize) { if (!_isBusy) { _llama.Stop(); } ReleaseIdleEngines(); }
         AppSettings previousSettings = _settings; List<MemoryNote> previousMemories = _commonMemories;
-        _settings = settings; Inferences.Limit = settings.MaxConcurrentInferences; Downloads.Limit = settings.MaxConcurrentDownloads; PumpMedia();
+        _settings = settings; _store.Trace.Configure(settings.Logs ?? new()); Inferences.Limit = settings.MaxConcurrentInferences; Downloads.Limit = settings.MaxConcurrentDownloads; PumpMedia();
         while (_idleEngines.Count > 0 && _idleEngines.Count + _busyEngines.Count > Inferences.Limit) { _idleEngines.Pop().Dispose(); }
         if (commonMemories is not null) { _commonMemories = [.. commonMemories]; }
         RoomProfile? previousRoom = SelectedConversation?.Room; RememberRoomMode();
         try { await _store.SaveAsync(CaptureState()); }
-        catch { _settings = previousSettings; _commonMemories = previousMemories; if (SelectedConversation is not null) { SelectedConversation.Room = previousRoom; } Inferences.Limit = previousSettings.MaxConcurrentInferences; Downloads.Limit = previousSettings.MaxConcurrentDownloads; throw; }
+        catch { _settings = previousSettings; _store.Trace.Configure(previousSettings.Logs ?? new()); _commonMemories = previousMemories; if (SelectedConversation is not null) { SelectedConversation.Room = previousRoom; } Inferences.Limit = previousSettings.MaxConcurrentInferences; Downloads.Limit = previousSettings.MaxConcurrentDownloads; throw; }
         Notify(nameof(SelectedMode)); Notify(nameof(SelectedWorkMode)); NotifyAppearance(); NotifyProjectScope();
     }
     public void ToggleSidebar() { _settings = _settings with { SidebarVisible = !_settings.SidebarVisible }; NotifyAppearance(); _ = PersistSafelyAsync(); }
@@ -568,7 +570,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
             await engine.EnsureModelAsync(model, job.Request.Settings with { ContextSize = workContext }, message => job.Detail = message, token);
         }
         async Task<int> Count(WorkPrompt prompt, CancellationToken token)
-        { await EnsureWorkModel(prompt, token); KnowledgeContext personal = await PromptKnowledgeAsync(prompt); return await engine.CountInputTokensAsync(personal.Prepend([new("user", prompt.User)]), personal.Instruction + "\n今回の調査工程:\n" + prompt.System, token); }
+        { using var trace = DiagnosticScope.Start(_store.Trace, job.Request.Id, conversation.Id, prompt.AgentId ?? job.Request.Agent?.Id); await EnsureWorkModel(prompt, token); KnowledgeContext personal = await PromptKnowledgeAsync(prompt); return await engine.CountInputTokensAsync(personal.Prepend([new("user", prompt.User)]), personal.Instruction + "\n今回の調査工程:\n" + prompt.System, token); }
         async Task<WorkReply> Generate(WorkPrompt prompt, Action<string>? output, CancellationToken token)
         {
             await EnsureWorkModel(prompt, token);
@@ -627,7 +629,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         _draftSave?.Cancel(); _draftSave?.Dispose(); _draftSave = new(); CancellationToken token = _draftSave.Token;
         try { await Task.Delay(400, token); await PersistSafelyAsync(); } catch (OperationCanceledException) { }
     }
-    public AppState CaptureState() => new(4, _settings, Conversations.Select(c => c.Save()).ToList(), [.. Projects], [.. _commonMemories], Inferences.Items.Where(j => j.IsPending).Select(j => j.Request).ToList(), [.. Skills], [.. Agents], [.. AgentMemories], Self);
+    public AppState CaptureState() => new(5, _settings, Conversations.Select(c => c.Save()).ToList(), [.. Projects], [.. _commonMemories], Inferences.Items.Where(j => j.IsPending).Select(j => j.Request).ToList(), [.. Skills], [.. Agents], [.. AgentMemories], Self);
     private TaskCompletionSource? _pendingPersistence;
     private bool _persisting;
     public Task PersistSafelyAsync()
@@ -740,6 +742,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         if (_generationTask is not null) { try { await _generationTask; } catch (Exception ex) { _lastError = ex; } }
         await Downloads.ShutdownAsync();
         await PersistSafelyAsync(); ReleaseIdleEngines(); _llama.Stop();
+        _store.Trace.Write("info", "app", "shutdown"); await _store.Trace.FlushAsync();
     }
     public void Dispose()
     {

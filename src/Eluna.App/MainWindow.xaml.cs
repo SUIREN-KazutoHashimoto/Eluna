@@ -30,6 +30,7 @@ public partial class MainWindow : Window
     public MainWindow(AppStore store, DownloadQueue? downloads = null)
     {
         InitializeComponent(); _store = store; _readingPositions = new(store.Root); _viewModel = new(store, downloads); DataContext = _viewModel;
+        Updates = new(store, _viewModel) { ApplyRequested = RequestUpdateAsync };
         InitializeMentions();
         InitializeNavigation();
         InitializeMessageExperience();
@@ -41,6 +42,7 @@ public partial class MainWindow : Window
         RootLayout.SizeChanged += (_, _) => { UpdateComposerHeight(); UpdateShellLayout(); };
         HeaderArea.SizeChanged += (_, _) => UpdateComposerHeight();
         ErrorBanner.SizeChanged += (_, _) => UpdateComposerHeight();
+        UiDiagnostics.Attach(this, store.Trace);
         _viewModel.ScrollRequested += FollowOutput;
         _viewModel.OperationRequested += OpenOperation;
         _viewModel.MessageRequested += JumpToMessage;
@@ -384,6 +386,7 @@ public partial class MainWindow : Window
         if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) { return; }
         _messagesScroll ??= FindChild<ScrollViewer>(MessagesList);
         if (_messagesScroll is null || _messagesScroll.ScrollableHeight <= 0) { return; }
+        _viewModel.Trace.Write("debug", "ui", "messages.scroll", "delta=" + e.Delta);
         _followOutput = false;
         double unit = SystemParameters.WheelScrollLines < 0 ? _messagesScroll.ViewportHeight : SystemParameters.WheelScrollLines * _viewModel.ChatLineHeight;
         _messagesScroll.ScrollToVerticalOffset(_messagesScroll.VerticalOffset - e.Delta / 120.0 * unit);
@@ -467,7 +470,8 @@ public partial class MainWindow : Window
                 return;
             }
         }
-        _shutdownStarted = true; IsEnabled = false;
+        if (_updatePlan is not null) { if (!_viewModel.CanApplyUpdate) { _updatePlan = null; return; } _viewModel.FreezeForUpdate(); }
+        Updates.Dispose(); _shutdownStarted = true; IsEnabled = false;
         _readingSave.Stop(); RememberReadingPosition(); await _readingPositions.SaveAsync();
         await _viewModel.ShutdownAsync(); await WindowPlacement.SaveAsync(this, _store.Root); _viewModel.Dispose();
         if (_restoreBackup is { } restore)
@@ -486,6 +490,7 @@ public partial class MainWindow : Window
                 else { MessageBox.Show(this, "再起動できませんでした。Eluna.exeをもう一度起動してください。\n" + ex.Message, "再起動", MessageBoxButton.OK, MessageBoxImage.Error); }
             }
         }
+        if (_updatePlan is not null) { try { UpdateWorker.Launch(_updatePlan); } catch (Exception error) { MessageBox.Show(this, "更新を開始できませんでした。現在の版はそのまま使えます。\n" + error.Message, "Elunaの更新"); } }
         _closing = true; Close();
     }
 }

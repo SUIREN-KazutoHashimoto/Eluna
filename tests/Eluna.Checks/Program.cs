@@ -29,6 +29,7 @@ internal static class Program
             await WorkspaceChecks.RunAsync(Path.Combine(root, "workspace-" + Guid.NewGuid().ToString("N")));
             await AgentFeaturesChecks.RunAsync(Path.Combine(root, "agents-" + Guid.NewGuid().ToString("N")));
             await SocialChatChecks.RunAsync(Path.Combine(root, "social-" + Guid.NewGuid().ToString("N")));
+            await DiagnosticsChecks.RunAsync(Path.Combine(root, "diagnostics-" + Guid.NewGuid().ToString("N")));
             await SocialAutonomyChecks.RunAsync(Path.Combine(root, "social-autonomy-" + Guid.NewGuid().ToString("N")));
             await ExperienceChecks.RunAsync(Path.Combine(root, "experience-" + Guid.NewGuid().ToString("N")));
             await MessageExperienceChecks.RunAsync(Path.Combine(root, "messages-" + Guid.NewGuid().ToString("N")));
@@ -48,6 +49,7 @@ internal static class Program
             CheckWebParsers();
             await SearchRoutingChecks.RunAsync();
             await MediaChecks.RunAsync(Path.Combine(root, "media-" + Guid.NewGuid().ToString("N")));
+            await UpdateChecks.RunAsync(Path.Combine(root, "updates-" + Guid.NewGuid().ToString("N")));
             CheckUpdates();
             await CheckUpdateNetworkStatesAsync();
             await CheckWorkflowsAsync(Path.Combine(root, "workflows-" + Guid.NewGuid().ToString("N")));

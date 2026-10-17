@@ -68,6 +68,7 @@ public sealed partial class ChatViewModel
             _voiceAudio.Recognized += text => Application.Current.Dispatcher.BeginInvoke(() =>
             {
                 if (epoch != _voiceEpoch || !VoiceValid || _voiceMuted) { return; }
+                _store.Trace.Write("debug", "voice", "recognized", "characters=" + text.Length, room: _voiceRoom?.Id); _store.Trace.Content("voice", "transcript", text, room: _voiceRoom?.Id);
                 _voiceHeard = text; NotifyVoice();
                 if (_voiceInputs.Count >= 4) { _voiceNotice = "音声の送信待ちが多いため、自動送信を止めました。認識結果を確認してテキストで送信してください。"; _ = ToggleMicrophoneAsync(); return; }
                 _voiceInputs.Enqueue((text, epoch)); _ = SendVoiceInputsAsync();
@@ -75,6 +76,7 @@ public sealed partial class ChatViewModel
             _voiceAudio.SpeakingChanged += speaking => Application.Current.Dispatcher.BeginInvoke(() =>
             { if (epoch != _voiceEpoch) { return; } _voiceSpeaking = speaking; NotifyVoice(); });
             _voiceAudio.Failed += detail => Application.Current.Dispatcher.BeginInvoke(() => { if (epoch == _voiceEpoch) { _voiceNotice = "音声の処理を停止しました: " + detail; NotifyVoice(); } });
+            _store.Trace.Write("info", "voice", "joined", room: room.Id);
             _voiceNotice = "音声はこのPCのWindows機能で処理します。マイクをオンにすると、認識した発言をこのチャンネルへ送信します。"; NotifyVoice();
         }
         finally { _voiceJoining = false; NotifyVoice(); }
@@ -82,7 +84,7 @@ public sealed partial class ChatViewModel
     public async Task ToggleMicrophoneAsync()
     {
         if (_voiceBusy || _voiceAudio is null || !VoiceValid) { return; }
-        _voiceBusy = true; long epoch = _voiceEpoch; WindowsVoiceAudio audio = _voiceAudio; NotifyVoice();
+        _voiceBusy = true; long epoch = _voiceEpoch; WindowsVoiceAudio audio = _voiceAudio; _store.Trace.Write("debug", "voice", "microphone.toggle", room: _voiceRoom?.Id); NotifyVoice();
         try
         {
             if (!_voiceMuted) { _voiceMuted = true; _voiceInputs.Clear(); await audio.MuteAsync(); }
@@ -154,6 +156,7 @@ public sealed partial class ChatViewModel
                 string plain = Regex.Replace(output.Message.Content, @"```[\s\S]*?```|https?://\S+", " "); plain = Regex.Replace(plain, @"[#*_`>\[\]]", "").Trim();
                 if (plain.Length == 0) { continue; }
                 if (plain.Length > 6000) { plain = plain[..6000] + "。続きはテキストを確認してください。"; }
+                _store.Trace.Write("debug", "voice", "speech.started", "characters=" + plain.Length, output.Message.DiagnosticsId, _voiceRoom?.Id, account?.Id);
                 await audio.SpeakAsync(plain, account?.VoiceId, account?.SpeechRate ?? 0);
                 // Speech completion is signalled on the STA, then marshalled to this dispatcher.
                 await Task.Yield(); while (output.Epoch == _voiceEpoch && _voiceSpeaking) { await Task.Delay(100); }
@@ -165,6 +168,7 @@ public sealed partial class ChatViewModel
     public async Task LeaveVoiceAsync()
     {
         ++_voiceEpoch; StopSharing(); _voiceParticipants.Clear(); _speakingAgent = null; _voiceRoom = null; _voiceInputs.Clear(); _voiceOutputs.Clear();
+        _store.Trace.Write("info", "voice", "left", room: _voiceRoom?.Id);
         WindowsVoiceAudio? audio = _voiceAudio; _voiceAudio = null; _voiceMuted = true; _voiceBusy = _voiceSpeaking = false; _voiceHeard = ""; NotifyVoice();
         if (audio is not null) { try { await audio.DisposeAsync(); } catch (Exception ex) { _voiceNotice = "音声を終了しました: " + ex.Message; } }
         try { await _shareTask; } catch (OperationCanceledException) { }

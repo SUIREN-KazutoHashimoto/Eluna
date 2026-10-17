@@ -49,10 +49,11 @@ public sealed partial class ChatViewModel
         { if (job.State == "queued") { job.State = _shuttingDown && job.Request is not null ? "paused" : "canceled"; job.Detail = "停止しました"; job.Completion.TrySetCanceled(); PumpMedia(); } }));
         try { await job.Finished; } catch (Exception) { }
     }
-    internal async Task<MediaJob> EnqueueMediaAsync(string title, MediaRequest request)
+    internal async Task<MediaJob> EnqueueMediaAsync(string title, MediaRequest request, Guid? id = null)
     {
         if (request.ConversationId is null && Conversations.FirstOrDefault(c => c.Id == (request.Context?.Conversation.Id ?? SelectedConversation?.Id) && c.ProjectId == request.ProjectId) is { } source)
         { request = request with { ConversationId = source.Id, BranchId = request.Context?.Conversation.ActiveBranchId ?? source.ActiveBranch.Id, Agent = Agents.FirstOrDefault(a => a.Id == (request.Context?.AgentId ?? _recipient ?? source.Room?.DefaultAgentId)) }; }
+        request = request with { ParentOperation = request.ParentOperation ?? DiagnosticScope.Current?.Correlation };
         CheckMediaCapacity(); ValidateMediaRequest(request);
         if (request.Context is { FrozenInstruction: null } context)
         {
@@ -72,13 +73,13 @@ public sealed partial class ChatViewModel
                 }
             };
         }
-        CheckMediaCapacity(); ValidateMediaRequest(request); var job = new MediaJob(title, request); AddMediaJob(job);
+        CheckMediaCapacity(); ValidateMediaRequest(request); var job = new MediaJob(title, request) { Id = id ?? Guid.NewGuid() }; AddMediaJob(job);
         try { await SaveMediaJobsAsync(true); job.IsCommitted = true; PumpMedia(); return job; }
         catch { job.State = "failed"; job.Completion.TrySetException(new IOException("予約を保存できませんでした。")); throw; }
     }
     private void SyncMediaMessage(MediaJob job)
     {
-        if (job.Request is not { ConversationId: Guid roomId } request) { return; }
+        if (job.Request is not { ConversationId: Guid roomId } request || request.Kind == "image" && !request.ArtistGenerated) { return; }
         Conversation? room = Conversations.FirstOrDefault(c => c.Id == roomId && c.ProjectId == request.ProjectId); if (room is null) { return; }
         ConversationBranch? branch = room.Branches.FirstOrDefault(b => b.Id == request.BranchId); if (branch is null) { return; }
         Guid id = WorkspaceService.StableId(job.Id, "media-message"); ChatMessage? message = branch.Messages.FirstOrDefault(m => m.Id == id);
@@ -87,6 +88,7 @@ public sealed partial class ChatViewModel
             message = new()
             {
                 Id = id,
+                DiagnosticsId = job.Id,
                 Role = "assistant",
                 Pending = true,
                 Identity = new(request.Agent?.Id, request.Agent?.Name ?? "生成", request.Agent?.Icon ?? "◇",
@@ -130,15 +132,18 @@ public sealed partial class ChatViewModel
     }
     private async Task RunQueuedMediaAsync(MediaJob job)
     {
+        using var diagnostic = DiagnosticScope.Start(_store.Trace, job.Id, job.Request?.ConversationId, job.Request?.Agent?.Id);
+        DiagnosticScope.Current!.Write("info", "media", "started", "kind=" + job.Request?.Kind + "; parent=" + job.Request?.ParentOperation);
         await Task.Yield(); using LlamaService engine = _llama.CreateWorker(); _mediaEngines[job] = engine; _mediaContext.Value = (job, engine);
         try
         {
             if (job.Operation is not null) { await job.Operation(job.Cancellation.Token); }
             else { await ExecuteSavedMediaAsync(job, job.Cancellation.Token); }
+            DiagnosticScope.Current!.Write("info", "media", "completed");
             job.State = "complete"; job.Detail = "完了 · " + job.Request?.OutputPath; job.Completion.TrySetResult();
         }
         catch (OperationCanceledException) { job.State = _shuttingDown && job.Request is not null ? "paused" : "canceled"; job.Detail = job.State == "paused" ? "再開待ち · 保存した依頼を最初から実行できます" : "停止しました"; job.Completion.TrySetCanceled(); }
-        catch (Exception ex) { job.State = "failed"; job.Detail = DiagnosticsService.Explain(ex); job.Completion.TrySetException(ex); }
+        catch (Exception ex) { DiagnosticScope.Current!.Failure("media", "failed", ex); job.State = "failed"; job.Detail = DiagnosticsService.Explain(ex); job.Completion.TrySetException(ex); }
         finally
         {
             engine.Stop(); _mediaEngines.Remove(job); _mediaContext.Value = null; _mediaWorkers.Remove(job);

@@ -117,7 +117,13 @@ public sealed class WebSearchService : IDisposable
         throw new HttpRequestException("ページの転送が多すぎます。");
     }
 
-    public Task<WebSearchResult> SearchAsync(string query, int limit, CancellationToken token) => Task.Run(() => SearchCoreAsync(query, limit, token), token);
+    public Task<WebSearchResult> SearchAsync(string query, int limit, CancellationToken token) => Task.Run(async () =>
+    {
+        TraceOperation? trace = DiagnosticScope.Current; trace?.Write("debug", "web", "search.started", "queryCharacters=" + query.Length + "; limit=" + limit); trace?.Content("web", "query", query);
+        try { WebSearchResult result = await SearchCoreAsync(query, limit, token); trace?.Write("info", "web", "search.completed", "results=" + result.Results.Count + "; warnings=" + result.Warnings.Count); foreach (string warning in result.Warnings) { trace?.Write("warning", "web", "provider.warning", warning); } if (trace?.Trace.CapturesContents == true) { trace.Content("web", "results", JsonSerializer.Serialize(result)); } return result; }
+        catch (OperationCanceledException) { trace?.Write("info", "web", "search.canceled"); throw; }
+        catch (Exception ex) { trace?.Failure("web", "search.failed", ex); throw; }
+    }, token);
     private async Task<WebSearchResult> SearchCoreAsync(string query, int limit, CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(query)) { return new(query, [], []); }
@@ -131,6 +137,7 @@ public sealed class WebSearchService : IDisposable
             catch (OperationCanceledException) when (!token.IsCancellationRequested) { return ([], name + ": タイムアウトしました"); }
             catch (Exception ex) when (ex is HttpRequestException or InvalidDataException or JsonException or XmlException or RegexMatchTimeoutException)
             {
+                DiagnosticScope.Current?.Failure("web", "provider." + name + ".failed", ex);
                 string detail = ex switch { InvalidDataException => ex.Message, HttpRequestException { StatusCode: HttpStatusCode.TooManyRequests } => "検索先の取得制限", HttpRequestException => "通信に失敗しました", _ => "検索結果を読み取れませんでした" };
                 return ([], name + ": " + detail);
             }
@@ -226,7 +233,13 @@ public sealed class WebSearchService : IDisposable
         return builder.Uri.AbsoluteUri.TrimEnd('/');
     }
 
-    public Task<WebDocument> FetchAsync(WebResult result, CancellationToken token) => Task.Run(() => FetchCoreAsync(result, token), token);
+    public Task<WebDocument> FetchAsync(WebResult result, CancellationToken token) => Task.Run(async () =>
+    {
+        TraceOperation? trace = DiagnosticScope.Current; trace?.Write("debug", "web", "fetch.started", Uri.TryCreate(result.Url, UriKind.Absolute, out Uri? address) ? address.GetLeftPart(UriPartial.Path) : "invalid URL");
+        try { WebDocument page = await FetchCoreAsync(result, token); trace?.Write("info", "web", "fetch.completed", "characters=" + page.Text.Length); trace?.Content("web", "page", page.Text); return page; }
+        catch (OperationCanceledException) { trace?.Write("info", "web", "fetch.canceled"); throw; }
+        catch (Exception ex) { trace?.Failure("web", "fetch.failed", ex); throw; }
+    }, token);
     private async Task<WebDocument> FetchCoreAsync(WebResult result, CancellationToken token)
     {
         string key = Canonical(PublicUri(result.Url));

@@ -13,6 +13,9 @@ public static class DiffusionService
     {
         if (!File.Exists(options.ModelPath) || options.Prompt.Length is 0 or > 4000 || options.Negative.Length > 2000 || options.Width is < 256 or > 1024 || options.Height is < 256 or > 1024 || options.Width % 64 != 0 || options.Height % 64 != 0 || options.Steps is < 1 or > 50 || !double.IsFinite(options.Guidance) || options.Guidance is < 0 or > 20)
         { throw new InvalidDataException("モデル、プロンプト、解像度（256〜1024・64単位）、ステップ（1〜50）を確認してください。"); }
+        TraceOperation? trace = DiagnosticScope.Current;
+        trace?.Write("info", "image", "render.started", $"width={options.Width}; height={options.Height}; steps={options.Steps}; compute={options.Compute}");
+        trace?.Content("image", "prompt", options.Prompt); trace?.Content("image", "negative", options.Negative);
         string root = await NativeRuntime.PrepareAsync(store);
         bool gpu = options.Compute != "cpu" && File.Exists(Path.Combine(Environment.SystemDirectory, "vulkan-1.dll"));
         string backend = gpu ? "vulkan" : "cpu";
@@ -30,10 +33,12 @@ public static class DiffusionService
         using var process = Process.Start(start) ?? throw new IOException("画像生成エンジンを起動できませんでした。");
         using var job = new WindowsJob(process);
         var tail = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var transcript = new System.Collections.Concurrent.ConcurrentQueue<string>();
         async Task Read(StreamReader reader)
         {
             while (await reader.ReadLineAsync(token) is string line)
             {
+                trace?.Write("debug", "native.diffusion", "output", "characters=" + line.Length); if (trace?.Trace.CapturesContents == true && transcript.Count < 1000) { transcript.Enqueue(line); }
                 tail.Enqueue(line); while (tail.Count > 8) { tail.TryDequeue(out _); }
                 Match step = Regex.Match(line, @"(\d+)\s*/\s*(\d+)");
                 string message = step.Success ? "画像を生成しています… " + step.Value : "画像モデルの読み込み・生成を実行しています…";
@@ -43,7 +48,9 @@ public static class DiffusionService
         Task logs = Task.WhenAll(Read(process.StandardOutput), Read(process.StandardError));
         try { await process.WaitForExitAsync(token); await logs; }
         catch { if (!process.HasExited) { process.Kill(true); } try { await logs; } catch (OperationCanceledException) { } if (File.Exists(output)) { File.Delete(output); } throw; }
+        trace?.Content("native.diffusion", "transcript", string.Join("\n", transcript));
         if (process.ExitCode != 0 || !File.Exists(output)) { throw new InvalidOperationException("画像生成に失敗しました。モデルの対応形式・メモリを確認し、CPUも試してください。\n" + string.Join('\n', tail.TakeLast(3))); }
+        trace?.Write("info", "image", "render.completed", "bytes=" + new FileInfo(output).Length);
         progress("画像を生成しました");
     }
 }

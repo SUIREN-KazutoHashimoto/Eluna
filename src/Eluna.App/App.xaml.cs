@@ -15,6 +15,22 @@ public partial class App : Application
         base.OnStartup(e);
         try
         {
+            int updateFixture = Array.IndexOf(e.Args, "--update-exit-fixture"); if (updateFixture >= 0 && updateFixture + 1 < e.Args.Length) { ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = UpdateVerification.RunExitFixtureAsync(e.Args[updateFixture + 1]); return; }
+            int applyUpdate = Array.IndexOf(e.Args, "--apply-update");
+            if (applyUpdate >= 0 && applyUpdate + 1 < e.Args.Length)
+            { ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = Task.Run(async () => { int code = await UpdateWorker.RunAsync(e.Args[applyUpdate + 1]); await Dispatcher.InvokeAsync(() => Shutdown(code)); }); return; }
+            int removeInstall = Array.IndexOf(e.Args, "--remove-install");
+            if (removeInstall >= 0 && removeInstall + 3 < e.Args.Length && Guid.TryParseExact(e.Args[removeInstall + 2], "N", out Guid installId) && int.TryParse(e.Args[removeInstall + 3], out int setupPid))
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                _ = Task.Run(async () =>
+                {
+                    try { try { using var setup = System.Diagnostics.Process.GetProcessById(setupPid); using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(1)); await setup.WaitForExitAsync(deadline.Token); } catch (ArgumentException) { } InstallerService.RemoveOwnedFiles(e.Args[removeInstall + 1], installId, true); await Dispatcher.InvokeAsync(() => { MessageBox.Show("Elunaをアンインストールしました。会話とモデルは保存先に残しています。", "Eluna"); Shutdown(); }); }
+                    catch (Exception error) { await Dispatcher.InvokeAsync(() => { MessageBox.Show("削除を完了できませんでした。起動中のElunaを終了して再試行してください。\n" + error.Message, "Eluna"); Shutdown(1); }); }
+                }); return;
+            }
+            if (e.Args.Contains("--install") || e.Args.Contains("--uninstall") || string.Equals(Path.GetFileNameWithoutExtension(Environment.ProcessPath), "Eluna-Setup", StringComparison.OrdinalIgnoreCase))
+            { MainWindow = new InstallerWindow(e.Args.Contains("--uninstall")); MainWindow.Show(); return; }
             if (e.Args.Contains("--computer-worker"))
             {
                 ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -57,6 +73,20 @@ public partial class App : Application
             {
                 if (root is null) { throw new InvalidOperationException("操作・表示の検証には専用の --data-dir が必要です。"); }
                 ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = ExperienceVerification.RunAsync(store, e.Args[experienceIndex + 1]); return;
+            }
+            int finalSocial = Array.IndexOf(e.Args, "--verify-social-final"); int finalModel = Array.IndexOf(e.Args, "--model-meta"); if (finalSocial >= 0 && finalSocial + 1 < e.Args.Length) { if (root is null || finalModel < 0 || finalModel + 1 >= e.Args.Length) { throw new InvalidOperationException("総合検証には専用の保存先とモデルが必要です。"); } ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = SocialFinalVerification.RunAsync(store, Path.GetFullPath(e.Args[finalSocial + 1]), e.Args[finalModel + 1]); return; }
+            int updatesIndex = Array.IndexOf(e.Args, "--verify-updates"); if (updatesIndex >= 0 && updatesIndex + 1 < e.Args.Length) { if (root is null) { throw new InvalidOperationException("更新の検証には専用の --data-dir が必要です。"); } ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = UpdateVerification.RunAsync(store, Path.GetFullPath(e.Args[updatesIndex + 1])); return; }
+            int emojiIndex = Array.IndexOf(e.Args, "--verify-emoji");
+            if (emojiIndex >= 0 && emojiIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("絵文字の検証には専用の --data-dir が必要です。"); }
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = EmojiVerification.RunAsync(store, e.Args[emojiIndex + 1]); return;
+            }
+            int diagnosticsIndex = Array.IndexOf(e.Args, "--verify-diagnostics");
+            if (diagnosticsIndex >= 0 && diagnosticsIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("診断画面の検証には専用の --data-dir が必要です。"); }
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = DiagnosticsVerification.RunAsync(store, e.Args[diagnosticsIndex + 1]); return;
             }
             int autonomyIndex = Array.IndexOf(e.Args, "--verify-autonomy");
             if (autonomyIndex >= 0 && autonomyIndex + 1 < e.Args.Length)
@@ -192,6 +222,8 @@ public partial class App : Application
                 window.Top = -20000;
             }
             window.Show();
+            if (e.Args.Contains("--updated-background")) { window.WindowState = WindowState.Minimized; }
+            int healthIndex = Array.IndexOf(e.Args, "--update-health"); if (healthIndex >= 0 && healthIndex + 1 < e.Args.Length) { _ = UpdateWorker.ConfirmHealthAsync(window, store.Root, e.Args[healthIndex + 1]); }
             if (captureDirectory is not null)
             {
                 int remaining = Array.IndexOf(e.Args, "--verify-remaining");

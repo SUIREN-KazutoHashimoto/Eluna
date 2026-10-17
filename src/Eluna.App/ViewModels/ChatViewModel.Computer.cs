@@ -103,16 +103,27 @@ public sealed partial class ChatViewModel
     {
         if (answer.Identity?.AgentId is Guid actor && !ChannelAccess.CanSpeak(CaptureState(), source.Save(), actor)) { session.Stage = "stopped"; session.Detail = "チャンネルの閲覧・発言権限がありません。"; return; }
         if (session.SharedTarget is not null && (!CanUseVoiceShare(source) || _sharedTarget != session.SharedTarget)) { session.Stage = "stopped"; session.Detail = "画面共有または操作許可が終了しました。共有し直して新しく依頼してください。"; return; }
+        answer.DiagnosticsId ??= Guid.NewGuid();
+        using var diagnostic = DiagnosticScope.Start(_store.Trace, answer.DiagnosticsId.Value, source.Id, answer.Identity?.AgentId);
+        TraceOperation trace = DiagnosticScope.Current!; trace.Write("info", "computer", "started");
+        int tracedSteps = 0; string tracedStage = "";
         Guid? scope = session.ProjectId;
         var activity = new ComputerActivity(source.Title, () => session.Invoke("stop"), () => { OpenAnswer(answer); System.Windows.Application.Current.MainWindow?.Activate(); });
         ComputerActivities.Add(activity); answer.Content = ""; answer.Notice = "";
         void Changed()
         {
+            if (tracedStage != session.Stage) { trace.Write("debug", "computer", "state", session.Stage); tracedStage = session.Stage; }
+            foreach (ComputerStep step in session.Steps.Skip(tracedSteps))
+            {
+                trace.Write("debug", "computer", "action", "number=" + step.Number + "; type=" + step.Action.Type + "; x=" + step.Action.X + "; y=" + step.Action.Y + "; element=" + step.Action.Element);
+                trace.Content("computer", "action.result", System.Text.Json.JsonSerializer.Serialize(new { action = step.Action.Sensitive ? step.Action with { Text = "[sensitive input omitted]" } : step.Action, step.Result }));
+            }
+            tracedSteps = session.Steps.Count;
             activity.State = session.Stage switch { "running" => "active", "queued" => "queued", "complete" => "complete", "stopped" => "canceled", "failed" or "limit" => "failed", _ => "paused" };
             activity.Detail = session.Label + " · " + session.Detail; source.Activity = session.Pending ? session.Label : "";
             Notify(nameof(ProcessSummary)); Notify(nameof(Status)); Notify(nameof(Metrics)); RefreshCommands();
             if (SelectedConversation == source && SelectedBranch == branch) { ScrollRequested?.Invoke(false); }
-            if (!session.Pending) { answer.Content = session.Detail; }
+            if (!session.Pending) { trace.Write(session.Stage == "failed" ? "error" : "info", "computer", "ended", session.Detail); answer.Content = session.Stage == "complete" ? session.Detail : session.Stage == "failed" ? "画面の操作を続けられませんでした。操作履歴を確認し、必要なら再開してください。" : "画面の操作を停止しました。操作履歴から状況を確認できます。"; }
             if (_ready && !_shuttingDown) { ScheduleSave(); }
         }
         var controller = new ComputerChatController(session, () => _llama.CreateWorker(), model, EffectiveSettings with { ContextSize = model.Options.ContextSize ?? _settings.ContextSize },

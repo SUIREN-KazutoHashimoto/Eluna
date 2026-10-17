@@ -61,6 +61,7 @@ public sealed partial class ChatViewModel
                             Id = id,
                             Role = turn.Kind == "user" ? "user" : "assistant",
                             IsProjection = true,
+                            DiagnosticsId = message.DiagnosticsId,
                             Identity = new(turn.AgentId, turn.Name ?? turn.Role, turn.Icon, turn.ModelId,
                                 turn.ModelName ?? (turn.ModelId is null ? null : Models.FirstOrDefault(m => m.Id == turn.ModelId)?.DisplayName ?? turn.ModelId),
                                 turn.Time, turn.ReplyTo, work.Id, work.Options.DebateStyle == "rounds" ? "ラウンド " + turn.Round : turn.Kind switch { "question" => "質問", "rebuttal" => "反論", "supplement" => "補足", "hold" => "保留", "search" => "追加調査", "user" => null, _ => "発言" })

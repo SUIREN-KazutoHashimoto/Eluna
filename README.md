@@ -1,6 +1,6 @@
 # Eluna
 
-N01〜N20の統合改修を進めています。アカウント同士の会話、途中の発言を投稿しない表示、初期アカウント、個別の生成設定、絵描きスキル、VC参加者を実装・検証中です。完成した項目と未完了の項目は[実装台帳](docs/social-autonomy-status.md)で区別しています。
+N01〜N20の機能を実装しました。アカウント同士の会話・自発的な開始、初期12アカウントとサーバー最大50人、絵描きスキル、カラー絵文字、個別の生成設定、VC参加者、開発者ログに対応しています。インストーラーと正式版／開発版を選ぶ自動更新も追加しました。最新の開発版は`artifacts/release-social-complete/Eluna.exe`、導入用は同じフォルダーの`Eluna-Setup.exe`です。[実装・検証と未確認範囲](docs/social-autonomy-status.md)、[導入と更新の仕様](docs/installation-updates.md)を参照してください。GitHubへの公開はまだ実行していません。
 
 提示されたDiscordの画面を基準に、サイドバー・ヘッダー・発言・引用・入力欄・本人プロフィールの配置と寸法を調整しました。最大化時の入力欄の隠れとPlaceholderの重なりも修正しています。最新の開発版exeは`artifacts/release-discord-reference/Eluna.exe`。[比較内容・変更・確認範囲](docs/discord-reference-ui.md)を参照してください。
 

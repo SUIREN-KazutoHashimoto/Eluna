@@ -43,6 +43,7 @@ public partial class SettingsWindow : Window
         ChannelInstructionBox.Text = _room?.CustomInstruction ?? ""; ChannelScopeText.Text = (_room?.NavigationLabel ?? "会話未選択") + "\n" + viewModel.ProjectScopeHint;
         BranchSelector.ItemsSource = _room?.Branches; BranchSelector.SelectedItem = viewModel.SelectedBranch;
         ProcessContent.Content = new Eluna.App.Controls.ProcessListPanel(viewModel); DiscussionPanel.Chat = viewModel; DiscussionPanel.Work = _room?.Messages.LastOrDefault(m => m.Work is not null)?.Work;
+        InitializeDiagnostics();
         if (_room?.Messages.LastOrDefault(m => m.Role == "assistant") is { } last) { ShowMessage(last); }
         _channelBaseline = ChannelSnapshot(); _fieldsReady = true;
         _baseline = Snapshot(); _memoryBaseline = JsonSerializer.Serialize(CommonMemoryEditor.GetNotes());
@@ -56,7 +57,7 @@ public partial class SettingsWindow : Window
         Closed += (_, _) => LicenseView.Dispose();
     }
     private string ChannelSnapshot() => JsonSerializer.Serialize(new { Work = (WorkModeBox.SelectedItem as WorkMode)?.Id, Thinking = (ThinkingBox.SelectedItem as InferenceMode)?.Id, Recipient = (SettingRecipientBox.SelectedItem as AgentChoice)?.Id, ChannelInstructionBox.Text });
-    private string Snapshot() => JsonSerializer.Serialize(new { ComputeBox.SelectedItem, Context = ContextBox.SelectedItem, Concurrency = ConcurrencyBox.SelectedItem, DownloadConcurrency = DownloadConcurrencyBox.SelectedItem, MediaConcurrency = MediaConcurrencyBox.SelectedItem, Font = FontBox.SelectedItem, Line = LineBox.SelectedItem, Theme = ThemeBox.SelectedIndex, UiScale = UiScaleBox.SelectedValue, ControlEnterBox.IsChecked, ComputerUseKeepAwake = ComputerAwakeBox.IsChecked, ReduceMotion = ReduceMotionBox.IsChecked, InstructionBox.Text, Memories = CommonMemoryEditor.GetNotes(), Channel = ChannelSnapshot() });
+    private string Snapshot() => JsonSerializer.Serialize(new { ComputeBox.SelectedItem, Context = ContextBox.SelectedItem, Concurrency = ConcurrencyBox.SelectedItem, DownloadConcurrency = DownloadConcurrencyBox.SelectedItem, MediaConcurrency = MediaConcurrencyBox.SelectedItem, Font = FontBox.SelectedItem, Line = LineBox.SelectedItem, Theme = ThemeBox.SelectedIndex, UiScale = UiScaleBox.SelectedValue, ControlEnterBox.IsChecked, ComputerUseKeepAwake = ComputerAwakeBox.IsChecked, ReduceMotion = ReduceMotionBox.IsChecked, InstructionBox.Text, Memories = CommonMemoryEditor.GetNotes(), Channel = ChannelSnapshot(), Diagnostics = DiagnosticsSnapshot() });
     private void Edited() { bool dirty = Snapshot() != _baseline; SaveStateText.Text = dirty ? "未保存の変更があります" : "保存済み"; Title = dirty ? "設定 · 変更あり · Eluna" : "設定 · Eluna"; }
     private async void Save_Click(object sender, RoutedEventArgs e) => await SaveAsync();
     private async Task<bool> SaveAsync()
@@ -77,6 +78,8 @@ public partial class SettingsWindow : Window
             if (channelChanged && _room is not null) { _room.CustomInstruction = ChannelInstructionBox.Text; }
             await _viewModel.ApplySettingsAsync(_viewModel.Settings with
             {
+                DeveloperMode = _developer.IsChecked == true,
+                Logs = DiagnosticOptions(),
                 Compute = device.Id,
                 ContextSize = context,
                 MaxConcurrentInferences = concurrency,
@@ -93,6 +96,7 @@ public partial class SettingsWindow : Window
                 WorkMode = channelChanged ? (WorkModeBox.SelectedItem as WorkMode)?.Id ?? _viewModel.Settings.WorkMode : _viewModel.Settings.WorkMode,
                 InferenceMode = channelChanged ? (ThinkingBox.SelectedItem as InferenceMode)?.Id ?? _viewModel.Settings.InferenceMode : _viewModel.Settings.InferenceMode
             }, JsonSerializer.Serialize(CommonMemoryEditor.GetNotes()) == _memoryBaseline ? null : CommonMemoryEditor.GetNotes());
+            _allLogs.Show(); _messageLogs.Show(_message);
             _baseline = savedSnapshot; _channelBaseline = savedChannel; _memoryBaseline = savedMemories; Edited(); return true;
         }
         catch (Exception ex) { SaveStateText.Text = "保存できませんでした: " + ex.Message; return false; }
@@ -109,6 +113,6 @@ public partial class SettingsWindow : Window
         try { Process.Start(new ProcessStartInfo(_viewModel.DataDirectory) { UseShellExecute = true }); }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "保存場所を開けませんでした"); }
     }
-    private void Updates_Click(object sender, RoutedEventArgs e) => new UpdateWindow { Owner = Main ?? (Window)this }.Show();
+    private void Updates_Click(object sender, RoutedEventArgs e) => new UpdateWindow(_viewModel) { Owner = Main ?? (Window)this }.Show();
     private void Skills_Click(object sender, RoutedEventArgs e) => new SkillsWindow(_viewModel) { Owner = Main ?? (Window)this }.Show();
 }

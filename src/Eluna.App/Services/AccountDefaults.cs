@@ -66,7 +66,7 @@ internal static class AccountDefaults
         { Title = title, ProjectId = server, Room = new(kind, ids.ToList(), ids.First(), WorkMode: "chat", Social: policy) };
         return state with
         {
-            SchemaVersion = 4,
+            SchemaVersion = 5,
             Settings = state.Settings with { SelectedProjectId = server },
             Agents = cast,
             AgentMemories = [],

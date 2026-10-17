@@ -9,6 +9,7 @@ public sealed class AppStore
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     public static JsonSerializerOptions JsonOptions { get; } = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
     public string Root { get; }
+    internal AppTrace Trace { get; }
     private string? _modelsDirectory;
     public string ModelsDirectory => _modelsDirectory ?? Path.Combine(Root, "Models");
     public SemaphoreSlim ModelsGate { get; } = new(1, 1);
@@ -17,14 +18,16 @@ public sealed class AppStore
     internal bool UsesKnowledgeState => File.Exists(Path.Combine(Root, "state-knowledge.json"));
     internal bool UsesSkillsState => File.Exists(Path.Combine(Root, "state-skills.json"));
     internal bool UsesWorkspaceState => File.Exists(Path.Combine(Root, "state-workspace.json"));
-    private static int Version(string path) => Path.GetFileName(path) switch { "state-workspace.json" => 4, "state-skills.json" => 3, "state-knowledge.json" => 2, _ => 1 };
-    private string StatePath(AppState? state = null) => Path.Combine(Root, UsesWorkspaceState || state?.SchemaVersion >= 4 || state?.Agents is not null ? "state-workspace.json" : UsesSkillsState || state?.SchemaVersion >= 3 || state?.Skills is { Count: > 0 } ? "state-skills.json" : UsesKnowledgeState || state?.SchemaVersion >= 2 || state?.Projects is { Count: > 0 } || state?.CommonMemories is { Count: > 0 } ? "state-knowledge.json" : "state.json");
+    internal bool UsesSocialState => File.Exists(Path.Combine(Root, "state-social.json"));
+    private static int Version(string path) => Path.GetFileName(path) switch { "state-social.json" => 5, "state-workspace.json" => 4, "state-skills.json" => 3, "state-knowledge.json" => 2, _ => 1 };
+    private string StatePath(AppState? state = null) => Path.Combine(Root, UsesSocialState || state?.SchemaVersion >= 5 ? "state-social.json" : UsesWorkspaceState || state?.SchemaVersion >= 4 || state?.Agents is not null ? "state-workspace.json" : UsesSkillsState || state?.SchemaVersion >= 3 || state?.Skills is { Count: > 0 } ? "state-skills.json" : UsesKnowledgeState || state?.SchemaVersion >= 2 || state?.Projects is { Count: > 0 } || state?.CommonMemories is { Count: > 0 } ? "state-knowledge.json" : "state.json");
     private DateTimeOffset _lastBackup;
     public string? RecoveryNotice { get; private set; }
 
     public AppStore(string? root = null)
     {
         Root = root ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Eluna");
+        Trace = new(Root);
         Directory.CreateDirectory(Root);
         // Roll back an interrupted multi-file restore before reading any application state.
         BackupArchive.Recover(Root);
@@ -42,7 +45,7 @@ public sealed class AppStore
     public async Task<AppState> LoadAsync()
     {
         await _writeLock.WaitAsync();
-        try { return await Task.Run(ReadStateAsync); } finally { _writeLock.Release(); }
+        try { Trace.Write("debug", "storage", "load.started"); AppState loaded = await Task.Run(ReadStateAsync); Trace.Write("debug", "storage", "load.completed", "schema=" + loaded.SchemaVersion + "; rooms=" + loaded.Conversations.Count); return loaded; } finally { _writeLock.Release(); }
     }
     private async Task<AppState> ReadStateAsync()
     {
@@ -68,9 +71,9 @@ public sealed class AppStore
             string backup = Path.Combine(Root, $"state.broken-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.json");
             File.Copy(path, backup);
             RecoveryNotice = $"履歴を読み込めませんでした。元のデータは {Path.GetFileName(backup)} に保管しています。";
-            if (Path.GetFileName(path) == "state-workspace.json")
+            if (Path.GetFileName(path) is "state-social.json" or "state-workspace.json")
             {
-                foreach (string previous in new[] { "state-skills.json", "state-knowledge.json", "state.json" })
+                foreach (string previous in new[] { "state-workspace.json", "state-skills.json", "state-knowledge.json", "state.json" })
                 {
                     string old = Path.Combine(Root, previous); if (!File.Exists(old)) { continue; }
                     try
@@ -101,6 +104,7 @@ public sealed class AppStore
             string temporary = path + ".tmp";
             await File.WriteAllBytesAsync(temporary, contents);
             await ReplaceStateAsync(temporary, path);
+            Trace.Write("debug", "storage", "save.completed", "schema=" + stored.SchemaVersion + "; rooms=" + stored.Conversations.Count + "; bytes=" + contents.Length, DiagnosticScope.Current?.Correlation, DiagnosticScope.Current?.Room, DiagnosticScope.Current?.Agent);
         }
         finally
         {
@@ -149,7 +153,7 @@ public sealed class AppStore
             try { ResearchRunner.ValidateOptions(work.Options); return true; } catch (InvalidDataException) { return false; }
         }
         static bool PublicUrl(string? url) => Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) && uri.Scheme is "http" or "https" && uri.UserInfo.Length == 0;
-        if (state.SchemaVersion is not (1 or 2 or 3 or 4) || state.Settings is null || state.Settings.ContextSize is not (2048 or 4096 or 8192 or 16384) || state.Settings.MaxConcurrentInferences is < 1 or > 4 || state.Settings.MaxConcurrentDownloads is < 1 or > 4 || state.Settings.MaxConcurrentMedia is < 1 or > 4 ||
+        if (state.SchemaVersion is not (1 or 2 or 3 or 4 or 5) || state.Settings is null || state.Settings.ContextSize is not (2048 or 4096 or 8192 or 16384) || state.Settings.MaxConcurrentInferences is < 1 or > 4 || state.Settings.MaxConcurrentDownloads is < 1 or > 4 || state.Settings.MaxConcurrentMedia is < 1 or > 4 ||
             !double.IsFinite(state.Settings.UiScale) || state.Settings.UiScale is < 1 or > 1.5 ||
             !double.IsFinite(state.Settings.ChatFontSize) || state.Settings.ChatFontSize is < 10 or > 28 ||
             !double.IsFinite(state.Settings.LineHeight) || state.Settings.LineHeight is < 15 or > 60 ||
@@ -162,6 +166,7 @@ public sealed class AppStore
         {
             throw new InvalidDataException("履歴または設定の形式に対応していません。");
         }
+        AppTrace.Validate(state.Settings.Logs ?? new()); if ((state.Settings.Updates ?? new()).Train is not ("stable" or "develop")) { throw new InvalidDataException("更新トレインを確認してください。"); }
         if (state.Settings.WorkOptions is not null) { ResearchRunner.ValidateOptions(state.Settings.WorkOptions); }
         KnowledgeService.Validate(state.Projects, state.CommonMemories);
         SkillValidation.State(state);
