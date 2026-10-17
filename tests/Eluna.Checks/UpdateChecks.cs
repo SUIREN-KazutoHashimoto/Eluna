@@ -42,6 +42,18 @@ internal static class UpdateChecks
         Check(oldSchema, "Automatic update accepted a pre-social data schema.");
         using var trains = JsonDocument.Parse("[{\"tag_name\":\"v9.0.0\",\"html_url\":\"" + prefix + "tag/v9.0.0\",\"prerelease\":false},{\"tag_name\":\"v1.0.0-develop.12\",\"html_url\":\"" + prefix + "tag/v1.0.0-develop.12\",\"prerelease\":true},{\"tag_name\":\"v1.0.0-develop.2\",\"html_url\":\"" + prefix + "tag/v1.0.0-develop.2\",\"prerelease\":true}]");
         Check(UpdateService.SelectDevelopment(trains.RootElement, "1.0.0-develop.1")?.Tag == "v1.0.0-develop.12", "Release trains mixed stable/previews or sorted numbers lexically.");
+        using var previews = JsonDocument.Parse(JsonSerializer.Serialize(new[] {
+            new { tag_name = "v0.1.0-beta", html_url = prefix + "tag/v0.1.0-beta", prerelease = true, draft = false },
+            new { tag_name = "v0.1.0-beta.2", html_url = prefix + "tag/v0.1.0-beta.2", prerelease = true, draft = false },
+            new { tag_name = "v0.1.0-beta.12", html_url = prefix + "tag/v0.1.0-beta.12", prerelease = true, draft = false },
+            new { tag_name = "v0.1.0-rc.1", html_url = prefix + "tag/v0.1.0-rc.1", prerelease = true, draft = true },
+            new { tag_name = "v0.2.0-nightly.1", html_url = prefix + "tag/v0.2.0-nightly.1", prerelease = true, draft = false },
+            new { tag_name = "v0.2.0", html_url = prefix + "tag/v0.2.0", prerelease = false, draft = false } }));
+        Check(UpdateService.SelectDevelopment(previews.RootElement, "0.1.0-beta")?.Tag == "v0.1.0-beta.12", "Development selection lost beta previews or accepted drafts, nightly or stable releases.");
+        using var beta = JsonDocument.Parse("[" + previews.RootElement[0].GetRawText() + "]");
+        Check(UpdateService.SelectDevelopment(beta.RootElement, "0.1.0-alpha") is { Tag: "v0.1.0-beta", IsNewer: true } && UpdateService.SelectDevelopment(beta.RootElement, "0.1.0-beta")?.IsNewer == false, "The initial beta was not selectable or tried to update to itself.");
+        using var candidate = JsonDocument.Parse("[" + previews.RootElement[3].GetRawText().Replace("\"draft\":true", "\"draft\":false", StringComparison.Ordinal) + "]");
+        Check(UpdateService.SelectDevelopment(candidate.RootElement, "0.1.0-beta") is { Tag: "v0.1.0-rc.1", IsNewer: true }, "A published release candidate was not selectable.");
         bool foreign = false; try { using var doc = JsonDocument.Parse(releaseJson.Replace("/download/v99.0.0/Eluna.exe", "/download/foreign/Eluna.exe", StringComparison.Ordinal)); UpdateService.Parse(doc.RootElement, "1.0.0"); } catch (JsonException) { foreign = true; }
         Check(foreign, "Asset from a different tag was trusted.");
         var legacyStore = new AppStore(Path.Combine(root, "migration")); AppState legacy = new(4, new(), [], Agents: AccountDefaults.Cast()); await legacyStore.SaveAsync(legacy); byte[] before = await File.ReadAllBytesAsync(Path.Combine(legacyStore.Root, "state-workspace.json")); await legacyStore.SaveAsync(WorkspaceService.Upgrade(legacy));

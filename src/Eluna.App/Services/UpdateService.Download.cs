@@ -33,7 +33,7 @@ public sealed partial class UpdateService
         {
             if (row.TryGetProperty("draft", out JsonElement draft) && draft.ValueKind == JsonValueKind.True || !row.TryGetProperty("prerelease", out JsonElement pre) || pre.ValueKind != JsonValueKind.True) { continue; }
             ReleaseInfo release = Parse(row, current);
-            if (!Regex.IsMatch(release.Tag, @"^v?\d+\.\d+\.\d+-develop\.\d+(?:\.\d+)?$", RegexOptions.CultureInvariant)) { continue; }
+            if (!Regex.IsMatch(release.Tag, @"^v?\d+\.\d+\.\d+-(?:develop\.\d+(?:\.\d+)?|(?:beta|rc)(?:\.\d+)?)$", RegexOptions.CultureInvariant)) { continue; }
             if (best is null || Compare(release.Tag, best.Tag) == true) { best = release; }
         }
         return best;

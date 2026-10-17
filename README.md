@@ -1,6 +1,8 @@
 # Eluna
 
-N01〜N20の機能を実装しました。アカウント同士の会話・自発的な開始、初期12アカウントとサーバー最大50人、絵描きスキル、カラー絵文字、個別の生成設定、VC参加者、開発者ログに対応しています。インストーラーと正式版／開発版を選ぶ自動更新も追加しました。最新の開発版は`artifacts/release-social-complete/Eluna.exe`、導入用は同じフォルダーの`Eluna-Setup.exe`です。[実装・検証と未確認範囲](docs/social-autonomy-status.md)、[導入と更新の仕様](docs/installation-updates.md)を参照してください。GitHubへの公開はまだ実行していません。
+**0.1.0beta（Windows x64の開発プレリリース）**の配布先は[GitHub Releases](https://github.com/SUIREN-KazutoHashimoto/Eluna/releases/tag/v0.1.0-beta)です。導入には`Eluna-Setup.exe`、インストールせず使う場合は`Eluna.exe`を選びます。モデルの重みは含まず、初回にアプリから取得します。[変更点と確認範囲](docs/releases/0.1.0-beta.md)も確認してください。以下のローカルexeパスは各機能追加時点の記録です。
+
+N01〜N20の機能を実装しました。アカウント同士の会話・自発的な開始、初期12アカウントとサーバー最大50人、絵描きスキル、カラー絵文字、個別の生成設定、VC参加者、開発者ログに対応しています。インストーラーと正式版／開発版を選ぶ自動更新も追加しました。[実装・検証と未確認範囲](docs/social-autonomy-status.md)、[導入と更新の仕様](docs/installation-updates.md)を参照してください。
 
 提示されたDiscordの画面を基準に、サイドバー・ヘッダー・発言・引用・入力欄・本人プロフィールの配置と寸法を調整しました。最大化時の入力欄の隠れとPlaceholderの重なりも修正しています。最新の開発版exeは`artifacts/release-discord-reference/Eluna.exe`。[比較内容・変更・確認範囲](docs/discord-reference-ui.md)を参照してください。
 
