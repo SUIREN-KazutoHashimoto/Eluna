@@ -1,5 +1,7 @@
 # Eluna
 
+N01〜N20の統合改修を進めています。アカウント同士の会話、途中の発言を投稿しない表示、初期アカウント、個別の生成設定、絵描きスキル、VC参加者を実装・検証中です。完成した項目と未完了の項目は[実装台帳](docs/social-autonomy-status.md)で区別しています。
+
 提示されたDiscordの画面を基準に、サイドバー・ヘッダー・発言・引用・入力欄・本人プロフィールの配置と寸法を調整しました。最大化時の入力欄の隠れとPlaceholderの重なりも修正しています。最新の開発版exeは`artifacts/release-discord-reference/Eluna.exe`。[比較内容・変更・確認範囲](docs/discord-reference-ui.md)を参照してください。
 
 日常操作とDiscordを参考にした表示・動きを改善しました。Ctrl+Kの移動、未読とメンションの受信トレイ、発言検索・ピン・リアクション、検索できる絵文字、入力の書式補助、通知と取り消し、下書き・メンバーの状態表示を追加しています。最新の開発版exeは`artifacts/release-experience/Eluna.exe`。[操作と検証範囲](docs/discord-experience.md)を参照してください。以下のexeパスは各機能追加時点の記録です。

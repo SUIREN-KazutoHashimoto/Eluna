@@ -14,6 +14,7 @@ public partial class VoiceChannelPanel : UserControl
     private async void Interrupt_Click(object sender, RoutedEventArgs e) { if (Chat is { } chat) { await chat.InterruptVoiceAsync(); } }
     private async void Output_Click(object sender, RoutedEventArgs e) { if (Chat is { } chat) { await chat.ToggleVoiceOutputAsync(); } }
     private async void Leave_Click(object sender, RoutedEventArgs e) { if (Chat is { } chat) { await chat.LeaveVoiceAsync(); } }
+    private void Participants_Click(object sender, RoutedEventArgs e) { if (Chat is { VoiceJoined: true } chat) { new VoiceParticipantsWindow(chat) { Owner = Window.GetWindow(this) }.Show(); } }
     private void Open_Click(object sender, RoutedEventArgs e) => Chat?.OpenVoiceChannel();
     private void StopShare_Click(object sender, RoutedEventArgs e) => Chat?.StopSharing();
     private void Share_Click(object sender, RoutedEventArgs e)

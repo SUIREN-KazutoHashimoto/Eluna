@@ -34,6 +34,14 @@ public sealed class LlamaService : IDisposable
     public string ComputeLabel { get; private set; } = "未読み込み";
     public IReadOnlyList<ComputeDevice> Devices { get; private set; } = [];
     public int LastInputTokens { get; private set; }
+    private GenerationAllowance? _allowance;
+    internal IDisposable WithAllowance(GenerationAllowance allowance)
+    {
+        if (_allowance is not null) { throw new InvalidOperationException("生成予算は同じエンジンへ重ねて設定できません。"); }
+        _allowance = allowance; return new AllowanceLease(this);
+    }
+    private sealed class AllowanceLease(LlamaService engine) : IDisposable
+    { public void Dispose() { engine._allowance = null; } }
     public int LastOutputTokens { get; private set; }
     public double LastTokensPerSecond { get; private set; }
     public long MemoryUsageBytes
@@ -87,8 +95,9 @@ public sealed class LlamaService : IDisposable
     public async Task EnsureModelAsync(LocalModel model, AppSettings settings, Action<string> status, CancellationToken token)
     {
         if (_process is { HasExited: false } && _activeModel == model.Id &&
-            _activeCompute == settings.Compute && _activeContext == settings.ContextSize && _preferences == model.Options && _supportsThinking == model.Profile?.SupportsThinking && _activeProjector == model.Projector?.FilePath)
+            _activeCompute == settings.Compute && _activeContext == settings.ContextSize && _supportsThinking == model.Profile?.SupportsThinking && _activeProjector == model.Projector?.FilePath)
         {
+            ModelPreferences.Validate(model.Options); _preferences = model.Options;
             return;
         }
         Stop(); _activeProjector = model.Projector?.FilePath;
@@ -199,7 +208,7 @@ public sealed class LlamaService : IDisposable
     }
 
     public async IAsyncEnumerable<GenerationUpdate> GenerateAsync(IEnumerable<SavedMessage> messages, InferenceMode mode,
-        [EnumeratorCancellation] CancellationToken token, string? instruction = null, int? outputLimit = null, object? jsonSchema = null)
+        [EnumeratorCancellation] CancellationToken token, string? instruction = null, int? outputLimit = null, object? jsonSchema = null, bool preserveSampling = false)
     {
         if (_http is null || _process is null || _process.HasExited)
         {
@@ -217,27 +226,33 @@ public sealed class LlamaService : IDisposable
         LastTokensPerSecond = 0;
         GenerationLimits limits = InferenceModes.GetLimits(mode, _activeContext, inputTokens, _preferences.MaxOutputTokens);
         if (outputLimit is > 0) { limits = InferenceModes.LimitOutput(limits, outputLimit.Value); }
+        GenerationAllowance? allowance = _allowance;
+        if (allowance is not null) { limits = InferenceModes.LimitOutput(limits, allowance.Limit(limits.MaxTokens)); }
         payload = CreatePayload(history, mode, limits, instruction, _preferences);
         if (jsonSchema is not null)
         {
             System.Text.Json.Nodes.JsonObject structured = JsonSerializer.SerializeToNode(payload)!.AsObject();
             structured["response_format"] = JsonSerializer.SerializeToNode(new { type = "json_object", schema = jsonSchema });
-            structured["temperature"] = 0.2;
+            if (!preserveSampling) { structured["temperature"] = 0.2; }
             payload = structured;
         }
-        using var request = new HttpRequestMessage(HttpMethod.Post, "v1/chat/completions")
+        try
         {
-            Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
-        };
-        using HttpResponseMessage response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
-        await EnsureResponseAsync(response, token);
-        await using Stream stream = await response.Content.ReadAsStreamAsync(token);
-        await foreach (GenerationUpdate piece in ReadEventsAsync(stream, token))
-        {
-            if (piece.OutputTokens is > 0) { LastOutputTokens = piece.OutputTokens.Value; }
-            if (piece.OutputMilliseconds is > 0) { LastTokensPerSecond = LastOutputTokens * 1000.0 / piece.OutputMilliseconds.Value; }
-            yield return piece;
+            using var request = new HttpRequestMessage(HttpMethod.Post, "v1/chat/completions")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+            };
+            using HttpResponseMessage response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+            await EnsureResponseAsync(response, token);
+            await using Stream stream = await response.Content.ReadAsStreamAsync(token);
+            await foreach (GenerationUpdate piece in ReadEventsAsync(stream, token))
+            {
+                if (piece.OutputTokens is > 0) { LastOutputTokens = piece.OutputTokens.Value; }
+                if (piece.OutputMilliseconds is > 0) { LastTokensPerSecond = LastOutputTokens * 1000.0 / piece.OutputMilliseconds.Value; }
+                yield return piece;
+            }
         }
+        finally { allowance?.Spend(LastOutputTokens, limits.MaxTokens); }
     }
 
     public async Task<int> CountInputTokensAsync(IEnumerable<SavedMessage> messages, string instruction, CancellationToken token)

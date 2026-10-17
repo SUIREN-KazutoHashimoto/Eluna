@@ -12,6 +12,7 @@ internal static class WorkspaceService
     internal static AppState Upgrade(AppState state)
     {
         if (state.Agents is not null) { return state; }
+        if (state.Conversations.Count == 0 && state.Projects is not { Count: > 0 }) { return AccountDefaults.FirstRun(state); }
         return state with
         {
             SchemaVersion = 4,
@@ -33,9 +34,9 @@ internal static class WorkspaceService
     internal static Guid StableId(Guid parent, string key) => new(SHA256.HashData(Encoding.UTF8.GetBytes(parent + ":" + key)).AsSpan(0, 16));
     internal static SavedMessage[] AddressAgent(IReadOnlyList<SavedMessage> history, AgentAccount? agent)
     {
-        if (agent is null || history.LastOrDefault()?.Role != "assistant" || history.LastOrDefault(m => m.Role == "user") is not { } question) { return history.ToArray(); }
-        // A broadcast's later replies must answer the user, not continue another assistant's completed turn.
-        return [.. history, new("user", "現在の話者は" + agent.Name + "です。同じ場の参加者の発言を踏まえ、あなた自身の立場で会話を続けてください。他の人の発言を代筆しません。\n今回の話題:\n" + question.Content)];
+        if (agent is null || history.LastOrDefault()?.Role != "assistant") { return history.ToArray(); }
+        // This is a transport turn for the model, not a fabricated message from the local member.
+        return [.. history, new("user", "次の話者は" + agent.Name + "です。直前までの全員の発言に対し、同じ場の対等な参加者として自分の返事だけを書いてください。他の人を代筆せず、常に利用者だけへ回答する形式にしません。短い返事や絵文字だけでも構いません。")];
     }
     internal static bool Participated(SavedConversation source, Guid agent) => source.Room?.Members.Contains(agent) == true ||
         source.Room?.PastMembers?.Contains(agent) == true || Messages(source).Any(m => m.Identity?.AgentId == agent || m.Work?.Turns.Any(t => t.AgentId == agent) == true);
@@ -54,6 +55,7 @@ internal static class WorkspaceService
             c.Room?.ReferenceSiblingChats,
             c.Room?.ShareHistory,
             c.Room?.AcceptAgentMemory,
+            c.Room?.Social,
             Permissions = c.Room?.Permissions?.OrderBy(p => p.AgentId).ToArray(),
             Past = (c.Room?.PastMembers ?? []).Order().ToArray()
         }),
@@ -122,7 +124,7 @@ internal static class WorkspaceService
             {
                 Id = rooms[c.Id],
                 ProjectId = c.ProjectId is Guid p ? projects[p] : null,
-                Experience = c.Experience is not { } e ? null : e with { Unread = e.Unread?.Select(u => u with { Branch = Map(u.Branch), Message = Map(u.Message) }).ToList(), Pins = e.Pins?.Select(p => p with { Branch = Map(p.Branch), Message = Map(p.Message) }).ToList(), Reactions = e.Reactions?.Select(r => r with { Branch = Map(r.Branch), Message = Map(r.Message) }).ToList() },
+                Experience = c.Experience is not { } e ? null : e with { Unread = e.Unread?.Select(u => u with { Branch = Map(u.Branch), Message = Map(u.Message) }).ToList(), Pins = e.Pins?.Select(p => p with { Branch = Map(p.Branch), Message = Map(p.Message) }).ToList(), Reactions = e.Reactions?.Select(r => r with { Branch = Map(r.Branch), Message = Map(r.Message), Actor = Agent(r.Actor) }).ToList() },
                 SkillIds = [],
                 Room = c.Room is null ? null : c.Room with { Permissions = c.Room.Permissions?.Select(g => g with { AgentId = agents[g.AgentId] }).ToList(), Members = c.Room.Members.Select(id => agents[id]).ToList(), DefaultAgentId = Agent(c.Room.DefaultAgentId), PastMembers = c.Room.PastMembers?.Select(id => agents[id]).ToList(), ParentId = c.Room.ParentId is Guid parent ? rooms[parent] : null, OriginMessageId = c.Room.OriginMessageId is Guid origin ? Map(origin) : null },
                 Messages = c.Messages.Select(Message).ToList(),
@@ -139,19 +141,23 @@ internal static class WorkspaceService
         if (state.Agents is null)
         { if (state.Conversations.Any(c => c.Room is not null) || state.AgentMemories is { Count: > 0 }) { throw new InvalidDataException("エージェント情報がありません。"); } return; }
         if (state.Agents.Count > 500 || state.Agents.Any(a => a is null || a.Id == Guid.Empty || a.Id == AgentAccount.LocalId || string.IsNullOrWhiteSpace(a.Name) || a.Name.Length > 80 ||
-            a.Icon is null || a.Icon.Length > 16 || a.Instruction is null || a.Instruction.Length > 8000 || a.Specialty is null || a.Specialty.Length > 1000 || a.VoiceId?.Length > 2048 || a.SpeechRate is < -10 or > 10) ||
+            a.Icon is null || a.Icon.Length > 16 || a.Instruction is null || a.Instruction.Length > 8000 || a.Specialty is null || a.Specialty.Length > 1000 || a.VoiceId?.Length > 2048 || a.SpeechRate is < -10 or > 10 || a.Retired && a.Enabled) ||
             state.Agents.Select(a => a.Id).Distinct().Count() != state.Agents.Count) { throw new InvalidDataException("エージェントの形式を確認してください。"); }
         HashSet<Guid> agents = state.Agents.Select(a => a.Id).ToHashSet();
-        foreach (AgentAccount account in state.Agents) { AgentPersonas.Validate(account, agents); }
+        foreach (AgentAccount account in state.Agents) { AgentPersonas.Validate(account, agents); AccountDefaults.Validate(account); }
+        foreach (KnowledgeProject project in state.Projects ?? [])
+        { if (AccountDefaults.ServerMembers(state, project.Id).Count > AccountDefaults.MaximumAgents) { throw new InvalidDataException("サーバーの参加者は自分を含めて50人までです。"); } }
         foreach (SavedConversation c in state.Conversations)
         {
+            if (c.Experience?.Reactions?.Any(r => r.Actor is Guid actor && actor != AgentAccount.LocalId && !agents.Contains(actor)) == true) { throw new InvalidDataException("リアクションのアカウントがありません。"); }
             foreach (TeamRun team in Messages(c).Select(m => m.Team).OfType<TeamRun>()) { TeamPlanner.Validate(team, agents); }
             if (c.Room is not { } r) { continue; }
             ChannelAccess.Validate(r.Permissions, agents);
-            if (r.Kind is not ("channel" or "voice" or "dm" or "group" or "thread" or "legacy") || r.Members is null || r.Members.Count is < 1 or > 6 ||
+            AccountDefaults.Validate(r.Social);
+            if (r.Kind is not ("channel" or "voice" or "dm" or "group" or "thread" or "legacy") || r.Members is null || r.Members.Count > AccountDefaults.MaximumAgents ||
                 r.WorkMode is not null && !WorkModes.All.Any(m => m.Id == r.WorkMode) || r.InferenceMode is not null && !InferenceModes.IsValid(r.InferenceMode) ||
                 r.Members.Distinct().Count() != r.Members.Count || r.Members.Any(id => !agents.Contains(id)) || r.DefaultAgentId is Guid chosen && !r.Members.Contains(chosen) ||
-                r.Kind == "dm" && r.Members.Count != 1 || r.Kind is "dm" or "group" && c.ProjectId is not null ||
+                r.Kind == "dm" && r.Members.Count > 1 || r.Kind is "dm" or "group" && c.ProjectId is not null ||
                 r.PastMembers?.Any(id => !agents.Contains(id)) == true ||
                 r.ParentId is Guid parent && (parent == c.Id || !state.Conversations.Any(p => p.Id == parent && p.ProjectId == c.ProjectId && p.Room?.Kind != "thread")) ||
                 r.Kind == "thread" && (r.ParentId is null || r.OriginMessageId is null)) { throw new InvalidDataException("チャンネルの所属・参加者・スレッドを確認してください。"); }

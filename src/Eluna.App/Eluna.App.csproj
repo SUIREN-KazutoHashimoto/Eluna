@@ -4,6 +4,7 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>Eluna</AssemblyName>
     <RootNamespace>Eluna.App</RootNamespace>
+    <ApplicationIcon>Assets/Eluna.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup Condition="'$(SelfContained)' == 'true'">
@@ -12,6 +13,7 @@
     <FrameworkReference Include="Microsoft.WindowsDesktop.App" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
+    <Resource Include="Assets/Eluna.ico" />
     <EmbeddedResource Include="../../LICENSE" LogicalName="Eluna.Licenses.Eluna-Apache-2.0.txt" />
     <EmbeddedResource Include="../../THIRD_PARTY_NOTICES.md" LogicalName="Eluna.Licenses.THIRD_PARTY_NOTICES.md" />
     <EmbeddedResource Include="../../third_party/llama.cpp/LICENSE" LogicalName="Eluna.Licenses.llama.cpp-MIT.txt" />

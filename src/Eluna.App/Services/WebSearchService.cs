@@ -203,6 +203,15 @@ public sealed class WebSearchService : IDisposable
     internal static string PlainText(string html)
     {
         string value = Regex.Replace(html, @"<(script|style|noscript|svg)\b[^>]*>[\s\S]*?</\1>", "", RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(500));
+        // Remove page-local citation markers before exposing the page as model knowledge.
+        // Preserve mathematical superscripts and ordinary bracketed data.
+        value = Regex.Replace(value, @"<(sup|a)\b(?<attrs>[^>]*)>[\s\S]*?</\1>", match =>
+        {
+            string attrs = match.Groups["attrs"].Value;
+            return Attribute(attrs, "class").Split(' ').Contains("reference", StringComparer.OrdinalIgnoreCase) ||
+                Attribute(attrs, "id").StartsWith("cite_ref", StringComparison.OrdinalIgnoreCase) ||
+                Attribute(attrs, "href").StartsWith("#cite_note", StringComparison.OrdinalIgnoreCase) ? "" : match.Value;
+        }, RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(500));
         value = Regex.Replace(value, @"</?(?:p|div|h[1-6]|li|tr|section|article|br)\b[^>]*>", "\n", RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(500));
         value = Regex.Replace(value, @"<[^>]+>", "", RegexOptions.None, TimeSpan.FromMilliseconds(500));
         value = WebUtility.HtmlDecode(value);

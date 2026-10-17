@@ -82,6 +82,7 @@
                     <ItemsControl ItemsSource="{Binding Reactions}" Visibility="{Binding HasReactions, Converter={StaticResource BoolVisibility}}" Margin="0,4,0,0"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate><Button Content="{Binding Label}" Click="Reaction_Click" ToolTip="{Binding Hint}" AutomationProperties.Name="{Binding Hint}" Padding="6,3" Margin="0,0,5,3" FontSize="12" Background="{DynamicResource MentionBackgroundBrush}" Foreground="{DynamicResource MentionTextBrush}" BorderBrush="{DynamicResource AccentBrush}" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
                     <controls:ComputerTaskPanel Session="{Binding Computer}" />
 
+                    <Image Source="{Binding ArtifactImage}" MaxWidth="640" MaxHeight="420" HorizontalAlignment="Left" Stretch="Uniform" AutomationProperties.Name="生成された画像" />
                     <Button Content="{Binding ArtifactLabel}" Click="OpenArtifact_Click" HorizontalAlignment="Left" Margin="0,6,0,0" BorderBrush="{DynamicResource StrokeBrush}" Visibility="{Binding HasArtifact, Converter={StaticResource BoolVisibility}}" />
                     <Button Content="参考資料" Click="Knowledge_Click" HorizontalAlignment="Left" Padding="8,6" Margin="0,8,0,0" BorderBrush="{DynamicResource StrokeBrush}" Visibility="{Binding HasKnowledge, Converter={StaticResource BoolVisibility}}" ToolTip="この回答の生成時にAIへ渡した抜粋を確認" />
 

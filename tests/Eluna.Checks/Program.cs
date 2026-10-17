@@ -29,6 +29,7 @@ internal static class Program
             await WorkspaceChecks.RunAsync(Path.Combine(root, "workspace-" + Guid.NewGuid().ToString("N")));
             await AgentFeaturesChecks.RunAsync(Path.Combine(root, "agents-" + Guid.NewGuid().ToString("N")));
             await SocialChatChecks.RunAsync(Path.Combine(root, "social-" + Guid.NewGuid().ToString("N")));
+            await SocialAutonomyChecks.RunAsync(Path.Combine(root, "social-autonomy-" + Guid.NewGuid().ToString("N")));
             await ExperienceChecks.RunAsync(Path.Combine(root, "experience-" + Guid.NewGuid().ToString("N")));
             await MessageExperienceChecks.RunAsync(Path.Combine(root, "messages-" + Guid.NewGuid().ToString("N")));
             await ComposerChecks.RunAsync(Path.Combine(root, "composer-" + Guid.NewGuid().ToString("N")));
@@ -268,7 +269,7 @@ internal static class Program
         var noBody = new ResearchRunner(Search, (_, _) => throw new InvalidDataException("取得不可"), Generate, Count, 4096);
         var empty = new WorkSession { Mode = "search", ModelId = "default", Question = "根拠なし", Options = new(1, 1, 1, 30, 2000, 1) };
         await noBody.RunAsync(empty, (_, _) => Task.FromResult(true), () => Task.CompletedTask, _ => { }, _ => { }, CancellationToken.None);
-        Check(empty.Sources.Count == 0 && generated.Last().User.Contains("本文を取得できた資料はありません", StringComparison.Ordinal) && empty.Report.Contains("根拠の対応を確認できませんでした", StringComparison.Ordinal), "Search snippets were presented as retrieved evidence.");
+        Check(empty.Sources.Count == 0 && generated.Last().User.Contains("本文を取得できた資料はありません", StringComparison.Ordinal) && empty.Report.Contains("確かな答えを確認できませんでした", StringComparison.Ordinal), "Search snippets were presented as retrieved evidence.");
         WorkSource[] known = [new(1, "資料", "https://example.com", "本文には12文字以上の正しい引用だけが含まれます。", DateTimeOffset.UtcNow)];
         string forged = "{\"answer\":\"でたらめ [S1]\",\"evidence\":[{\"source\":1,\"quote\":\"実際の本文にはない引用です。\",\"claim\":\"でたらめ\"}]}";
         Check(!ResearchRunner.TryGroundReport(forged, known, out _, out _), "A fabricated quotation was accepted as source evidence.");

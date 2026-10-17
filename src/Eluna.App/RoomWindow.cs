@@ -32,7 +32,19 @@ public sealed class RoomWindow : Window
         body.Children.Add(KindBox); NameBox.Text = room?.Title ?? (origin is null ? "新しいチャンネル" : "発言の深掘り"); NameBox.Margin = new(0, 10, 0, 16); body.Children.Add(NameBox);
         System.Windows.Automation.AutomationProperties.SetName(NameBox, "チャンネルまたはDMの名前");
         IEnumerable<Guid> members = discussion?.Discussion.PendingParticipants?.Where(r => r.AgentId is not null).Select(r => r.AgentId!.Value) ?? room?.Room?.Members ?? chat.SelectedConversation?.Room?.Members ?? [];
-        MembersEditor = new(chat.Agents, members); body.Children.Add(MembersEditor);
+        MembersEditor = new(chat.Agents, members, discussion is null ? AccountDefaults.MaximumAgents : 6, discussion is null); body.Children.Add(MembersEditor);
+        var social = new ChannelSocialEditor(room is null ? new(Enabled: true) : room.Room?.Social ?? new());
+        if (discussion is null)
+        {
+            body.Children.Add(new Expander { Header = "会話の進め方・自発的な開始", Content = social, Margin = new(0, 16, 0, 0) });
+            if (room is not null)
+            {
+                var stopSocial = new Button { Content = "このチャンネルの自律会話を停止", HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 10, 0, 0) };
+                var resumeSocial = new Button { Content = "自律会話の停止を解除", HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 8, 0, 0) };
+                stopSocial.Click += (_, _) => chat.StopSocialConversation(room.Id); resumeSocial.Click += (_, _) => chat.ResumeSocialConversation(room.Id);
+                body.Children.Add(stopSocial); body.Children.Add(resumeSocial);
+            }
+        }
         foreach (CheckBox box in new[] { _siblings, _share, _accept, _serverAccept })
         { box.Margin = new(0, 12, 0, 0); if (box.Content is string text) { box.Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap }; } if (basicOnly) { box.Visibility = Visibility.Collapsed; } body.Children.Add(box); }
         _siblings.IsChecked = room?.Room?.ReferenceSiblingChats == true; _share.IsChecked = room?.Room?.ShareHistory == true; _accept.IsChecked = room?.Room?.AcceptAgentMemory == true;
@@ -43,7 +55,7 @@ public sealed class RoomWindow : Window
         if (!basicOnly) { body.Children.Add(new TextBlock { Text = "限定サーバーの初期値は持ち越し記憶を使いません。履歴を共有すると、この場所で話した内容が許可先の会話で使われます。DMは一人、議論はAI二人以上です。", TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 14, 0, 0) }); }
         if (discussion is not null) { KindBox.Visibility = NameBox.Visibility = _siblings.Visibility = _share.Visibility = _accept.Visibility = _serverAccept.Visibility = Visibility.Collapsed; }
         if (origin is not null) { body.Children.Add(new TextBlock { Text = "このスレッドは、親の返信先までの発言を参照します。", TextWrapping = TextWrapping.Wrap, Margin = new(0, 10, 0, 0) }); }
-        string Snapshot() => JsonSerializer.Serialize(new { NameBox.Text, KindBox.SelectedValue, Members = MembersEditor.SelectedIds, Siblings = _siblings.IsChecked, Share = _share.IsChecked, Accept = _accept.IsChecked, ServerAccept = _serverAccept.IsChecked });
+        string Snapshot() => JsonSerializer.Serialize(new { NameBox.Text, KindBox.SelectedValue, Members = MembersEditor.SelectedIds, Siblings = _siblings.IsChecked, Share = _share.IsChecked, Accept = _accept.IsChecked, ServerAccept = _serverAccept.IsChecked, Social = social.Policy });
         _baseline = Snapshot(); UnsavedChanges.Protect(this, () => !_saving && Snapshot() != _baseline, Save);
         SaveButton.Click += async (_, _) => await Save();
         async Task<bool> Save()
@@ -57,9 +69,9 @@ public sealed class RoomWindow : Window
                 {
                     if (origin is null && KindBox.SelectedValue is "channel" or "voice" && chat.SelectedProject?.Id != capturedProject) { throw new InvalidOperationException("作成先のサーバーへ戻って保存するか、画面を開き直してください。"); }
                     Conversation created = await chat.CreateRoomAsync(NameBox.Text, origin is null ? (string)KindBox.SelectedValue : "thread", MembersEditor.SelectedIds, origin is null ? null : room, origin);
-                    await chat.UpdateRoomAsync(created, created.Title, created.Room! with { ReferenceSiblingChats = _siblings.IsChecked == true, ShareHistory = _share.IsChecked == true, AcceptAgentMemory = _accept.IsChecked == true }, _serverAccept.IsChecked == true);
+                    await chat.UpdateRoomAsync(created, created.Title, created.Room! with { ReferenceSiblingChats = _siblings.IsChecked == true, ShareHistory = _share.IsChecked == true, AcceptAgentMemory = _accept.IsChecked == true, Social = social.Policy }, _serverAccept.IsChecked == true);
                 }
-                else { await chat.UpdateRoomAsync(room, NameBox.Text.Trim(), room.Room! with { Members = MembersEditor.SelectedIds.ToList(), DefaultAgentId = MembersEditor.SelectedIds.FirstOrDefault(), ReferenceSiblingChats = _siblings.IsChecked == true, ShareHistory = _share.IsChecked == true, AcceptAgentMemory = _accept.IsChecked == true }, _serverAccept.IsChecked == true); }
+                else { await chat.UpdateRoomAsync(room, NameBox.Text.Trim(), room.Room! with { Members = MembersEditor.SelectedIds.ToList(), DefaultAgentId = MembersEditor.SelectedIds.FirstOrDefault(), ReferenceSiblingChats = _siblings.IsChecked == true, ShareHistory = _share.IsChecked == true, AcceptAgentMemory = _accept.IsChecked == true, Social = social.Policy }, _serverAccept.IsChecked == true); }
                 _baseline = Snapshot(); Close(); return true;
             }
             catch (Exception ex) { chat.Error = ex.Message; MessageBox.Show(this, ex.Message, "保存できませんでした"); return false; }

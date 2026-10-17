@@ -70,7 +70,14 @@ public sealed partial class ChatViewModel
     {
         RoomExperience e = SelectedConversation?.Experience ?? new(); Guid? branch = SelectedBranch?.Id;
         var pins = (e.Pins ?? []).Where(p => p.Branch == branch).Select(p => p.Message).ToHashSet(); var reactions = (e.Reactions ?? []).Where(r => r.Branch == branch).ToLookup(r => r.Message);
-        foreach (ChatMessage row in Timeline) { row.PinnedMessage = pins.Contains(row.Id); string[] emoji = reactions[row.Id].Select(r => r.Emoji).ToArray(); if (!row.Reactions.Select(r => r.Emoji).SequenceEqual(emoji)) { row.Reactions = emoji.Select(x => new ReactionBadge(x, x + " 1 ✓", x + " · " + Self.Name + " のリアクション（選択済み）。もう一度押すと取り消します。")).ToArray(); } }
+        foreach (ChatMessage row in Timeline)
+        {
+            row.PinnedMessage = pins.Contains(row.Id);
+            ReactionBadge[] badges = reactions[row.Id].GroupBy(r => r.Emoji).Select(g => new ReactionBadge(g.Key,
+                g.Key + " " + g.Count() + (g.Any(r => r.Actor is null || r.Actor == AgentAccount.LocalId) ? " ✓" : ""),
+                g.Key + " · " + string.Join("、", g.Select(r => r.Actor is null || r.Actor == AgentAccount.LocalId ? Self.Name : Agents.FirstOrDefault(a => a.Id == r.Actor)?.Name ?? "過去の参加者")) + " のリアクション。クリックで自分のリアクションを切り替えます。")).ToArray();
+            if (!row.Reactions.SequenceEqual(badges)) { row.Reactions = badges; }
+        }
     }
     private void ExperienceChanged() { Notify(nameof(InboxCount)); Notify(nameof(InboxLabel)); Notify(nameof(HasSelectedUnread)); Notify(nameof(SelectedUnreadLabel)); MessageExperienceChanged?.Invoke(); }
 }

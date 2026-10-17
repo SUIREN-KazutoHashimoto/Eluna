@@ -51,7 +51,9 @@ internal static class ChannelInvitations
             if (actor is not null && (profile.Permissions?.Any(g => g.AgentId == id && (!g.View || !g.Speak)) == true || profile.ParentId is Guid parent && state.Conversations.FirstOrDefault(c => c.Id == parent) is { } origin && !ChannelAccess.CanView(state, origin, id))) { throw new InvalidOperationException(target.Name + "は閲覧・発言を制限されています。アクセス権を変更できる利用者に確認してください。"); }
         }
         List<Guid> members = profile.Members.Concat(ids).Distinct().ToList();
-        if (members.Count > 6) { throw new InvalidOperationException("この場所の自動応答メンバーは6人までです。先に参加者を整理してください。"); }
+        if (members.Count > AccountDefaults.MaximumAgents || room.ProjectId is Guid project &&
+            AccountDefaults.ServerMembers(state, project).Concat(members).Distinct().Count() > AccountDefaults.MaximumAgents)
+        { throw new InvalidOperationException("参加者は自分を含めて50人までです。サーバーの参加者を整理してください。"); }
         List<ChannelGrant>? grants = profile.Permissions;
         if (actor is null) { grants = (grants ?? []).Where(g => !ids.Contains(g.AgentId)).Concat(ids.Select(id => new ChannelGrant(id, true, true))).ToList(); }
         return profile with { Kind = profile.Kind == "dm" && members.Count > 1 ? "group" : profile.Kind, Members = members, Permissions = grants };

@@ -7,6 +7,7 @@ namespace Eluna.App.Controls;
 
 internal sealed class AgentBehaviorEditor : StackPanel
 {
+    internal AccountTuningEditor Tuning { get; }
     internal ComboBox Preset { get; } = new() { ItemsSource = AgentPersonas.All, DisplayMemberPath = "Name", SelectedValuePath = "Id" };
     internal TextBox Role { get; } = new() { MaxLength = 500, TextWrapping = TextWrapping.Wrap };
     private readonly TextBox _setting = new() { MaxLength = 2000, TextWrapping = TextWrapping.Wrap, AcceptsReturn = true, MinHeight = 58, MaxHeight = 130, VerticalScrollBarVisibility = ScrollBarVisibility.Auto },
@@ -19,6 +20,7 @@ internal sealed class AgentBehaviorEditor : StackPanel
     {
         void Field(string label, FrameworkElement control) { Children.Add(new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap, Margin = new(0, 12, 0, 6) }); Children.Add(control); System.Windows.Automation.AutomationProperties.SetName(control, label); }
         Field("性格", Preset); Field("役柄・キャラクター名（任意）", Role); Field("世界観・背景（任意）", _setting); Field("口調・性格の補足（任意）", _traits);
+        Tuning = new(() => Personality); Children.Add(Tuning);
         var details = new StackPanel(); var expander = new Expander { Header = "つながり・自動編成", Content = details, Margin = new(0, 16, 0, 0) }; Children.Add(expander);
         details.Children.Add(new TextBlock { Text = "招待先には依頼文と担当の結果を共有します。元の履歴・資料はコピーしません。実行には依頼元チャンネルの「招待」「作業場所の作成」権限も必要です。最大3チャンネル・6担当で終了します。", TextWrapping = TextWrapping.Wrap, Margin = new(0, 10, 0, 8), FontSize = 12 });
         foreach (CheckBox box in new[] { Automatic, _servers, _channels, _invite, _accept }) { box.Content = new TextBlock { Text = (string)box.Content, TextWrapping = TextWrapping.Wrap }; box.Margin = new(0, 6, 0, 6); details.Children.Add(box); }
@@ -26,6 +28,7 @@ internal sealed class AgentBehaviorEditor : StackPanel
     }
     internal void Load(AgentAccount account, IEnumerable<AgentAccount> agents)
     {
+        Tuning.Load(account);
         AgentPersonality p = account.Personality ?? new(); Preset.SelectedValue = p.Preset; Role.Text = p.Role; _setting.Text = p.Setting; _traits.Text = p.Traits;
         AgentAutonomy a = account.Autonomy ?? new(); Automatic.IsChecked = a.Automatic; _servers.IsChecked = a.CreateServers; _channels.IsChecked = a.CreateChannels; _invite.IsChecked = a.InviteConnections; _accept.IsChecked = a.AcceptInvites;
         _connections.Children.Clear();

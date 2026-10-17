@@ -75,6 +75,7 @@ public sealed partial class ChatViewModel
         var next = Agents.Where(a => a.Id != agent.Id).Append(agent).ToList();
         WorkspaceService.Validate(CaptureState() with { Agents = next });
         AgentAccount? before = Agents.FirstOrDefault(a => a.Id == agent.Id);
+        if (before?.Artist?.Enabled == true && agent.Artist?.Enabled != true) { CancelWorkspaceRequests(agent: agent.Id); }
         if (!agent.Enabled || before is not null && ((before.Autonomy ?? new()) != (agent.Autonomy ?? new()) || !(before.Connections ?? []).SequenceEqual(agent.Connections ?? []))) { CancelWorkspaceRequests(agent: agent.Id); }
         int index = Agents.ToList().FindIndex(a => a.Id == agent.Id);
         if (index < 0) { Agents.Add(agent); } else { Agents[index] = agent; }
@@ -147,7 +148,7 @@ public sealed partial class ChatViewModel
         {
             Title = title.Trim(),
             ProjectId = project,
-            Room = new(kind, members.ToList(), members.FirstOrDefault(), parent?.Id, origin?.Id, WorkMode: _settings.WorkMode, InferenceMode: _settings.InferenceMode)
+            Room = new(kind, members.ToList(), members.Select(id => (Guid?)id).FirstOrDefault(), parent?.Id, origin?.Id, WorkMode: _settings.WorkMode, InferenceMode: _settings.InferenceMode, Social: new(Enabled: true))
         };
         if (room.Title.Length is < 1 or > 100) { throw new InvalidDataException("名前は1〜100文字にしてください。"); }
         WorkspaceService.Validate(CaptureState() with { Conversations = [.. Conversations.Select(c => c.Save()), room.Save()] });
@@ -162,6 +163,7 @@ public sealed partial class ChatViewModel
         AppState current = CaptureState();
         next = next with { Projects = next.Projects?.Select(p => p.Id == conversation.ProjectId ? p with { AcceptAgentMemory = acceptServerMemory } : p).ToList() };
         bool policyChanged = WorkspaceService.AccessStamp(current, conversation.Id, null, []) != WorkspaceService.AccessStamp(next, conversation.Id, null, []);
+        if (conversation.Room?.Social != profile.Social) { CancelSocialCycle(conversation.Id); }
         if (policyChanged) { CancelWorkspaceRequests(Conversations.Where(c => c.Id == conversation.Id || c.Room?.ParentId == conversation.Id).Select(c => c.Id).ToHashSet(), project: current.Projects?.FirstOrDefault(p => p.Id == conversation.ProjectId)?.AcceptAgentMemory != acceptServerMemory ? conversation.ProjectId : null); }
         conversation.Title = title; conversation.Room = profile;
         if (conversation.ProjectId is Guid project)
@@ -189,7 +191,7 @@ public sealed partial class ChatViewModel
         if (conversation.Room?.Members.Count is not >= 2) { return options; }
         return options with
         {
-            Roles = conversation.Room.Members.Select(id => Agents.First(a => a.Id == id)).Where(a => ChannelAccess.CanSpeak(CaptureState(), conversation.Save(), a.Id)).Select(a => new DebateRole(a.Id.ToString("N"), a.Name,
+            Roles = conversation.Room.Members.Select(id => Agents.First(a => a.Id == id)).Where(a => ChannelAccess.CanSpeak(CaptureState(), conversation.Save(), a.Id)).Take(6).Select(a => new DebateRole(a.Id.ToString("N"), a.Name,
             string.IsNullOrWhiteSpace(AgentPersonas.Instruction(a)) ? "あなたの専門分野「" + a.Specialty + "」から根拠と異なる視点を示してください。" : AgentPersonas.Instruction(a)[..Math.Min(3000, AgentPersonas.Instruction(a).Length)], a.ModelId, a.Id, a.Icon)).ToList()
         };
     }

@@ -23,7 +23,7 @@ public sealed partial class ChatViewModel
         if (_timelineBranch is not null) { _timelineBranch.Messages.CollectionChanged += TimelineChanged; }
         RefreshTimeline();
     }
-    private void TimelineMessageChanged(object? sender, PropertyChangedEventArgs e) { if (e.PropertyName == nameof(ChatMessage.Work)) { RefreshTimeline(); } else if (e.PropertyName == nameof(ChatMessage.Identity)) { TimelinePresentation.Apply(Timeline); } }
+    private void TimelineMessageChanged(object? sender, PropertyChangedEventArgs e) { if (e.PropertyName is nameof(ChatMessage.Work) or nameof(ChatMessage.Pending)) { RefreshTimeline(); } else if (e.PropertyName == nameof(ChatMessage.Identity)) { TimelinePresentation.Apply(Timeline); } }
     private void TimelineWorkChanged(object? sender, PropertyChangedEventArgs e) { if (e.PropertyName is nameof(WorkSession.Stage) or nameof(WorkSession.IsRunning)) { RefreshTimeline(); Notify(nameof(TypingNotice)); } }
     private void TimelineChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
@@ -31,7 +31,7 @@ public sealed partial class ChatViewModel
         if (e.Action == NotifyCollectionChangedAction.Replace && e.NewItems is { Count: 1 } && e.NewItems[0] is DebateTurn turn &&
             _timelineWorks.FirstOrDefault(w => ReferenceEquals(w.Turns, sender)) is { } work &&
             _turnRows.TryGetValue(turn.Id ?? WorkspaceService.StableId(work.Id, turn.Round + ":" + turn.Role), out ChatMessage? row))
-        { UpdateTurnRow(row, turn, work); return; }
+        { UpdateTurnRow(row, turn, work); if (!turn.Incomplete && !Timeline.Contains(row)) { RefreshTimeline(); } return; }
         RefreshTimeline();
     }
     private static void UpdateTurnRow(ChatMessage row, DebateTurn turn, WorkSession work)
@@ -43,6 +43,7 @@ public sealed partial class ChatViewModel
     }
     private void RefreshTimeline()
     {
+        int previousCount = Timeline.Count;
         var next = new List<ChatMessage>(); var seen = new HashSet<Guid>();
         foreach (ChatMessage message in _timelineBranch?.Messages ?? [])
         {
@@ -67,10 +68,10 @@ public sealed partial class ChatViewModel
                         _turnRows.Add(id, row);
                     }
                     UpdateTurnRow(row, turn, work);
-                    if (seen.Add(id)) { next.Add(row); }
+                    if (!turn.Incomplete && seen.Add(id)) { next.Add(row); }
                 }
             }
-            if (seen.Add(message.Id)) { next.Add(message); }
+            if (!message.Pending && seen.Add(message.Id)) { next.Add(message); }
         }
         Dictionary<Guid, ChatMessage> byId = next.DistinctBy(m => m.Id).ToDictionary(m => m.Id);
         foreach (ChatMessage row in next)
@@ -85,5 +86,6 @@ public sealed partial class ChatViewModel
         while (Timeline.Count > next.Count) { Timeline.RemoveAt(Timeline.Count - 1); }
         TimelinePresentation.Apply(Timeline); ApplyTimelineExperience(); ExperienceChanged();
         Notify(nameof(ReplyLabel)); Notify(nameof(IsEmpty));
+        if (Timeline.Count > previousCount) { ScrollRequested?.Invoke(false); }
     }
 }

@@ -55,7 +55,14 @@ internal static class VoiceChannelVerification
             var serverWindow = Show(new ProjectWindow(chat, server) { Owner = main }); Check(serverWindow.CreateDraft().AcceptAgentMemory, "Editing server reset memory permissions.");
             Check(await serverWindow.SaveDraftAsync(), "Server save failed."); Check(chat.SelectedProject!.Documents.Count == 1 && chat.SelectedProject.Memories.Count == 1, "Server data was lost.");
             await PrototypePreview.RenderAsync(serverWindow, Path.Combine(output, "server-settings.png")); serverWindow.Close();
-            await chat.JoinVoiceAsync(); Check(chat.VoiceJoined && chat.VoiceMuted, "Joining automatically enabled microphone."); await chat.ToggleVoiceOutputAsync();
+            Check(chat.VoiceParticipants.Count == 0, "Channel membership was presented as a voice connection before joining.");
+            await chat.JoinVoiceAsync(); Check(chat.VoiceJoined && chat.VoiceMuted, "Joining automatically enabled microphone.");
+            Check(chat.VoiceParticipants.Count == 2 && chat.VoiceParticipants.Any(p => p.Id == AgentAccount.LocalId) && chat.VoiceParticipants.Any(p => p.Id == account.Id && p.Status == "音声応答に参加"), "Joined voice participants were not distinguished from channel members.");
+            long voiceSession = chat.VoiceSession; await chat.SetVoiceParticipantsAsync(voice.Id, voiceSession, []); Check(chat.VoiceParticipants.Count == 1, "Removing an AI from voice removed the local member or left a phantom connection.");
+            await chat.SetVoiceParticipantsAsync(voice.Id, voiceSession, [account.Id]);
+            var voicePeople = Show(new VoiceParticipantsWindow(chat) { Owner = main });
+            await PrototypePreview.RenderAsync(voicePeople, Path.Combine(output, "voice-participants.png")); voicePeople.Close();
+            await chat.ToggleVoiceOutputAsync(); report["explicitVoiceParticipants"] = true;
             chat.Input = "音声とは別の下書き"; Conversation other = await chat.CreateRoomAsync("テキストで別の作業", "channel", [account.Id]); chat.Input = "別チャンネルの下書き";
             Check(chat.VoiceJoined && !chat.IsJoinedVoiceChannel, "Voice call did not survive navigation."); chat.OpenVoiceChannel(); Check(chat.Input == "音声とは別の下書き" && chat.VoiceJoined, "Call navigation lost draft.");
             foreach (string theme in new[] { "dark", "light" })
@@ -95,7 +102,7 @@ internal static class VoiceChannelVerification
             AgentAccount enabled = chat.Agents.First(a => a.Id == account.Id); await chat.SaveAgentAsync(enabled with { Enabled = false });
             int disabledBefore = voice.Messages.Count; chat.Input = "@Computer 無効なアカウントでは操作しない"; chat.SendCommand.Execute(null); await Task.Delay(80, token);
             Check(voice.Messages.Count == disabledBefore && chat.Input.Length > 0, "Disabled account started Computer Use or lost draft."); await chat.SaveAgentAsync(enabled);
-            await chat.LeaveVoiceAsync(); Check(!chat.VoiceJoined && !chat.IsSharing, "Leaving retained microphone/share state."); chat.SelectedConversation = other; Check(chat.Input == "別チャンネルの下書き", "Voice features overwrote another draft.");
+            await chat.LeaveVoiceAsync(); Check(!chat.VoiceJoined && !chat.IsSharing && chat.VoiceParticipants.Count == 0, "Leaving retained microphone/share/participants state."); chat.SelectedConversation = other; Check(chat.Input == "別チャンネルの下書き", "Voice features overwrote another draft.");
             IReadOnlyList<VoiceChoice> voices = await WindowsVoiceAudio.VoicesAsync(); Check(voices.Count > 0, "No Windows speech synthesis voice.");
             await using (var audio = new WindowsVoiceAudio())
             {

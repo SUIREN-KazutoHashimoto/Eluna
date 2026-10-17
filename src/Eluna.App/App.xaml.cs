@@ -58,6 +58,14 @@ public partial class App : Application
                 if (root is null) { throw new InvalidOperationException("操作・表示の検証には専用の --data-dir が必要です。"); }
                 ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = ExperienceVerification.RunAsync(store, e.Args[experienceIndex + 1]); return;
             }
+            int autonomyIndex = Array.IndexOf(e.Args, "--verify-autonomy");
+            if (autonomyIndex >= 0 && autonomyIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("自律会話の検証には専用の --data-dir が必要です。"); }
+                int modelIndex = Array.IndexOf(e.Args, "--model-meta"); string? metadata = modelIndex >= 0 && modelIndex + 1 < e.Args.Length ? e.Args[modelIndex + 1] : null;
+                int imageIndex = Array.IndexOf(e.Args, "--image-model"); string? imageModel = imageIndex >= 0 && imageIndex + 1 < e.Args.Length ? e.Args[imageIndex + 1] : null;
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = SocialAutonomyVerification.RunAsync(store, e.Args[autonomyIndex + 1], metadata, imageModel); return;
+            }
             int socialIndex = Array.IndexOf(e.Args, "--verify-social");
             if (socialIndex >= 0 && socialIndex + 1 < e.Args.Length)
             {

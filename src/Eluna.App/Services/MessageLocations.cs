@@ -11,7 +11,7 @@ internal sealed record MessageLocation(Guid Room, Guid Branch, Guid Message, str
 internal static class MessageLocations
 {
     internal static readonly string[] ReactionEmoji = EmojiCatalog.All.Select(e => e.Glyph).ToArray();
-    internal static bool Finished(ChatMessage message) => !message.IsGenerating && !message.WasInterrupted && (message.Identity?.Detail is not ("画像生成" or "文書生成") || message.Artifact is not null);
+    internal static bool Finished(ChatMessage message) => !message.Pending && !message.IsGenerating && !message.WasInterrupted && (message.Identity?.Detail is not ("画像生成" or "文書生成") || message.Artifact is not null);
     internal static IEnumerable<MessageLocation> In(Conversation room, IReadOnlyDictionary<Guid, string>? serverNames = null)
     {
         var unread = (room.Experience.Unread ?? []).ToDictionary(u => (u.Branch, u.Message));
@@ -24,8 +24,8 @@ internal static class MessageLocations
             foreach (ChatMessage m in branch.Messages.ToArray())
             {
                 if (m.Work is { Mode: "debate" } work)
-                { foreach (DebateTurn t in work.Turns.ToArray()) { yield return Row(t.Id ?? WorkspaceService.StableId(work.Id, t.Round + ":" + t.Role), t.Name ?? t.Role, t.Icon, t.Content, t.Time, !t.Incomplete); } }
-                if (m.Content.Length > 0) { yield return Row(m.Id, m.Speaker, m.Avatar, m.Content, m.Identity?.Time, Finished(m)); }
+                { foreach (DebateTurn t in work.Turns.ToArray().Where(t => !t.Incomplete)) { yield return Row(t.Id ?? WorkspaceService.StableId(work.Id, t.Round + ":" + t.Role), t.Name ?? t.Role, t.Icon, t.Content, t.Time, true); } }
+                if (!m.Pending && m.Content.Length > 0) { yield return Row(m.Id, m.Speaker, m.Avatar, m.Content, m.Identity?.Time, Finished(m)); }
             }
         }
     }
@@ -34,7 +34,7 @@ internal static class MessageLocations
         if (room.Experience is not { } e) { return; }
         if (e.Unread?.Count > 1000 || e.Pins?.Count > 200 || e.Reactions?.Count > 1000 ||
             e.Unread?.Any(u => u is null) == true || e.Pins?.Any(p => p is null) == true || e.Reactions?.Any(r => r is null || !ReactionEmoji.Contains(r.Emoji, StringComparer.Ordinal)) == true ||
-            e.Unread?.DistinctBy(u => (u.Branch, u.Message)).Count() != e.Unread?.Count || e.Pins?.Distinct().Count() != e.Pins?.Count || e.Reactions?.Distinct().Count() != e.Reactions?.Count)
+            e.Unread?.DistinctBy(u => (u.Branch, u.Message)).Count() != e.Unread?.Count || e.Pins?.Distinct().Count() != e.Pins?.Count || e.Reactions?.DistinctBy(r => (r.Branch, r.Message, r.Emoji, Actor: r.Actor ?? AgentAccount.LocalId)).Count() != e.Reactions?.Count)
         { throw new InvalidDataException("未読・ピン留め・リアクションの形式または件数が不正です。"); }
         var references = (e.Unread ?? []).Select(u => (u.Branch, u.Message)).Concat((e.Pins ?? []).Select(p => (p.Branch, p.Message))).Concat((e.Reactions ?? []).Select(r => (r.Branch, r.Message))).ToHashSet();
         if (references.Count == 0) { return; }

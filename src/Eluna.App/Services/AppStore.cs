@@ -185,6 +185,9 @@ public sealed class AppStore
                     conversation is null || branch is null || conversation.ProjectId != job.Settings.SelectedProjectId ||
                     branch.Messages.Count(m => m.Id == job.AnswerId && m.Role == "assistant") != 1)
                 { throw new InvalidDataException("推論予約の参照先または保存内容が不正です。"); }
+                if (job.Social is { } social && (social.SessionId == Guid.Empty || social.RemainingTurns is < 1 or > 100 || social.RemainingTokens is < 64 or > 65536 || job.Agent is null || state.Agents?.Any(a => a.Id == job.Agent.Id) != true ||
+                    social.Called is { Count: > 3 } || social.Called?.Distinct().Count() != social.Called?.Count || social.Called?.Any(id => id != AgentAccount.LocalId && state.Agents?.Any(a => a.Id == id) != true) == true ||
+                    social.TriggerId is Guid trigger && !branch.Messages.Any(m => m.Id == trigger))) { throw new InvalidDataException("自律会話の予約と会話上限の形式が不正です。"); }
                 ModelPreferences.Validate(job.Model.Options with { ContextSize = job.Settings.ContextSize });
                 Validate(new(1, job.Settings with { SelectedProjectId = null, ContextSize = 4096 }, []));
                 ModelPreferences.Validate(job.Model.Options);

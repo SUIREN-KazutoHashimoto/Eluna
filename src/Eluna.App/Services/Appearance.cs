@@ -48,6 +48,7 @@ public static class Appearance
     }
     public static void Attach(Window window)
     {
+        window.Icon ??= System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/Assets/Eluna.ico"));
         if (window.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue) { window.SetResourceReference(FrameworkElement.StyleProperty, typeof(Window)); }
         window.SourceInitialized += (_, _) => SetTitle(window, !Equals(Application.Current.Resources["Theme"], "light"));
         window.Loaded += (_, _) => ScaleFonts(window);

@@ -8,7 +8,7 @@ public static class ContextCompressor
     internal static async Task<SavedMessage[]> PrepareAsync(Conversation conversation, LlamaService llama, AppSettings settings,
         Action<string> status, CancellationToken token, KnowledgeContext? knowledge = null, AgentAccount? agent = null)
     {
-        SavedMessage[] history = conversation.Messages.Where(m => !m.IsGenerating && (m.Content.Length > 0 || m.Attachments.Count > 0)).Select(m => m.Save()).ToArray();
+        SavedMessage[] history = conversation.Messages.Where(m => !m.Pending && !m.IsGenerating && (m.Content.Length > 0 || m.Attachments.Count > 0)).Select(m => m.Save()).ToArray();
         string instruction = knowledge?.Instruction ?? settings.SystemInstruction + "\n" + conversation.CustomInstruction;
         int through = string.IsNullOrWhiteSpace(conversation.Summary) ? 0 : Math.Clamp(conversation.SummaryThrough, 0, history.Length);
         SavedMessage[] Build() => (conversation.Summary.Length > 0 ? new[] { new SavedMessage("user", "以前の会話の引き継ぎメモ:\n" + conversation.Summary), new SavedMessage("assistant", "引き継ぎメモを参照します。") } : [])

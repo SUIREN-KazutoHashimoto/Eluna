@@ -27,7 +27,7 @@ public sealed class AgentProfileWindow : Window
     public AgentProfileWindow(ChatViewModel chat, Guid id)
     {
         _chat = chat; _id = id; AgentAccount account = chat.Agents.First(a => a.Id == id);
-        CharacterPanel = new((brief, token) => chat.GenerateCharacterAsync(brief, string.IsNullOrEmpty((ModelBox.SelectedItem as DebateModelChoice)?.Id) ? null : ((DebateModelChoice)ModelBox.SelectedItem).Id, token, status => CharacterPanel?.Report(status)), draft => { NameBox.Text = draft.Name; _icon.Text = draft.Icon; _specialty.Text = draft.Specialty; _instruction.Text = draft.Instruction + "\n話し方の例: " + draft.Greeting; Behavior.ApplyPersonality(new("roleplay", draft.Role, draft.Setting, draft.Traits)); });
+        CharacterPanel = new((brief, token) => chat.GenerateCharacterAsync(brief, string.IsNullOrEmpty((ModelBox.SelectedItem as DebateModelChoice)?.Id) ? null : ((DebateModelChoice)ModelBox.SelectedItem).Id, token, status => CharacterPanel?.Report(status)), draft => { NameBox.Text = draft.Name; _icon.Text = draft.Icon; _specialty.Text = draft.Specialty; _instruction.Text = draft.Instruction + "\n話し方の例: " + draft.Greeting; Behavior.ApplyPersonality(new("roleplay", draft.Role, draft.Setting, draft.Traits)); Behavior.Tuning.Apply(draft.Generation ?? AccountDefaults.Suggest(Behavior.Personality)); });
         Title = account.Name + " · プロフィール"; Width = 580; Height = 750; MinWidth = 420; MinHeight = 450; WindowStartupLocation = WindowStartupLocation.CenterOwner; Appearance.Attach(this);
         var root = new DockPanel { Margin = new(24) }; Content = root;
         var footer = new StackPanel(); DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer); footer.Children.Add(_status);
@@ -69,7 +69,7 @@ public sealed class AgentProfileWindow : Window
             catch (Exception ex) { _status.Text = "音声を取得できません: " + ex.Message; }
         };
     }
-    private string Snapshot() => JsonSerializer.Serialize(new { NameBox.Text, Icon = _icon.Text, Specialty = _specialty.Text, Instruction = _instruction.Text, Model = (ModelBox.SelectedItem as DebateModelChoice)?.Id, Voice = (VoiceBox.SelectedItem as VoiceChoice)?.Id, Rate = (int)_rate.Value, Behavior.Personality, Behavior.Autonomy, Behavior.Connections });
+    private string Snapshot() => JsonSerializer.Serialize(new { NameBox.Text, Icon = _icon.Text, Specialty = _specialty.Text, Instruction = _instruction.Text, Model = (ModelBox.SelectedItem as DebateModelChoice)?.Id, Voice = (VoiceBox.SelectedItem as VoiceChoice)?.Id, Rate = (int)_rate.Value, Behavior.Personality, Behavior.Autonomy, Behavior.Connections, Behavior.Tuning.Generation, Behavior.Tuning.Social, Behavior.Tuning.Artist });
     internal async Task<bool> SaveAsync()
     {
         if (_saving) { return false; }
@@ -77,7 +77,7 @@ public sealed class AgentProfileWindow : Window
         try
         {
             AgentAccount current = _chat.Agents.First(a => a.Id == _id); string? model = (ModelBox.SelectedItem as DebateModelChoice)?.Id, voice = (VoiceBox.SelectedItem as VoiceChoice)?.Id;
-            await _chat.SaveAgentAsync(current with { Name = NameBox.Text.Trim(), Icon = _icon.Text.Trim(), Specialty = _specialty.Text, Instruction = _instruction.Text, ModelId = string.IsNullOrEmpty(model) ? null : model, VoiceId = string.IsNullOrEmpty(voice) ? null : voice, SpeechRate = (int)_rate.Value, Personality = Behavior.Personality, Connections = Behavior.Connections, Autonomy = Behavior.Autonomy });
+            await _chat.SaveAgentAsync(current with { Name = NameBox.Text.Trim(), Icon = _icon.Text.Trim(), Specialty = _specialty.Text, Instruction = _instruction.Text, ModelId = string.IsNullOrEmpty(model) ? null : model, VoiceId = string.IsNullOrEmpty(voice) ? null : voice, SpeechRate = (int)_rate.Value, Personality = Behavior.Personality, Connections = Behavior.Connections, Autonomy = Behavior.Autonomy, Generation = Behavior.Tuning.Generation, Social = Behavior.Tuning.Social, Artist = Behavior.Tuning.Artist });
             _baseline = snapshot; _status.Text = Snapshot() == snapshot ? "保存しました" : "保存後の編集は未保存です"; return true;
         }
         catch (Exception ex) { _status.Text = ex.Message; return false; }

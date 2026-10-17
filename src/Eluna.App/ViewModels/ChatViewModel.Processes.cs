@@ -38,7 +38,7 @@ public sealed partial class ChatViewModel
     }
     private void AddMediaJob(MediaJob job)
     {
-        MediaJobs.Add(job); job.PropertyChanged += (_, e) => { Notify(nameof(ProcessSummary)); SyncMediaMessage(job); if (e.PropertyName == nameof(MediaJob.State) && job.Request is not null) { _ = SaveMediaJobsAsync(); } };
+        MediaJobs.Add(job); job.PropertyChanged += (_, e) => { Notify(nameof(ProcessSummary)); Notify(nameof(TypingNotice)); Notify(nameof(CanStopSelected)); RefreshMemberCards(); SyncMediaMessage(job); if (e.PropertyName == nameof(MediaJob.State) && job.Request is not null) { _ = SaveMediaJobsAsync(); } };
         SyncMediaMessage(job);
         _ = ObserveMediaAsync(job); _ = AwaitMediaCancellationAsync(job);
     }
@@ -59,7 +59,7 @@ public sealed partial class ChatViewModel
             KnowledgeContext knowledge = await Task.Run(() => KnowledgeService.Build(context.State, Conversation.Restore(context.Conversation), request.Prompt, context.Settings.ContextSize, _mediaShutdown.Token, request.Instruction, context.AgentId), _mediaShutdown.Token);
             SavedConversation conversation = context.Conversation with { Messages = [], Branches = null, ActiveBranchId = null, Draft = null, DraftAttachments = null, Summary = null };
             SavedConversation compactRoom = conversation with { Room = conversation.Room is null ? null : conversation.Room with { Kind = conversation.Room.Kind == "thread" ? "channel" : conversation.Room.Kind, ParentId = null, OriginMessageId = null } };
-            AppState compact = context.State with { Conversations = [compactRoom], InferenceJobs = null, CommonMemories = [], AgentMemories = [], Agents = context.State.Agents?.Where(a => compactRoom.Room?.Members.Contains(a.Id) == true || compactRoom.Room?.PastMembers?.Contains(a.Id) == true).ToList(), Projects = context.State.Projects?.Where(p => p.Id == conversation.ProjectId).Select(p => p with { Documents = [], Memories = [] }).ToList(), Skills = context.State.Skills?.Where(s => s.ProjectId is null || s.ProjectId == conversation.ProjectId).ToList() };
+            AppState compact = context.State with { Conversations = [compactRoom], InferenceJobs = null, CommonMemories = [], AgentMemories = [], Agents = context.State.Agents?.Where(a => compactRoom.Room?.Members.Contains(a.Id) == true || compactRoom.Room?.PastMembers?.Contains(a.Id) == true).Select(a => a with { Connections = a.Connections?.Where(id => compactRoom.Room?.Members.Contains(id) == true || compactRoom.Room?.PastMembers?.Contains(id) == true).ToList() }).ToList(), Projects = context.State.Projects?.Where(p => p.Id == conversation.ProjectId).Select(p => p with { Documents = [], Memories = [] }).ToList(), Skills = context.State.Skills?.Where(s => s.ProjectId is null || s.ProjectId == conversation.ProjectId).ToList() };
             request = request with
             {
                 Context = context with
@@ -88,13 +88,14 @@ public sealed partial class ChatViewModel
             {
                 Id = id,
                 Role = "assistant",
+                Pending = true,
                 Identity = new(request.Agent?.Id, request.Agent?.Name ?? "生成", request.Agent?.Icon ?? "◇",
-                request.Context?.Model.Id, request.Context?.Model.DisplayName, job.CreatedAt, Detail: request.Kind == "image" ? "画像生成" : "文書生成")
+                request.Context?.Model.Id, request.Context?.Model.DisplayName, job.CreatedAt, ReplyTo: request.ReplyTo, Detail: request.Kind == "image" ? "画像生成" : "文書生成")
             };
             branch.Messages.Add(message);
         }
-        message.Content = job.Title; message.Notice = job.Detail; message.Knowledge = job.Knowledge; message.Skills = job.Skills;
-        if (job.State == "complete" && File.Exists(request.OutputPath)) { message.Artifact = new(job.Id, job.Title, request.Kind, request.OutputPath); }
+        message.Content = request.Caption ?? (request.Kind == "image" ? "画像を作成しました。" : job.Title); message.Notice = ""; message.Knowledge = job.Knowledge; message.Skills = job.Skills;
+        if (job.State == "complete" && File.Exists(request.OutputPath)) { message.Artifact = new(job.Id, job.Title, request.Kind, request.OutputPath); if (message.Identity is { } identity) { message.Identity = identity with { Time = DateTimeOffset.UtcNow }; } message.Pending = false; if (request.Kind == "image" && message.ArtifactImage is null) { _ = LoadArtifactImageAsync(message, request.OutputPath); } }
     }
     public async Task ResumeMediaAsync(MediaJob job)
     {
@@ -147,8 +148,9 @@ public sealed partial class ChatViewModel
     }
     private void ValidateMediaRequest(MediaRequest request, bool requireProject = true)
     {
-        if (request.Kind is not ("document" or "translation" or "image") || request.Prompt is null || request.Prompt.Length > 60000 || request.Instruction is null || request.OutputPath is null || !Path.GetFullPath(request.OutputPath).StartsWith(Path.Combine(_store.Root, "Generated") + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || request.Kind == "image" && request.Image is null || request.Kind != "image" && request.Context is null)
+        if (request.Kind is not ("document" or "translation" or "image") || request.Prompt is null || request.Prompt.Length > 60000 || request.Caption?.Length > 3000 || request.Instruction is null || request.OutputPath is null || !Path.GetFullPath(request.OutputPath).StartsWith(Path.Combine(_store.Root, "Generated") + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || request.Kind == "image" && request.Image is null || request.Kind != "image" && request.Context is null)
         { throw new InvalidDataException("作成予約の形式が不正です。"); }
+        if (requireProject && request.ConversationId is Guid sourceId && Conversations.FirstOrDefault(c => c.Id == sourceId) is { } source) { ChannelAccess.RequireSpeaker(CaptureState(), source.Save(), request.Agent?.Id); if (request.ArtistGenerated && Agents.FirstOrDefault(a => a.Id == request.Agent?.Id)?.Artist?.Enabled != true) { throw new InvalidOperationException("絵描きスキルが無効になっています。予約を取り消すか設定を確認してください。"); } }
         if (request.Context is { } context) { AppStore.Validate(context.State); if (context.Conversation.ProjectId != request.ProjectId) { throw new InvalidDataException("作成予約の参照範囲が一致しません。"); } }
         if (requireProject && request.ProjectId is Guid id && !Projects.Any(p => p.Id == id)) { throw new InvalidOperationException("対象のプロジェクトが存在しません。予約を取り消してください。"); }
         if (requireProject && request.ConversationId is Guid roomId && !Conversations.Any(c => c.Id == roomId && c.ProjectId == request.ProjectId && c.Branches.Any(b => b.Id == request.BranchId)))

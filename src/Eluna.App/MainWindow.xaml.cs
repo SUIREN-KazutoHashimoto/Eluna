@@ -42,6 +42,7 @@ public partial class MainWindow : Window
         HeaderArea.SizeChanged += (_, _) => UpdateComposerHeight();
         ErrorBanner.SizeChanged += (_, _) => UpdateComposerHeight();
         _viewModel.ScrollRequested += FollowOutput;
+        _viewModel.OperationRequested += OpenOperation;
         _viewModel.MessageRequested += JumpToMessage;
         _viewModel.NavigationStarting += RememberReadingPosition;
         _viewModel.PlanReviewRequested += ReviewPlanAsync;
@@ -53,6 +54,10 @@ public partial class MainWindow : Window
         InitializeFileDrop();
         DataObject.AddPastingHandler(InputBox, PasteAttachment);
         MessagesList.AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler(MessagesScroll_Changed));
+        MessagesList.PreviewMouseWheel += MessagesWheel;
+        MessagesList.PreviewKeyDown += (_, e) => { if (e.Key is Key.PageUp or Key.Home or Key.Up) { _followOutput = false; } };
+        MessagesList.PreviewMouseDown += (_, e) =>
+        { for (DependencyObject? item = e.OriginalSource as DependencyObject; item is not null && item != MessagesList; item = item is Visual ? VisualTreeHelper.GetParent(item) : null) { if (item is System.Windows.Controls.Primitives.ScrollBar) { _followOutput = false; break; } } };
         Loaded += async (_, _) =>
         {
             RefreshMentionAdornment();
@@ -247,6 +252,8 @@ public partial class MainWindow : Window
     {
         if (sender is FrameworkElement { DataContext: ChatMessage { Work: not null } answer }) { OpenSettings(9); Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault(w => w.Owner == this)?.ShowMessage(answer); }
     }
+    private void OpenOperation(ChatMessage answer)
+    { OpenSettings(9); Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault(w => w.Owner == this)?.ShowMessage(answer); }
     private async Task<bool> ReviewPlanAsync(WorkSession work, CancellationToken token)
     {
         if (token.IsCancellationRequested) { return false; }
@@ -372,11 +379,22 @@ public partial class MainWindow : Window
             if (e.Key == Key.C && answer is not null) { CopyMessage(answer); e.Handled = true; }
         }
     }
+    private void MessagesWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) { return; }
+        _messagesScroll ??= FindChild<ScrollViewer>(MessagesList);
+        if (_messagesScroll is null || _messagesScroll.ScrollableHeight <= 0) { return; }
+        _followOutput = false;
+        double unit = SystemParameters.WheelScrollLines < 0 ? _messagesScroll.ViewportHeight : SystemParameters.WheelScrollLines * _viewModel.ChatLineHeight;
+        _messagesScroll.ScrollToVerticalOffset(_messagesScroll.VerticalOffset - e.Delta / 120.0 * unit);
+        e.Handled = true;
+    }
+    internal bool FollowingOutput => _followOutput;
     private void MessagesScroll_Changed(object sender, ScrollChangedEventArgs e)
     {
         if (!ReferenceEquals(e.OriginalSource, _messagesScroll) || _messagesScroll is null) { return; }
         if (_restoringReading == _scrollKey) { return; }
-        if (e.ExtentHeightChange == 0) { _followOutput = _messagesScroll.ScrollableHeight - _messagesScroll.VerticalOffset < 80; }
+        if (e.ExtentHeightChange == 0 || e.VerticalChange < 0) { _followOutput = _messagesScroll.ScrollableHeight - _messagesScroll.VerticalOffset < 80; }
         LatestButton.Visibility = _followOutput ? Visibility.Collapsed : Visibility.Visible;
         RefreshReadingState();
         _readingSave.Stop(); _readingSave.Start();
@@ -428,9 +446,9 @@ public partial class MainWindow : Window
         {
             Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
             {
-                if (_scrollVersion != version) { return; }
+                if (_scrollVersion != version || !_followOutput) { return; }
                 _messagesScroll ??= FindChild<ScrollViewer>(MessagesList);
-                if (_viewModel.SelectedConversation?.Messages.LastOrDefault() is ChatMessage last) { MessagesList.ScrollIntoView(last); }
+                if (_viewModel.Timeline.LastOrDefault() is ChatMessage last) { MessagesList.ScrollIntoView(last); }
                 _messagesScroll?.ScrollToEnd(); LatestButton.Visibility = Visibility.Collapsed;
                 RefreshReadingState();
             });

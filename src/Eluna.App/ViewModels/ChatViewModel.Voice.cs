@@ -50,6 +50,7 @@ public sealed partial class ChatViewModel
     private bool VoiceValid => _voiceRoom is { IsArchived: false, Room.Kind: "voice" } room && Conversations.Contains(room) && room.ActiveBranch.Id == _voiceBranch && room.ProjectId == _voiceProject && (room.Room.DefaultAgentId is not Guid actor || ChannelAccess.CanSpeak(CaptureState(), room.Save(), actor));
     private void NotifyVoice()
     {
+        Notify(nameof(VoiceParticipants)); Notify(nameof(VoiceRoomId));
         foreach (string property in new[] { nameof(IsVoiceChannel), nameof(VoiceJoined), nameof(IsJoinedVoiceChannel), nameof(CanJoinVoiceChannel), nameof(ShowVoicePanel), nameof(VoiceRoomName), nameof(VoiceStatus), nameof(VoiceNotice), nameof(VoiceHeard), nameof(VoiceMuted), nameof(MicrophoneLabel), nameof(VoiceOutputLabel), nameof(VoiceBusy), nameof(IsSharing), nameof(SharedTitle), nameof(SharedPreview), nameof(ShareControlAllowed), nameof(ShareStatus) }) { Notify(property); }
     }
     public async Task JoinVoiceAsync()
@@ -63,7 +64,7 @@ public sealed partial class ChatViewModel
             if (joinEpoch != _voiceEpoch || !CanCompose || !Conversations.Contains(room) || room.Room?.Kind != "voice") { return; }
             _voiceRoom = room; _voiceBranch = room.ActiveBranch.Id; _voiceProject = room.ProjectId; _voiceMuted = true;
             long epoch = ++_voiceEpoch; _voiceRead.Clear(); foreach (InferenceJob job in Inferences.Items) { _voiceRead.Add(job.Request.AnswerId); }
-            _voiceAudio = VoiceAudioFactory();
+            _voiceAudio = VoiceAudioFactory(); _voiceParticipants.Clear(); if (room.Room?.DefaultAgentId is Guid joined && EligibleVoiceMembers.Any(a => a.Id == joined)) { _voiceParticipants.Add(joined); }
             _voiceAudio.Recognized += text => Application.Current.Dispatcher.BeginInvoke(() =>
             {
                 if (epoch != _voiceEpoch || !VoiceValid || _voiceMuted) { return; }
@@ -121,8 +122,9 @@ public sealed partial class ChatViewModel
                     await SubmitSharedComputerAsync(room, entry.Text); continue;
                 }
                 room.Messages.Add(new() { Role = "user", Content = entry.Text, Attachments = SharedAttachments(room), Identity = SelfIdentity(detail: "音声入力") });
-                AgentAccount? agent = Agents.FirstOrDefault(a => a.Id == room.Room?.DefaultAgentId && a.Enabled);
-                await QueueAnswerAsync(room, null, agent: agent);
+                AgentAccount? agent = EligibleVoiceMembers.FirstOrDefault(a => _voiceParticipants.Contains(a.Id) && a.Id == room.Room?.DefaultAgentId) ?? EligibleVoiceMembers.FirstOrDefault(a => _voiceParticipants.Contains(a.Id));
+                if (agent is null) { await PersistSafelyAsync(); continue; }
+                if (room.Room?.Social?.Enabled == true && !room.Experience.SocialPaused) { await BeginSocialReplyAsync(room, [agent]); } else { await QueueAnswerAsync(room, null, agent: agent); }
             }
         }
         catch (Exception ex) { _voiceNotice = "音声の送信に失敗しました: " + ex.Message; NotifyVoice(); }
@@ -130,10 +132,11 @@ public sealed partial class ChatViewModel
     }
     private void VoiceQueueChanged()
     {
+        Notify(nameof(VoiceParticipants));
         if (_voiceRoom is null) { return; }
         if (!VoiceValid) { _ = LeaveVoiceAsync(); return; }
-        foreach (InferenceJob job in Inferences.Items.Where(j => j.State == "complete" && j.Request.ConversationId == _voiceRoom.Id && j.Request.BranchId == _voiceBranch))
-        { if (_voiceRead.Add(job.Request.AnswerId) && !_voiceDeafened && FindAnswer(job.Request) is { Content.Length: > 0 } answer) { if (_voiceOutputs.Count < 8) { _voiceOutputs.Enqueue((answer, _voiceEpoch)); } } }
+        foreach (InferenceJob job in Inferences.Items.Where(j => j.State == "complete" && j.Request.ConversationId == _voiceRoom.Id && j.Request.BranchId == _voiceBranch && _voiceParticipants.Contains(j.Request.Agent?.Id ?? Guid.Empty)))
+        { if (_voiceRead.Add(job.Request.AnswerId) && !_voiceDeafened && FindAnswer(job.Request) is { Pending: false, Content.Length: > 0 } answer) { if (_voiceOutputs.Count < 8) { _voiceOutputs.Enqueue((answer, _voiceEpoch)); } } }
         _ = ReadVoiceOutputsAsync();
     }
     private async Task ReadVoiceOutputsAsync()
@@ -145,6 +148,8 @@ public sealed partial class ChatViewModel
             while (_voiceOutputs.TryDequeue(out var output))
             {
                 if (output.Epoch != _voiceEpoch || !VoiceValid || _voiceAudio is not { } audio) { continue; }
+                if (output.Message.Identity?.AgentId is not Guid participant || !_voiceParticipants.Contains(participant) || !EligibleVoiceMembers.Any(a => a.Id == participant)) { continue; }
+                _speakingAgent = participant;
                 AgentAccount? account = Agents.FirstOrDefault(a => a.Id == output.Message.Identity?.AgentId); _speakingName = account?.Name ?? output.Message.Speaker;
                 string plain = Regex.Replace(output.Message.Content, @"```[\s\S]*?```|https?://\S+", " "); plain = Regex.Replace(plain, @"[#*_`>\[\]]", "").Trim();
                 if (plain.Length == 0) { continue; }
@@ -159,7 +164,7 @@ public sealed partial class ChatViewModel
     }
     public async Task LeaveVoiceAsync()
     {
-        ++_voiceEpoch; StopSharing(); _voiceRoom = null; _voiceInputs.Clear(); _voiceOutputs.Clear();
+        ++_voiceEpoch; StopSharing(); _voiceParticipants.Clear(); _speakingAgent = null; _voiceRoom = null; _voiceInputs.Clear(); _voiceOutputs.Clear();
         WindowsVoiceAudio? audio = _voiceAudio; _voiceAudio = null; _voiceMuted = true; _voiceBusy = _voiceSpeaking = false; _voiceHeard = ""; NotifyVoice();
         if (audio is not null) { try { await audio.DisposeAsync(); } catch (Exception ex) { _voiceNotice = "音声を終了しました: " + ex.Message; } }
         try { await _shareTask; } catch (OperationCanceledException) { }

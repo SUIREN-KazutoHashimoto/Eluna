@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using Eluna.App.Models;
+using Eluna.App.Services;
 
 namespace Eluna.App.Controls;
 
@@ -14,10 +15,13 @@ public sealed class AgentMembersEditor : UserControl
     private readonly ListBox _available = new() { DisplayMemberPath = nameof(AgentAccount.Label) }, _selected = new() { DisplayMemberPath = nameof(AgentAccount.Label) };
     private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, Margin = new(0, 8, 0, 0), FontSize = 12 };
     private Point _start;
+    private readonly int _maximum;
+    private readonly bool _includeLocal;
     public IReadOnlyList<Guid> SelectedIds => _members.Select(a => a.Id).ToList();
     public event Action? Changed;
-    public AgentMembersEditor(IEnumerable<AgentAccount> accounts, IEnumerable<Guid> selected)
+    public AgentMembersEditor(IEnumerable<AgentAccount> accounts, IEnumerable<Guid> selected, int maximum = AccountDefaults.MaximumAgents, bool includeLocal = true)
     {
+        _maximum = maximum; _includeLocal = includeLocal;
         AgentAccount[] all = accounts.ToArray(); _available.ItemsSource = all.Where(a => a.Enabled).ToArray();
         foreach (Guid id in selected) { if (all.FirstOrDefault(a => a.Id == id) is { } account) { _members.Add(account); } }
         _selected.ItemsSource = _members;
@@ -67,10 +71,10 @@ public sealed class AgentMembersEditor : UserControl
     {
         int old = _members.IndexOf(account);
         if (old >= 0) { _members.RemoveAt(old); if (old < index) { index--; } }
-        else if (_members.Count >= 6 || !account.Enabled) { _status.Text = "参加者は6名までです。"; return; }
+        else if (_members.Count >= _maximum || !account.Enabled) { _status.Text = _includeLocal ? "参加者は自分を含めて50名までです。" : "この議論の参加者は" + _maximum + "名までです。"; return; }
         _members.Insert(Math.Clamp(index, 0, _members.Count), account); _selected.SelectedItem = account; Update();
     }
     private void Move(int delta)
     { int index = _selected.SelectedIndex; if (index >= 0 && index + delta >= 0 && index + delta < _members.Count) { _members.Move(index, index + delta); Update(); } }
-    private void Update() { _status.Text = $"{_members.Count}/6名 · 左へドロップすると退出。↑↓ボタンでも並べ替えできます。"; Changed?.Invoke(); }
+    private void Update() { _status.Text = $"{_members.Count + (_includeLocal ? 1 : 0)}/{_maximum + (_includeLocal ? 1 : 0)}名" + (_includeLocal ? "（自分を含む）" : "（議論の参加者）") + " · 左へドロップすると退出。↑↓でも並べ替えできます。"; Changed?.Invoke(); }
 }

@@ -53,7 +53,7 @@ public sealed partial class ChatViewModel
                     {
                         AgentAccount actor = candidates.First(a => a.Id == task.Agent);
                         room.Messages.Add(new() { Role = "user", Content = task.Task, Identity = new(coordinator.Id, coordinator.Name, coordinator.Icon, Time: DateTimeOffset.UtcNow, Detail: "自動編成の担当依頼") });
-                        var response = new ChatMessage { Role = "assistant", Mode = job.Request.Settings.InferenceMode, Identity = new(actor.Id, actor.Name, actor.Icon, actor.ModelId ?? job.Request.Model.Id, Models.First(m => m.Id == (actor.ModelId ?? job.Request.Model.Id)).DisplayName, DateTimeOffset.UtcNow) };
+                        var response = new ChatMessage { Role = "assistant", Pending = true, Mode = job.Request.Settings.InferenceMode, Identity = new(actor.Id, actor.Name, actor.Icon, actor.ModelId ?? job.Request.Model.Id, Models.First(m => m.Id == (actor.ModelId ?? job.Request.Model.Id)).DisplayName, DateTimeOffset.UtcNow) };
                         room.Messages.Add(response); assignments.Add(new(room.Id, room.ActiveBranch.Id, actor.Id, task.Task, response.Id));
                     }
                     rooms.Add(room);
@@ -84,7 +84,7 @@ public sealed partial class ChatViewModel
                 if (run.TokensUsed > 6192) { Update(run with { Stage = "limited", ActiveRoomId = null, ActiveAgentId = null, Detail = "担当に必要な出力予算が残っていません。作業先に途中結果を保存しました。" }); return true; }
                 ConversationBranch branch = room.Branches.First(b => b.Id == assignment.BranchId);
                 ChatMessage response = branch.Messages.First(m => m.Id == assignment.AnswerId);
-                LocalModel model = Models.FirstOrDefault(m => m.Id == (actor.ModelId ?? job.Request.Model.Id)) ?? throw new InvalidOperationException(actor.Name + "のモデルがありません。");
+                LocalModel model = AccountDefaults.ModelFor(actor, Models.FirstOrDefault(m => m.Id == (actor.ModelId ?? job.Request.Model.Id)) ?? throw new InvalidOperationException(actor.Name + "のモデルがありません。"));
                 model = model with { Preferences = model.Options with { MaxOutputTokens = Math.Min(512, model.Options.MaxOutputTokens) } };
                 Update(run with { Stage = "running", ActiveRoomId = room.Id, ActiveAgentId = actor.Id, Detail = room.Title + " / " + actor.Name });
                 string original = context.Messages.Last(m => m.Role == "user").Content;
@@ -101,6 +101,7 @@ public sealed partial class ChatViewModel
                 try { if (response.Work?.CanResume == true) { await RunWorkCoreAsync(response, workToken, child, engine, workerContext); } else { await GenerateAnswerCoreAsync(workerContext, response, child, engine, workToken, allowTeam: false); } }
                 finally { response.WasInterrupted = workToken.IsCancellationRequested; response.IsGenerating = false; Notify(nameof(TypingNotice)); }
                 if (response.Content.Length == 0) { throw new InvalidOperationException("担当の回答が空です。"); }
+                response.Pending = false;
                 run = answer.Team!;
                 Update(run with { Assignments = run.Assignments.Select(a => a.AnswerId == assignment.AnswerId ? a with { Complete = true } : a).ToList(), TokensUsed = run.TokensUsed + (response.Work?.TokensUsed ?? engine.LastOutputTokens), ActiveRoomId = null, ActiveAgentId = null });
                 await PersistSafelyAsync();

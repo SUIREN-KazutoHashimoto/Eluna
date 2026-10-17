@@ -44,11 +44,13 @@ public sealed partial class ChatViewModel
         {
             InferenceJob[] active = Inferences.Items.Where(j => j.State == "active" && (j.Request.ConversationId == SelectedConversation?.Id && j.Request.BranchId == SelectedBranch?.Id || FindAnswer(j.Request)?.Team is { ActiveRoomId: Guid room } && room == SelectedConversation?.Id)).ToArray();
             string names = string.Join("、", active.Where(j => FindAnswer(j.Request)?.Work?.Stage is not ("debate-wait" or "plan" or "paused")).Select(j => FindAnswer(j.Request)?.Team is { } team ? team.ActiveRoomId == SelectedConversation?.Id ? Agents.FirstOrDefault(a => a.Id == team.ActiveAgentId)?.Name : null : FindAnswer(j.Request)?.Work?.Turns.LastOrDefault(t => t.Incomplete)?.Name ?? j.Request.Agent?.Name ?? "メンバー").Where(n => n is not null).Distinct());
-            return names.Length > 0 ? names + " が入力中…" : "";
+            string drawing = string.Join("、", MediaJobs.Where(j => j.State == "active" && j.Request is { Kind: "image", ArtistGenerated: true } r && r.ConversationId == SelectedConversation?.Id && r.BranchId == SelectedBranch?.Id).Select(j => j.Request!.Agent?.Name).Where(n => n is not null).Distinct());
+            return string.Join(" · ", new[] { names.Length > 0 ? names + " が入力中…" : "", drawing.Length > 0 ? drawing + " が描いています…" : "" }.Where(s => s.Length > 0));
         }
     }
     private void NotifyShell()
     {
+        Notify(nameof(IsSocialChannel)); Notify(nameof(SocialStatus)); Notify(nameof(SocialStopped));
         RefreshMemberCards();
         NotifyVoice();
         Notify(nameof(ServerTitle)); Notify(nameof(ChannelTitle)); Notify(nameof(ChannelSymbol)); Notify(nameof(ChannelDescription)); Notify(nameof(ChannelPlaceholder)); Notify(nameof(ChannelWelcome)); Notify(nameof(MemberHeading)); Notify(nameof(TypingNotice)); Notify(nameof(ChannelListHeading));

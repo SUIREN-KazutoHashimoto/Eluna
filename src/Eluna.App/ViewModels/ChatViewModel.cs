@@ -82,7 +82,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     public bool HasModel => SelectedModel is not null;
     public string EditConversationHint => CanEditConversation ? "別の回答として保存します" : "この会話の推論と予約が終わると編集・再生成できます。別のチャットは利用できます。";
     public bool CanGenerate => CanCompose && !_submitting && HasModel && Inferences.Items.Count(j => j.IsPending) < 100;
-    public bool IsEmpty => SelectedConversation?.Messages.Count is not > 0;
+    public bool IsEmpty => Timeline.Count == 0;
     public ObservableCollection<ChatAttachment> PendingAttachments => SelectedConversation?.DraftAttachments ?? [];
     public bool IsBusy { get => _isBusy || _submitting || Inferences.ActiveCount > 0 || MediaJobs.Any(j => j.State == "active") || _computerControllers.Count > 0; private set { Set(ref _isBusy, value); Inferences.Suspended = value; RefreshCommands(); if (!value) { PumpMedia(); } } }
     public string Status { get => SelectedComputer is { } computer ? computer.Detail : !_isBusy && SelectedJob is { IsPending: true } job && job.Request.Model.Id == SelectedModel?.Id ? job.Detail : _status; private set { Set(ref _status, value); Notify(nameof(ShowStatus)); } }
@@ -240,6 +240,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
             ComputeChoices.Add(new("cpu", "CPU"));
             foreach (ComputeDevice device in _llama.Devices) { ComputeChoices.Add(device); }
             _ready = true; Status = HasModel ? "送信するとモデルを読み込みます" : "モデルを追加して始めましょう";
+            StartSocialClock();
             Error = _store.RecoveryNotice ?? _mediaRecoveryNotice ?? "";
         }
         catch (Exception ex) { _lastError = ex; SetError(DiagnosticsService.Explain(ex), InitializeAsync); Status = "準備できませんでした。再試行できます"; }
@@ -247,6 +248,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     private void LoadState(AppState state)
     {
+        StopSocialClock(); _socialStopped.Clear(); _socialLastStart.Clear();
         _incoming?.Dispose(); _incoming = null; _manualUnread.Clear(); _readingMessages = false;
         state = WorkspaceService.Upgrade(state);
         foreach (Conversation old in Conversations) { old.PropertyChanged -= ConversationChanged; }
@@ -347,7 +349,10 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         try
         {
             IReadOnlyList<AgentAccount> targets = TargetAgents(conversation, prompt);
-            if (SelectedWorkMode.Id == "debate" || targets.Count == 0) { await GenerateAnswerAsync(conversation); }
+            bool workspaceRequest = targets.Any(a => a.Autonomy?.Automatic == true) && System.Text.RegularExpressions.Regex.IsMatch(prompt, "(?:サーバー|チャンネル|チーム|担当).{0,40}(?:作|組|分|用意)", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(100));
+            if (targets.Count == 0 && conversation.Room?.Members.Count == 0) { await PersistSafelyAsync(); return; }
+            if (!invitation && !workspaceRequest && SelectedWorkMode.Id is "chat" or "offline" && conversation.Room?.Social?.Enabled == true && !SocialStopped) { await BeginSocialReplyAsync(conversation, targets); }
+            else if (SelectedWorkMode.Id == "debate" || targets.Count == 0) { await GenerateAnswerAsync(conversation); }
             else { foreach (AgentAccount target in targets) { await QueueAnswerAsync(conversation, null, agent: target); } }
         }
         catch (Exception ex) { Error = ex.Message; }
@@ -386,6 +391,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     private async Task GenerateAnswerCoreAsync(Conversation conversation, ChatMessage answer, InferenceJob job, LlamaService engine, CancellationToken token, WorkSession? previousWork = null, bool allowTeam = true)
     {
+        if (allowTeam && await TryArtistRequestAsync(conversation, answer, job, engine, token)) { return; }
         if (allowTeam && await TryInviteFromChatAsync(conversation, answer, job, engine, token)) { return; }
         if (allowTeam && await TryRunTeamAsync(conversation, answer, job, engine, token)) { return; }
         SavedMessage[] requests = conversation.Messages.Select(m => m.Save()).ToArray();
@@ -393,7 +399,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         LocalModel model = job.Request.Model;
         InferenceMode mode = InferenceModes.Find(settings.InferenceMode);
         int effectiveContext = settings.ContextSize;
-        ScrollJob(job, true);
+        ScrollJob(job, false);
         var text = new StringBuilder(); Stopwatch? thinking = null;
         var elapsed = Stopwatch.StartNew(); double? firstOutput = null;
         long lastUpdate = 0, lastSave = 0;
@@ -555,7 +561,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         }
         async Task EnsureWorkModel(WorkPrompt prompt, CancellationToken token)
         {
-            LocalModel model = WorkModel(prompt.ModelId) ?? throw new InvalidOperationException("調査で使うモデルが見つかりません。モデルを追加するか、作業設定を確認してください。");
+            LocalModel model = AccountDefaults.ModelFor(Agents.FirstOrDefault(a => a.Id == (prompt.AgentId ?? job.Request.Agent?.Id)), WorkModel(prompt.ModelId) ?? throw new InvalidOperationException("調査で使うモデルが見つかりません。モデルを追加するか、作業設定を確認してください。"));
             if (work.Turns.LastOrDefault() is { Incomplete: true } turn && turn.ModelId == model.Id)
             { work.Turns[work.Turns.Count - 1] = turn with { ModelName = model.DisplayName }; }
             int workContext = ModelContext(model.Id);
@@ -723,6 +729,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     public async Task ShutdownAsync()
     {
+        StopSocialClock();
         await LeaveVoiceAsync();
         _shuttingDown = true; StopComputers(); try { await ComputerCompletion; } catch (OperationCanceledException) { }
         _mediaShutdown.Cancel(); foreach (MediaJob job in MediaJobs.Where(j => j.IsPending).ToArray()) { job.Cancel(); if (job.State == "queued") { job.State = job.Request is null ? "canceled" : "paused"; job.Completion.TrySetCanceled(); } }
@@ -736,6 +743,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     public void Dispose()
     {
+        StopSocialClock();
         _incoming?.Dispose(); _incoming = null;
         _historySearchCancellation?.Cancel(); _historySearchCancellation?.Dispose(); _historySearchCancellation = null;
         StopComputers();
