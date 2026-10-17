@@ -30,6 +30,7 @@ internal static class Program
             await AgentFeaturesChecks.RunAsync(Path.Combine(root, "agents-" + Guid.NewGuid().ToString("N")));
             await SocialChatChecks.RunAsync(Path.Combine(root, "social-" + Guid.NewGuid().ToString("N")));
             await ExperienceChecks.RunAsync(Path.Combine(root, "experience-" + Guid.NewGuid().ToString("N")));
+            await MessageExperienceChecks.RunAsync(Path.Combine(root, "messages-" + Guid.NewGuid().ToString("N")));
             await VoiceChannelChecks.RunAsync(Path.Combine(root, "voice-" + Guid.NewGuid().ToString("N")));
             await InferenceQueueChecks.RunAsync(Path.Combine(root, "inference-queue-" + Guid.NewGuid().ToString("N")));
             await SkillChecks.RunAsync(Path.Combine(root, "skills-" + Guid.NewGuid().ToString("N")));

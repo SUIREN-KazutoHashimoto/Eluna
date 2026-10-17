@@ -23,7 +23,7 @@ public sealed partial class ChatViewModel
         if (_timelineBranch is not null) { _timelineBranch.Messages.CollectionChanged += TimelineChanged; }
         RefreshTimeline();
     }
-    private void TimelineMessageChanged(object? sender, PropertyChangedEventArgs e) { if (e.PropertyName == nameof(ChatMessage.Work)) { RefreshTimeline(); } }
+    private void TimelineMessageChanged(object? sender, PropertyChangedEventArgs e) { if (e.PropertyName == nameof(ChatMessage.Work)) { RefreshTimeline(); } else if (e.PropertyName == nameof(ChatMessage.Identity)) { TimelinePresentation.Apply(Timeline); } }
     private void TimelineWorkChanged(object? sender, PropertyChangedEventArgs e) { if (e.PropertyName is nameof(WorkSession.Stage) or nameof(WorkSession.IsRunning)) { RefreshTimeline(); Notify(nameof(TypingNotice)); } }
     private void TimelineChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
@@ -83,6 +83,7 @@ public sealed partial class ChatViewModel
             if (old >= 0) { Timeline.Move(old, i); } else { Timeline.Insert(i, next[i]); }
         }
         while (Timeline.Count > next.Count) { Timeline.RemoveAt(Timeline.Count - 1); }
+        TimelinePresentation.Apply(Timeline); ApplyTimelineExperience(); ExperienceChanged();
         Notify(nameof(ReplyLabel)); Notify(nameof(IsEmpty));
     }
 }

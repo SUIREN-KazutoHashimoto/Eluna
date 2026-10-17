@@ -166,6 +166,7 @@ public sealed class AppStore
         KnowledgeService.Validate(state.Projects, state.CommonMemories);
         SkillValidation.State(state);
         WorkspaceService.Validate(state);
+        foreach (SavedConversation conversation in state.Conversations) { MessageLocations.Validate(conversation); }
         HashSet<Guid> projectIds = (state.Projects ?? []).Select(p => p.Id).ToHashSet();
         if (state.Settings.SelectedProjectId is Guid selected && !projectIds.Contains(selected) || state.Conversations.Any(c => c.ProjectId is Guid id && !projectIds.Contains(id)))
         { throw new InvalidDataException("会話または選択範囲のプロジェクトが見つかりません。"); }

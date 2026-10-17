@@ -40,6 +40,12 @@ public partial class App : Application
                 root = Path.Combine(captureDirectory, "preview-data");
             }
             var store = new AppStore(root);
+            int messageExperienceIndex = Array.IndexOf(e.Args, "--verify-message-experience");
+            if (messageExperienceIndex >= 0 && messageExperienceIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("発言の操作検証には専用の --data-dir が必要です。"); }
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = MessageExperienceVerification.RunAsync(store, e.Args[messageExperienceIndex + 1]); return;
+            }
             int experienceIndex = Array.IndexOf(e.Args, "--verify-experience");
             if (experienceIndex >= 0 && experienceIndex + 1 < e.Args.Length)
             {

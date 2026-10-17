@@ -25,6 +25,19 @@ public abstract class ObservableObject : INotifyPropertyChanged
 
 public sealed class ChatMessage : ObservableObject
 {
+    private bool _pinnedMessage, _jumpHighlighted;
+    private IReadOnlyList<ReactionBadge> _reactions = [];
+    public bool PinnedMessage { get => _pinnedMessage; internal set => Set(ref _pinnedMessage, value); }
+    public bool JumpHighlighted { get => _jumpHighlighted; internal set => Set(ref _jumpHighlighted, value); }
+    public IReadOnlyList<ReactionBadge> Reactions { get => _reactions; internal set { Set(ref _reactions, value); Notify(nameof(HasReactions)); } }
+    public bool HasReactions => Reactions.Count > 0;
+    private bool _compact;
+    private string _dateSeparator = "";
+    public bool Compact { get => _compact; internal set => Set(ref _compact, value); }
+    public string DateSeparator { get => _dateSeparator; internal set { if (Set(ref _dateSeparator, value)) { Notify(nameof(HasDateSeparator)); } } }
+    public bool HasDateSeparator => DateSeparator.Length > 0;
+    public bool HasAttachments => Attachments.Count > 0;
+    public string TimeHint => Identity?.Time?.ToLocalTime().ToString("yyyy/MM/dd HH:mm:ss zzz", System.Globalization.CultureInfo.InvariantCulture) ?? "日時の記録はありません";
     private string _content = "";
     private bool _searchHighlighted;
     public bool SearchHighlighted { get => _searchHighlighted; internal set => Set(ref _searchHighlighted, value); }
@@ -38,7 +51,7 @@ public sealed class ChatMessage : ObservableObject
     public string Role { get; init; } = "user";
     public bool IsLocalMessage => Role == "user";
     private MessageIdentity? _identity;
-    public MessageIdentity? Identity { get => _identity; set { if (Set(ref _identity, value)) { Notify(nameof(Speaker)); Notify(nameof(Avatar)); Notify(nameof(SpeakerDetail)); Notify(nameof(DisplayTime)); Notify(nameof(HasReply)); } } }
+    public MessageIdentity? Identity { get => _identity; set { if (Set(ref _identity, value)) { Notify(nameof(Speaker)); Notify(nameof(Avatar)); Notify(nameof(SpeakerDetail)); Notify(nameof(DisplayTime)); Notify(nameof(TimeHint)); Notify(nameof(HasReply)); } } }
     private string _replyPreview = "返信元の発言へ";
     public string ReplyPreview { get => _replyPreview; internal set => Set(ref _replyPreview, value); }
     public string Speaker => Identity?.Name ?? (Role == "user" ? "あなた" : "Eluna");
@@ -54,7 +67,8 @@ public sealed class ChatMessage : ObservableObject
     public string ArtifactLabel => Artifact is null ? "" : "生成物を開く · " + System.IO.Path.GetFileName(Artifact.ResultPath);
     public string? Mode { get; init; }
     public string ModeLabel => Mode is null ? "" : InferenceModes.Find(Mode).Name;
-    public string Content { get => _content; set { if (Set(ref _content, value)) { Notify(nameof(IsWaiting)); } } }
+    public string Content { get => _content; set { if (Set(ref _content, value)) { Notify(nameof(IsWaiting)); Notify(nameof(HasContent)); } } }
+    public bool HasContent => Content.Length > 0;
     public bool IsGenerating { get => _isGenerating; set { if (Set(ref _isGenerating, value)) { Notify(nameof(IsWaiting)); } } }
     public bool IsThinking
     {
@@ -120,6 +134,13 @@ public sealed class ConversationBranch
 
 public sealed class Conversation : ObservableObject
 {
+    private RoomExperience _experience = new();
+    public RoomExperience Experience { get => _experience; internal set { if (Set(ref _experience, value)) { Notify(nameof(HasUnread)); Notify(nameof(UnreadCount)); Notify(nameof(UnreadLabel)); Notify(nameof(UnreadHint)); Notify(nameof(HasMentions)); } } }
+    public int UnreadCount => Experience.Unread?.Count ?? 0;
+    public bool HasUnread => UnreadCount > 0;
+    public bool HasMentions => Experience.Unread?.Any(u => u.Mention) == true;
+    public string UnreadLabel => HasMentions ? "@" + Experience.Unread!.Count(u => u.Mention) : UnreadCount > 99 ? "99+" : UnreadCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    public string UnreadHint => $"未読 {UnreadCount} 件" + (UnreadCount >= 1000 ? "以上（最新1000件を保持）" : "") + (HasMentions ? $" · メンション {Experience.Unread!.Count(u => u.Mention)} 件" : "") + (Experience.Muted ? " · ミュート中" : "");
     private RoomProfile? _room;
     public RoomProfile? Room { get => _room; set { if (Set(ref _room, value)) { Notify(nameof(NavigationLabel)); Notify(nameof(HistoryGroup)); } } }
     public string NavigationLabel => (Room?.Kind switch { "voice" => "◖ ", "dm" => "@ ", "group" => "◉ ", "thread" => "↳ ", _ => "# " }) + Title;
@@ -177,7 +198,7 @@ public sealed class Conversation : ObservableObject
 
     public SavedConversation Save() => new(Id, Title, Messages.Select(m => m.Save()).ToList(), IsPinned, IsArchived, Draft,
         CustomInstruction, Branches.Select(b => new SavedBranch(b.Id, b.Name, b.Messages.Select(m => m.Save()).ToList(), b.Summary, b.SummaryThrough)).ToList(),
-        ActiveBranch.Id, UpdatedAt, Summary, [.. DraftAttachments], ProjectId, [.. SkillIds], SkillsMode, Room);
+        ActiveBranch.Id, UpdatedAt, Summary, [.. DraftAttachments], ProjectId, [.. SkillIds], SkillsMode, Room, Experience);
 
     public static Conversation Restore(SavedConversation saved)
     {
@@ -185,6 +206,7 @@ public sealed class Conversation : ObservableObject
         {
             Id = saved.Id,
             Room = saved.Room,
+            Experience = saved.Experience ?? new(),
             ProjectId = saved.ProjectId,
             SkillIds = saved.SkillIds ?? [],
             SkillsMode = saved.SkillsMode,
@@ -227,7 +249,7 @@ public sealed record SavedMessage(string Role, string Content, string? Mode = nu
 public sealed record SavedBranch(Guid Id, string Name, List<SavedMessage> Messages, string? Summary = null, int SummaryThrough = 0);
 public sealed record SavedConversation(Guid Id, string Title, List<SavedMessage> Messages, bool IsPinned = false, bool IsArchived = false,
     string? Draft = null, string? CustomInstruction = null, List<SavedBranch>? Branches = null, Guid? ActiveBranchId = null,
-    DateTimeOffset? UpdatedAt = null, string? Summary = null, List<ChatAttachment>? DraftAttachments = null, Guid? ProjectId = null, List<Guid>? SkillIds = null, string? SkillsMode = null, RoomProfile? Room = null);
+    DateTimeOffset? UpdatedAt = null, string? Summary = null, List<ChatAttachment>? DraftAttachments = null, Guid? ProjectId = null, List<Guid>? SkillIds = null, string? SkillsMode = null, RoomProfile? Room = null, RoomExperience? Experience = null);
 public sealed record AppSettings(string? ModelId = null, string Compute = "auto", int ContextSize = 4096, string InferenceMode = InferenceModes.DefaultId,
     double ChatFontSize = 14, double LineHeight = 22, string Theme = "dark", bool SidebarVisible = true, bool ControlEnterToSend = false,
     string SystemInstruction = "あなたは親切で正確なアシスタントです。ユーザーの言語で簡潔に答えてください。",

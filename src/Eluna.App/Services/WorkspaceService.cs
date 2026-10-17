@@ -122,6 +122,7 @@ internal static class WorkspaceService
             {
                 Id = rooms[c.Id],
                 ProjectId = c.ProjectId is Guid p ? projects[p] : null,
+                Experience = c.Experience is not { } e ? null : e with { Unread = e.Unread?.Select(u => u with { Branch = Map(u.Branch), Message = Map(u.Message) }).ToList(), Pins = e.Pins?.Select(p => p with { Branch = Map(p.Branch), Message = Map(p.Message) }).ToList(), Reactions = e.Reactions?.Select(r => r with { Branch = Map(r.Branch), Message = Map(r.Message) }).ToList() },
                 SkillIds = [],
                 Room = c.Room is null ? null : c.Room with { Permissions = c.Room.Permissions?.Select(g => g with { AgentId = agents[g.AgentId] }).ToList(), Members = c.Room.Members.Select(id => agents[id]).ToList(), DefaultAgentId = Agent(c.Room.DefaultAgentId), PastMembers = c.Room.PastMembers?.Select(id => agents[id]).ToList(), ParentId = c.Room.ParentId is Guid parent ? rooms[parent] : null, OriginMessageId = c.Room.OriginMessageId is Guid origin ? Map(origin) : null },
                 Messages = c.Messages.Select(Message).ToList(),

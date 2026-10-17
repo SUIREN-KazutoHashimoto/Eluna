@@ -31,6 +31,15 @@ public sealed partial class ChatViewModel
         SelectedConversation = room; if (branch is not null) { SelectedBranch = branch; }
         if (Timeline.FirstOrDefault(m => m.Id == messageId) is { } message) { MessageRequested?.Invoke(message); }
     }
+    public bool OpenMessage(Guid roomId, Guid branchId, Guid messageId)
+    {
+        if (!CanNavigate) { return false; }
+        Conversation? room = Conversations.FirstOrDefault(c => c.Id == roomId); ConversationBranch? branch = room?.Branches.FirstOrDefault(b => b.Id == branchId);
+        if (room is null || branch is null || !MessageLocations.In(room).Any(m => m.Branch == branchId && m.Message == messageId)) { return false; }
+        UpdateReadingState(false); HistorySearch = ""; ShowArchived = room.IsArchived; SelectedConversation = room; SelectedBranch = branch;
+        if (Timeline.FirstOrDefault(m => m.Id == messageId) is not { } message) { return false; }
+        MessageRequested?.Invoke(message); return true;
+    }
     private AgentAccount? DefaultRoomAgent => Agents.FirstOrDefault(a => a.Id == SelectedConversation?.Room?.DefaultAgentId) ?? Agents.FirstOrDefault();
     private void RememberRoomMode()
     { if (SelectedConversation?.Room is { } room) { SelectedConversation.Room = room with { WorkMode = _settings.WorkMode, InferenceMode = _settings.InferenceMode }; } }

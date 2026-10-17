@@ -32,12 +32,13 @@ public partial class MainWindow : Window
         InitializeComponent(); _store = store; _readingPositions = new(store.Root); _viewModel = new(store, downloads); DataContext = _viewModel;
         InitializeMentions();
         InitializeNavigation();
+        InitializeMessageExperience();
         _readingSave.Tick += async (_, _) => { _readingSave.Stop(); RememberReadingPosition(); await _readingPositions.SaveAsync(); };
         RootLayout.SizeChanged += (_, _) => { UpdateComposerHeight(); UpdateShellLayout(); };
         HeaderArea.SizeChanged += (_, _) => UpdateComposerHeight();
         ErrorBanner.SizeChanged += (_, _) => UpdateComposerHeight();
         _viewModel.ScrollRequested += FollowOutput;
-        _viewModel.MessageRequested += message => { MessagesList.ScrollIntoView(message); MessagesList.SelectedItem = message; };
+        _viewModel.MessageRequested += JumpToMessage;
         _viewModel.NavigationStarting += RememberReadingPosition;
         _viewModel.PlanReviewRequested += ReviewPlanAsync;
         _viewModel.SkillExecutionReviewRequested += ReviewSkillExecutionAsync;
@@ -157,6 +158,10 @@ public partial class MainWindow : Window
         if (sender is not Button { DataContext: ChatMessage message } button || _viewModel.SelectedConversation is not { } room) { return; }
         var menu = new ContextMenu { PlacementTarget = button };
         var thread = new MenuItem { Header = "この発言からスレッドを作成", IsEnabled = room.Room?.Kind != "thread" };
+        Guid branch = room.ActiveBranch.Id;
+        button.ContextMenu = menu;
+        var pin = new MenuItem { Header = message.PinnedMessage ? "発言のピン留めを解除" : "発言をピン留め", IsEnabled = message.HasContent }; pin.Click += async (_, _) => await ToggleMessagePinAsync(room.Id, branch, message.Id); menu.Items.Add(pin);
+        var unread = new MenuItem { Header = "この発言を未読にする" }; unread.Click += (_, _) => MarkMessageUnread(room, branch, message); menu.Items.Add(unread);
         thread.Click += (_, _) => new RoomWindow(_viewModel, room, origin: message, basicOnly: true) { Owner = this }.Show(); menu.Items.Add(thread);
         var info = new MenuItem { Header = "メッセージの詳細" }; info.Click += (_, _) => { OpenSettings(7); Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault(w => w.Owner == this)?.ShowMessage(message); }; menu.Items.Add(info);
         menu.IsOpen = true;
@@ -271,6 +276,8 @@ public partial class MainWindow : Window
         Item("名前を変更", async () => { var dialog = new TextPromptWindow("会話の名前", conversation.Title) { Owner = this }; if (dialog.ShowDialog() == true) { await _viewModel.RenameConversationAsync(conversation, dialog.Result); } });
         Item("アクセス権", () => new RoomPermissionsWindow(_viewModel, conversation) { Owner = this }.Show());
         Item("メンバーを招待", () => OpenInvitations(conversation));
+        Item("既読にする", () => _viewModel.MarkRead(conversation.Id));
+        Item(conversation.Experience.Muted ? "ミュートを解除" : "未読一覧からミュート", async () => await _viewModel.SetMutedAsync(conversation.Id, !conversation.Experience.Muted));
         Item(conversation.IsPinned ? "ピン留めを解除" : "ピン留め", async () => await _viewModel.TogglePinAsync(conversation));
         Item(conversation.IsArchived ? "保管から戻す" : "アーカイブ", async () => await _viewModel.ToggleArchiveAsync(conversation));
         var move = new MenuItem { Header = "プロジェクトへ移動" };
@@ -292,6 +299,9 @@ public partial class MainWindow : Window
         if (sender is not Button button) { return; }
         var menu = new ContextMenu { PlacementTarget = button };
         var settings = new MenuItem { Header = "チャンネル設定" }; settings.Click += (_, _) => OpenSettings(7); menu.Items.Add(settings);
+        var pins = new MenuItem { Header = "ピン留めした発言" }; pins.Click += (_, _) => OpenMessageCenter("pins"); menu.Items.Add(pins);
+        var search = new MenuItem { Header = "この会話の発言を検索" }; search.Click += (_, _) => OpenMessageCenter("search"); menu.Items.Add(search);
+        var read = new MenuItem { Header = "このチャンネルを既読にする" }; read.Click += ReadSelected_Click; menu.Items.Add(read);
         var invite = new MenuItem { Header = "メンバーを招待" }; invite.Click += (_, _) => { if (_viewModel.SelectedConversation is { } room) { OpenInvitations(room); } }; menu.Items.Add(invite);
         var permissions = new MenuItem { Header = "アクセス権" }; permissions.Click += (_, _) => { if (_viewModel.SelectedConversation is { } room) { new RoomPermissionsWindow(_viewModel, room) { Owner = this }.Show(); } }; menu.Items.Add(permissions);
         var archive = new MenuItem { Header = "保管済みを表示", IsCheckable = true, IsChecked = _viewModel.ShowArchived }; archive.Click += (_, _) => _viewModel.ShowArchived = archive.IsChecked; menu.Items.Add(archive);
@@ -359,6 +369,7 @@ public partial class MainWindow : Window
         if (_restoringReading == _scrollKey) { return; }
         if (e.ExtentHeightChange == 0) { _followOutput = _messagesScroll.ScrollableHeight - _messagesScroll.VerticalOffset < 80; }
         LatestButton.Visibility = _followOutput ? Visibility.Collapsed : Visibility.Visible;
+        RefreshReadingState();
         _readingSave.Stop(); _readingSave.Start();
     }
     private void RememberReadingPosition() { if (_scrollKey is not null && _messagesScroll is not null && _restoringReading != _scrollKey) { _readingPositions.Set(_scrollKey, _messagesScroll.VerticalOffset, _followOutput); } }
@@ -383,7 +394,7 @@ public partial class MainWindow : Window
         }
         finally
         {
-            if (_scrollVersion == version) { _followOutput = position.Follow; _restoringReading = null; LatestButton.Visibility = _followOutput ? Visibility.Collapsed : Visibility.Visible; }
+            if (_scrollVersion == version) { _followOutput = position.Follow; _restoringReading = null; LatestButton.Visibility = _followOutput ? Visibility.Collapsed : Visibility.Visible; RefreshReadingState(); }
         }
     }
     private void FollowOutput(bool force)
@@ -412,6 +423,7 @@ public partial class MainWindow : Window
                 _messagesScroll ??= FindChild<ScrollViewer>(MessagesList);
                 if (_viewModel.SelectedConversation?.Messages.LastOrDefault() is ChatMessage last) { MessagesList.ScrollIntoView(last); }
                 _messagesScroll?.ScrollToEnd(); LatestButton.Visibility = Visibility.Collapsed;
+                RefreshReadingState();
             });
         }
     }

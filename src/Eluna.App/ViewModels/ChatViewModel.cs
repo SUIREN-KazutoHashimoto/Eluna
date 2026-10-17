@@ -205,6 +205,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     private void ConversationsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        ExperienceChanged();
         if (VoiceJoined && !VoiceValid) { _ = LeaveVoiceAsync(); }
         if (e.Action == NotifyCollectionChangedAction.Reset)
         {
@@ -220,6 +221,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     private void ConversationChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName is nameof(Conversation.Title) or nameof(Conversation.ProjectId) or nameof(Conversation.IsArchived)) { ExperienceChanged(); }
         if (VoiceJoined && !VoiceValid) { _ = LeaveVoiceAsync(); }
         if (ReferenceEquals(sender, SelectedConversation) && e.PropertyName is nameof(Conversation.Title) or nameof(Conversation.Room)) { NotifyShell(); }
         if (ReferenceEquals(sender, SelectedConversation) && e.PropertyName == nameof(Conversation.ActiveBranch)) { BindTimeline(); Notify(nameof(SelectedBranch)); Notify(nameof(IsEmpty)); }
@@ -243,6 +245,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     private void LoadState(AppState state)
     {
+        _incoming?.Dispose(); _incoming = null; _manualUnread.Clear(); _readingMessages = false;
         state = WorkspaceService.Upgrade(state);
         foreach (Conversation old in Conversations) { old.PropertyChanged -= ConversationChanged; }
         Inferences.Items.Clear(); ReleaseIdleEngines();
@@ -255,6 +258,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         _llama.Stop();
         Conversations.AddRange(state.Conversations.Select(Conversation.Restore));
         BindComputerSessions();
+        _incoming = new(Conversations, Incoming);
         SelectedConversation = Conversations.FirstOrDefault(c => c.ProjectId == _settings.SelectedProjectId && !c.IsArchived);
         if (SelectedConversation is null) { NewChat(); }
         RestoreInferences(state.InferenceJobs ?? []);
@@ -610,7 +614,8 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     private async void ScheduleSave()
     {
-        _historySearchCancellation?.Cancel(); _historySearchCancellation?.Dispose(); _draftSave?.Cancel(); _draftSave?.Dispose(); _draftSave = new(); CancellationToken token = _draftSave.Token;
+        if (!_ready || _shuttingDown) { return; }
+        _draftSave?.Cancel(); _draftSave?.Dispose(); _draftSave = new(); CancellationToken token = _draftSave.Token;
         try { await Task.Delay(400, token); await PersistSafelyAsync(); } catch (OperationCanceledException) { }
     }
     public AppState CaptureState() => new(4, _settings, Conversations.Select(c => c.Save()).ToList(), [.. Projects], [.. _commonMemories], Inferences.Items.Where(j => j.IsPending).Select(j => j.Request).ToList(), [.. Skills], [.. Agents], [.. AgentMemories], Self);
@@ -651,10 +656,9 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         _commonMemories = nextMemories;
         foreach (AgentAccount agent in imported.Agents ?? []) { Agents.Add(agent); }
         foreach (AgentMemory memory in imported.AgentMemories ?? []) { AgentMemories.Add(memory); }
-        foreach (SavedConversation saved in imported.Conversations)
-        {
-            Conversations.Add(Conversation.Restore(saved));
-        }
+        _incoming?.Dispose();
+        try { foreach (SavedConversation saved in imported.Conversations) { Conversations.Add(Conversation.Restore(saved)); } }
+        finally { _incoming = new(Conversations, Incoming); }
         RefreshProjectChoices(); await PersistSafelyAsync();
     }
     public IReadOnlyList<FileInfo> GetBackups() => _store.GetBackups();
@@ -719,7 +723,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         await LeaveVoiceAsync();
         _shuttingDown = true; StopComputers(); try { await ComputerCompletion; } catch (OperationCanceledException) { }
         _mediaShutdown.Cancel(); foreach (MediaJob job in MediaJobs.Where(j => j.IsPending).ToArray()) { job.Cancel(); if (job.State == "queued") { job.State = job.Request is null ? "canceled" : "paused"; job.Completion.TrySetCanceled(); } }
-        RefreshCommands(); _draftSave?.Cancel(); _generation?.Cancel();
+        RefreshCommands(); _draftSave?.Cancel(); _historySearchCancellation?.Cancel(); _generation?.Cancel();
         await Inferences.ShutdownAsync();
         try { await Task.WhenAll(_mediaWorkers.Values.ToArray()); } catch (Exception ex) { _lastError = ex; }
         await SaveMediaJobsAsync();
@@ -729,6 +733,8 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     public void Dispose()
     {
+        _incoming?.Dispose(); _incoming = null;
+        _historySearchCancellation?.Cancel(); _historySearchCancellation?.Dispose(); _historySearchCancellation = null;
         StopComputers();
         _draftSave?.Cancel(); _draftSave?.Dispose(); _generation?.Cancel();
         foreach (Conversation c in Conversations) { c.PropertyChanged -= ConversationChanged; }

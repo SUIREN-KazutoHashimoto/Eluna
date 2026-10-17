@@ -58,6 +58,9 @@ public partial class MainWindow
     internal bool InvokeNavigationShortcut(Key key, ModifierKeys keys)
     {
         if (keys == ModifierKeys.Control && key == Key.K) { OpenQuickSwitcher(); }
+        else if (keys == ModifierKeys.Control && key == Key.I) { OpenMessageCenter("unread"); }
+        else if (keys == ModifierKeys.Control && key == Key.P) { OpenMessageCenter("pins"); }
+        else if (keys == (ModifierKeys.Control | ModifierKeys.Shift) && key == Key.F) { OpenMessageCenter("search", all: true); }
         else if (keys == ModifierKeys.Control && key == Key.U) { Members_Click(this, new RoutedEventArgs()); }
         else if (keys == ModifierKeys.Control && key == Key.OemQuestion) { Shortcuts_Click(this, new RoutedEventArgs()); }
         else if (keys == ModifierKeys.Alt && key is Key.Left or Key.Right) { MoveHistory(key == Key.Left ? -1 : 1); }

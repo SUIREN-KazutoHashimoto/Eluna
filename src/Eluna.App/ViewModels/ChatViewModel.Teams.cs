@@ -99,7 +99,7 @@ public sealed partial class ChatViewModel
                 child.PropertyChanged += (_, _) => { job.Detail = actor.Name + " · " + child.Detail; job.Metrics = child.Metrics; Notify(nameof(TypingNotice)); };
                 response.Content = ""; response.IsGenerating = true; response.WasInterrupted = false;
                 try { if (response.Work?.CanResume == true) { await RunWorkCoreAsync(response, workToken, child, engine, workerContext); } else { await GenerateAnswerCoreAsync(workerContext, response, child, engine, workToken, allowTeam: false); } }
-                finally { response.IsGenerating = false; response.WasInterrupted = workToken.IsCancellationRequested; Notify(nameof(TypingNotice)); }
+                finally { response.WasInterrupted = workToken.IsCancellationRequested; response.IsGenerating = false; Notify(nameof(TypingNotice)); }
                 if (response.Content.Length == 0) { throw new InvalidOperationException("担当の回答が空です。"); }
                 run = answer.Team!;
                 Update(run with { Assignments = run.Assignments.Select(a => a.AnswerId == assignment.AnswerId ? a with { Complete = true } : a).ToList(), TokensUsed = run.TokensUsed + (response.Work?.TokensUsed ?? engine.LastOutputTokens), ActiveRoomId = null, ActiveAgentId = null });
