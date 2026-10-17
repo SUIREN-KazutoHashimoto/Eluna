@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$SkipNativeBuild, [string]$OutputDirectory = 'artifacts/release')
+param([switch]$SkipNativeBuild, [string]$OutputDirectory = 'artifacts/release', [string]$Version = '', [ValidateSet('stable','develop')][string]$Train = 'stable')
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
 Assert-Windows
@@ -17,6 +17,8 @@ foreach ($backend in @('cpu','vulkan')) {
     if (-not (Test-Path -LiteralPath (Join-Path $repositoryRoot "build/diffusion-$backend-static/bin/Release/sd-cli.exe"))) { throw "The $backend image generation engine is missing. Run Build-Diffusion.ps1." }
 }
 
+& (Join-Path $PSScriptRoot 'Build-UiNative.ps1')
+
 Push-Location $repositoryRoot
 try {
     $project = 'src/Eluna.App/Eluna.App.csproj'
@@ -31,6 +33,9 @@ try {
         Copy-Item -LiteralPath (Join-Path $repositoryRoot "build/llama-$backend-static/bin/Release/llama-server.exe") -Destination $backendDirectory
         Copy-Item -LiteralPath (Join-Path $repositoryRoot "build/diffusion-$backend-static/bin/Release/sd-cli.exe") -Destination $backendDirectory
     }
+    $uiDirectory = Join-Path $payloadDirectory 'ui'
+    New-Item -ItemType Directory -Force -Path $uiDirectory | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repositoryRoot 'build/ui/Release/Eluna.Text.dll') -Destination $uiDirectory
     Copy-Item -LiteralPath (Join-Path $repositoryRoot 'LICENSE') -Destination (Join-Path $licenseDirectory 'Eluna-Apache-2.0.txt')
     Copy-Item -LiteralPath (Join-Path $repositoryRoot 'third_party/llama.cpp/LICENSE') -Destination (Join-Path $licenseDirectory 'llama.cpp-MIT.txt')
     $diffusionRoot = Join-Path $repositoryRoot 'third_party/stable-diffusion.cpp'
@@ -74,7 +79,7 @@ try {
     $publishDirectory = Join-Path $workDirectory 'publish'
     Invoke-CheckedCommand dotnet @('publish', $project, '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '--no-restore',
         '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true', '-p:EnableCompressionInSingleFile=true',
-        "-p:NativeRuntimeBundlePath=$bundlePath", '--output', $publishDirectory)
+        "-p:NativeRuntimeBundlePath=$bundlePath", $(if ($Version) { "-p:Version=$Version" } else { "-p:ReleaseTrain=$Train" }), '--output', $publishDirectory)
     $releaseDirectory = if ([IO.Path]::IsPathRooted($OutputDirectory)) {
         [IO.Path]::GetFullPath($OutputDirectory)
     } else {
@@ -83,6 +88,12 @@ try {
     New-Item -ItemType Directory -Force -Path $releaseDirectory | Out-Null
     $executable = Join-Path $releaseDirectory 'Eluna.exe'
     Copy-Item -LiteralPath (Join-Path $publishDirectory 'Eluna.exe') -Destination $executable -Force
+    Copy-Item -LiteralPath $executable -Destination (Join-Path $releaseDirectory 'Eluna-Setup.exe') -Force
+    $taskReleaseVersion = if ($Version) { $Version } else { (Get-Item -LiteralPath $executable).VersionInfo.ProductVersion.Split('+')[0] }
+    $taskReleaseHash = (Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash.ToLowerInvariant()
+    $taskManifest = [ordered]@{ schema = 1; version = $taskReleaseVersion; train = $Train; dataSchema = 5; file = 'Eluna.exe'; size = (Get-Item -LiteralPath $executable).Length; sha256 = $taskReleaseHash }
+    $taskManifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $releaseDirectory 'update-manifest.json') -Encoding utf8NoBOM
+    @('Eluna.exe','Eluna-Setup.exe','update-manifest.json') | ForEach-Object { "{0}  {1}" -f (Get-FileHash -LiteralPath (Join-Path $releaseDirectory $_) -Algorithm SHA256).Hash.ToLowerInvariant(), $_ } | Set-Content -LiteralPath (Join-Path $releaseDirectory 'SHA256SUMS.txt') -Encoding utf8NoBOM
     Get-FileHash -LiteralPath $executable -Algorithm SHA256 | Format-List
     Write-Output "Portable prototype: $executable"
 }

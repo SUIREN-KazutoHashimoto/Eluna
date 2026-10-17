@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Eluna ブラウザ検証 · カタログ</title>
+<style>
+body{font:16px/1.6 "Segoe UI",sans-serif;background:#f4f6fa;color:#1d273b;margin:0}header{background:#17253e;color:white;padding:18px 32px;display:flex;align-items:center;justify-content:space-between}header a{color:#c8d8ff}main{max-width:1080px;margin:24px auto;padding:0 24px}h1{font-size:25px;margin:0}h2{font-size:20px;margin:0 0 12px}p{margin:8px 0}.filters,.card,.form{background:white;border:1px solid #d6deeb;border-radius:12px;padding:18px}.filters{display:flex;gap:18px;align-items:end;flex-wrap:wrap;margin:16px 0}label{display:block}select,input,textarea,button{font:inherit;padding:7px 11px;border:1px solid #aebbd0;border-radius:6px;box-sizing:border-box}input[type=checkbox],input[type=radio]{width:19px;height:19px;vertical-align:middle}button{background:#245dd8;color:white;cursor:pointer}button.secondary{background:white;color:#234e99}#list{display:grid;grid-template-columns:1fr 1fr;gap:14px}.meta{color:#51617b}dialog{border:1px solid #aebbd0;border-radius:14px;max-width:520px;padding:28px}dialog::backdrop{background:#18233d66}.field{margin:18px 0}.field input,.field textarea{width:100%}#saved{white-space:pre-wrap;background:#e8f6ee;border-radius:8px;padding:14px}#saved:empty{display:none}small{color:#596984}a{color:#245dd8}.form{max-width:640px}fieldset{border:1px solid #d6deeb;border-radius:8px}
+</style>
+<header><h1>Eluna ブラウザ検証</h1><a href="/memo" target="_blank" rel="noopener">比較メモを別タブで開く</a></header>
+<main id="catalog">
+<h2>検証用PCカタログ</h2><p>架空の商品です。購入・外部送信は行いません。</p>
+<div class="filters">
+<label>カテゴリ<select id="category" aria-label="カテゴリ"><option value="all">すべて</option><option value="mini">ミニPC</option><option value="notebook">ノートPC</option></select></label>
+<label>最大価格（円）<input id="budget" aria-label="最大価格（円）" type="text" inputmode="numeric" style="width:150px"></label>
+<label><input id="memory" type="checkbox"> メモリ32GB以上</label>
+<label><input id="stock" type="checkbox"> 在庫ありのみ</label>
+<label>並び順<select id="sort" aria-label="並び順"><option value="name">おすすめ順</option><option value="price">価格が安い順</option></select></label>
+</div><p id="count" role="status"></p><div id="list"></div>
+</main>
+<main id="memo" hidden><h2>比較メモ</h2><p>カタログで確認した情報を記入し、下書きを保存します。</p>
+<form class="form" id="memo-form">
+<div class="field"><label for="product">商品名</label><input id="product" name="product" required></div>
+<div class="field"><label for="price">価格（円）</label><input id="price" name="price" required inputmode="numeric"></div>
+<div class="field"><label for="ram">メモリ（GB）</label><input id="ram" name="ram" required inputmode="numeric"></div>
+<div class="field"><label for="purpose">用途</label><textarea id="purpose" name="purpose" rows="2" required></textarea></div>
+<fieldset><legend>受け取り方法</legend><label><input type="radio" name="delivery" value="配送" checked> 配送</label><label><input type="radio" name="delivery" value="店頭受取"> 店頭受取</label></fieldset>
+<p><button type="submit">下書きを保存</button></p><p id="saved" role="status"></p><small>保存先は、このPC内の検証用サーバーだけです。</small>
+</form></main>
+<dialog id="detail"><h2 id="detail-name"></h2><p id="detail-spec"></p><p id="detail-note"></p><p><a href="/memo" target="_blank" rel="noopener">比較メモを別タブで開く</a></p><button class="secondary" id="close-detail">閉じる</button></dialog>
+<script>
+const products=[
+{id:'mini-light',name:'North Mini 16',category:'mini',price:59800,ram:16,stock:true,note:'軽量な事務作業向け'},
+{id:'mini-beta',name:'North Mini 32',category:'mini',price:99800,ram:32,stock:true,note:'ローカルAIの検証用候補'},
+{id:'mini-plus',name:'North Mini 64',category:'mini',price:118000,ram:64,stock:true,note:'メモリを多く使う作業向け'},
+{id:'mini-sold',name:'North Mini Outlet',category:'mini',price:89800,ram:32,stock:false,note:'現在は在庫切れ'},
+{id:'note-beta',name:'North Note 32',category:'notebook',price:89800,ram:32,stock:true,note:'持ち運び向けノートPC'},
+{id:'mini-pro',name:'North Mini Pro',category:'mini',price:158000,ram:128,stock:true,note:'上位構成'}];
+const $=id=>document.getElementById(id);
+const filters=()=>({category:$('category').value,budget:$('budget').value,memory:$('memory').checked,stock:$('stock').checked,sort:$('sort').value});
+function render(){const f=filters();localStorage.setItem('filters',JSON.stringify(f));let shown=products.filter(p=>(f.category==='all'||p.category===f.category)&&(!f.budget||p.price<=Number(f.budget.replaceAll(',','')))&&(!f.memory||p.ram>=32)&&(!f.stock||p.stock));if(f.sort==='price')shown.sort((a,b)=>a.price-b.price);$('count').textContent=shown.length+'件の商品';$('list').replaceChildren();for(const p of shown){const card=document.createElement('section');card.className='card';const title=document.createElement('h2');title.textContent=p.name;const spec=document.createElement('p');spec.textContent=p.price.toLocaleString('ja-JP')+'円（税込） · '+p.ram+'GB · '+(p.stock?'在庫あり':'在庫切れ');const cat=document.createElement('p');cat.className='meta';cat.textContent=p.category==='mini'?'ミニPC':'ノートPC';const button=document.createElement('button');button.textContent=p.name+'の詳細';button.onclick=()=>{localStorage.setItem('detail',p.id);$('detail-name').textContent=p.name;$('detail-spec').textContent=spec.textContent;$('detail-note').textContent=p.note;$('detail').showModal()};card.append(title,spec,cat,button);$('list').append(card)}}
+if(location.pathname==='/memo'){document.title='Eluna ブラウザ検証 · 比較メモ';$('catalog').hidden=true;$('memo').hidden=false;document.querySelector('header a').remove()}else{for(const id of ['category','budget','memory','stock','sort']){$(id).addEventListener('input',render);$(id).addEventListener('change',render)}render()}
+$('close-detail').onclick=()=>$('detail').close();
+$('memo-form').onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.target));data.filters=JSON.parse(localStorage.getItem('filters')||'{}');data.detail=localStorage.getItem('detail');const response=await fetch('/api/draft',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});if(!response.ok){$('saved').textContent='保存に失敗しました';return}$('saved').textContent='下書きを保存しました\n'+data.product+' / '+data.price+'円 / '+data.ram+'GB\n用途: '+data.purpose+' / '+data.delivery};
+</script></html>

@@ -34,6 +34,14 @@ public sealed class LlamaService : IDisposable
     public string ComputeLabel { get; private set; } = "未読み込み";
     public IReadOnlyList<ComputeDevice> Devices { get; private set; } = [];
     public int LastInputTokens { get; private set; }
+    private GenerationAllowance? _allowance;
+    internal IDisposable WithAllowance(GenerationAllowance allowance)
+    {
+        if (_allowance is not null) { throw new InvalidOperationException("生成予算は同じエンジンへ重ねて設定できません。"); }
+        _allowance = allowance; return new AllowanceLease(this);
+    }
+    private sealed class AllowanceLease(LlamaService engine) : IDisposable
+    { public void Dispose() { engine._allowance = null; } }
     public int LastOutputTokens { get; private set; }
     public double LastTokensPerSecond { get; private set; }
     public long MemoryUsageBytes
@@ -87,10 +95,12 @@ public sealed class LlamaService : IDisposable
     public async Task EnsureModelAsync(LocalModel model, AppSettings settings, Action<string> status, CancellationToken token)
     {
         if (_process is { HasExited: false } && _activeModel == model.Id &&
-            _activeCompute == settings.Compute && _activeContext == settings.ContextSize && _preferences == model.Options && _supportsThinking == model.Profile?.SupportsThinking && _activeProjector == model.Projector?.FilePath)
+            _activeCompute == settings.Compute && _activeContext == settings.ContextSize && _supportsThinking == model.Profile?.SupportsThinking && _activeProjector == model.Projector?.FilePath)
         {
+            ModelPreferences.Validate(model.Options); _preferences = model.Options;
             return;
         }
+        DiagnosticScope.Current?.Write("info", "model", "load", "model=" + model.Id + "; context=" + settings.ContextSize + "; compute=" + settings.Compute);
         Stop(); _activeProjector = model.Projector?.FilePath;
         ModelPreferences.Validate(model.Options); _preferences = model.Options; _supportsThinking = model.Profile?.SupportsThinking;
         string compute = settings.Compute == "auto" ? Devices.FirstOrDefault()?.Id ?? "cpu" : settings.Compute;
@@ -199,13 +209,18 @@ public sealed class LlamaService : IDisposable
     }
 
     public async IAsyncEnumerable<GenerationUpdate> GenerateAsync(IEnumerable<SavedMessage> messages, InferenceMode mode,
-        [EnumeratorCancellation] CancellationToken token, string? instruction = null, int? outputLimit = null, object? jsonSchema = null)
+        [EnumeratorCancellation] CancellationToken token, string? instruction = null, int? outputLimit = null, object? jsonSchema = null, bool preserveSampling = false)
     {
         if (_http is null || _process is null || _process.HasExited)
         {
             throw new InvalidOperationException("モデルが準備できていません。もう一度送信してください。");
         }
         SavedMessage[] history = messages.ToArray();
+        TraceOperation? trace = DiagnosticScope.Current; _nativeTrace = trace;
+        while (_nativeLines.TryDequeue(out _)) { }
+        StringBuilder? contentLog = trace?.Trace.CapturesContents == true ? new() : null, reasoningLog = trace?.Trace.CapturesContents == true ? new() : null;
+        trace?.Write("debug", "model", "generate.request", "model=" + _activeModel + "; temperature=" + _preferences.Temperature.ToString(System.Globalization.CultureInfo.InvariantCulture) + "; topP=" + _preferences.TopP.ToString(System.Globalization.CultureInfo.InvariantCulture) + "; schema=" + (jsonSchema is not null));
+        if (trace?.Trace.CapturesContents == true) { trace.Content("model", "input", JsonSerializer.Serialize(new { instruction, messages = history.Select(m => new { m.Role, text = m.PromptText, imageCount = m.Attachments?.Count(a => a.ImageBase64 is not null) ?? 0 }), jsonSchema })); }
         if (_supportsThinking == false) { mode = InferenceModes.Find("fast"); }
         object payload = CreatePayload(history, mode, new(mode.ThinkingTokens, _preferences.MaxOutputTokens + mode.ThinkingTokens), instruction, _preferences);
         using HttpResponseMessage counted = await _http.PostAsJsonAsync("v1/chat/completions/input_tokens", payload, token);
@@ -217,27 +232,36 @@ public sealed class LlamaService : IDisposable
         LastTokensPerSecond = 0;
         GenerationLimits limits = InferenceModes.GetLimits(mode, _activeContext, inputTokens, _preferences.MaxOutputTokens);
         if (outputLimit is > 0) { limits = InferenceModes.LimitOutput(limits, outputLimit.Value); }
+        GenerationAllowance? allowance = _allowance;
+        if (allowance is not null) { limits = InferenceModes.LimitOutput(limits, allowance.Limit(limits.MaxTokens)); }
         payload = CreatePayload(history, mode, limits, instruction, _preferences);
         if (jsonSchema is not null)
         {
             System.Text.Json.Nodes.JsonObject structured = JsonSerializer.SerializeToNode(payload)!.AsObject();
             structured["response_format"] = JsonSerializer.SerializeToNode(new { type = "json_object", schema = jsonSchema });
-            structured["temperature"] = 0.2;
+            if (!preserveSampling) { structured["temperature"] = 0.2; }
             payload = structured;
         }
-        using var request = new HttpRequestMessage(HttpMethod.Post, "v1/chat/completions")
+        try
         {
-            Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
-        };
-        using HttpResponseMessage response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
-        await EnsureResponseAsync(response, token);
-        await using Stream stream = await response.Content.ReadAsStreamAsync(token);
-        await foreach (GenerationUpdate piece in ReadEventsAsync(stream, token))
-        {
-            if (piece.OutputTokens is > 0) { LastOutputTokens = piece.OutputTokens.Value; }
-            if (piece.OutputMilliseconds is > 0) { LastTokensPerSecond = LastOutputTokens * 1000.0 / piece.OutputMilliseconds.Value; }
-            yield return piece;
+            using var request = new HttpRequestMessage(HttpMethod.Post, "v1/chat/completions")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+            };
+            using HttpResponseMessage response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+            await EnsureResponseAsync(response, token);
+            await using Stream stream = await response.Content.ReadAsStreamAsync(token);
+            await foreach (GenerationUpdate piece in ReadEventsAsync(stream, token))
+            {
+                if (piece.OutputTokens is > 0) { LastOutputTokens = piece.OutputTokens.Value; }
+                if (piece.OutputMilliseconds is > 0) { LastTokensPerSecond = LastOutputTokens * 1000.0 / piece.OutputMilliseconds.Value; }
+                trace?.Write("debug", "model", "delta", "contentCharacters=" + piece.Content.Length + "; reasoningCharacters=" + piece.Reasoning.Length + "; outputTokens=" + piece.OutputTokens);
+                contentLog?.Append(piece.Content);
+                reasoningLog?.Append(piece.Reasoning);
+                yield return piece;
+            }
         }
+        finally { if (contentLog is not null) { trace?.Content("model", "output", contentLog.ToString()); trace?.Content("model", "reasoning", reasoningLog!.ToString()); } if (!_nativeLines.IsEmpty) { trace?.Content("native.llama", "transcript", string.Join("\n", _nativeLines.ToArray())); while (_nativeLines.TryDequeue(out _)) { } } allowance?.Spend(LastOutputTokens, limits.MaxTokens); trace?.Write("debug", "model", "generate.finished", "inputTokens=" + LastInputTokens + "; outputTokens=" + LastOutputTokens + "; canceled=" + token.IsCancellationRequested); }
     }
 
     public async Task<int> CountInputTokensAsync(IEnumerable<SavedMessage> messages, string instruction, CancellationToken token)
@@ -380,10 +404,13 @@ public sealed class LlamaService : IDisposable
         throw new FileNotFoundException("同梱の推論エンジンが見つかりません。Eluna.exeをもう一度配置してください。");
     }
 
+    private TraceOperation? _nativeTrace;
+    private readonly ConcurrentQueue<string> _nativeLines = new();
     private void CaptureDiagnostic(object sender, DataReceivedEventArgs args)
     {
         if (args.Data is not null)
         {
+            _nativeTrace?.Write("debug", "native.llama", "output", "characters=" + args.Data.Length); if (_nativeTrace?.Trace.CapturesContents == true && _nativeLines.Count < 1000) { _nativeLines.Enqueue(args.Data); }
             _diagnostics.Enqueue(args.Data);
             while (_diagnostics.Count > 30)
             {

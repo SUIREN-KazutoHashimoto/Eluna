@@ -19,7 +19,7 @@ public static class NativeRuntime
         string hash = Convert.ToHexString(await SHA256.HashDataAsync(bundle)).ToLowerInvariant();
         string target = Path.Combine(store.Root, "Runtime", hash[..20]);
         string marker = Path.Combine(target, ".ready");
-        if (File.Exists(marker) && File.Exists(Path.Combine(target, "cpu", "llama-server.exe")) && File.Exists(Path.Combine(target, "vulkan", "llama-server.exe")) && File.Exists(Path.Combine(target, "cpu", "sd-cli.exe")) && File.Exists(Path.Combine(target, "vulkan", "sd-cli.exe")))
+        if (File.Exists(marker) && File.Exists(Path.Combine(target, "cpu", "llama-server.exe")) && File.Exists(Path.Combine(target, "vulkan", "llama-server.exe")) && File.Exists(Path.Combine(target, "cpu", "sd-cli.exe")) && File.Exists(Path.Combine(target, "vulkan", "sd-cli.exe")) && File.Exists(Path.Combine(target, "ui", "Eluna.Text.dll")))
         {
             return target;
         }

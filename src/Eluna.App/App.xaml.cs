@@ -15,6 +15,30 @@ public partial class App : Application
         base.OnStartup(e);
         try
         {
+            int updateFixture = Array.IndexOf(e.Args, "--update-exit-fixture"); if (updateFixture >= 0 && updateFixture + 1 < e.Args.Length) { ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = UpdateVerification.RunExitFixtureAsync(e.Args[updateFixture + 1]); return; }
+            int applyUpdate = Array.IndexOf(e.Args, "--apply-update");
+            if (applyUpdate >= 0 && applyUpdate + 1 < e.Args.Length)
+            { ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = Task.Run(async () => { int code = await UpdateWorker.RunAsync(e.Args[applyUpdate + 1]); await Dispatcher.InvokeAsync(() => Shutdown(code)); }); return; }
+            int removeInstall = Array.IndexOf(e.Args, "--remove-install");
+            if (removeInstall >= 0 && removeInstall + 3 < e.Args.Length && Guid.TryParseExact(e.Args[removeInstall + 2], "N", out Guid installId) && int.TryParse(e.Args[removeInstall + 3], out int setupPid))
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                _ = Task.Run(async () =>
+                {
+                    try { try { using var setup = System.Diagnostics.Process.GetProcessById(setupPid); using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(1)); await setup.WaitForExitAsync(deadline.Token); } catch (ArgumentException) { } InstallerService.RemoveOwnedFiles(e.Args[removeInstall + 1], installId, true); await Dispatcher.InvokeAsync(() => { MessageBox.Show("Elunaをアンインストールしました。会話とモデルは保存先に残しています。", "Eluna"); Shutdown(); }); }
+                    catch (Exception error) { await Dispatcher.InvokeAsync(() => { MessageBox.Show("削除を完了できませんでした。起動中のElunaを終了して再試行してください。\n" + error.Message, "Eluna"); Shutdown(1); }); }
+                }); return;
+            }
+            if (e.Args.Contains("--install") || e.Args.Contains("--uninstall") || string.Equals(Path.GetFileNameWithoutExtension(Environment.ProcessPath), "Eluna-Setup", StringComparison.OrdinalIgnoreCase))
+            { MainWindow = new InstallerWindow(e.Args.Contains("--uninstall")); MainWindow.Show(); return; }
+            if (e.Args.Contains("--computer-worker"))
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                _ = Task.Run(async () => { int code = await ComputerDesktop.RunWorkerAsync(); await Dispatcher.InvokeAsync(() => Shutdown(code)); }); return;
+            }
+            int fixtureIndex = Array.IndexOf(e.Args, "--computer-fixture");
+            if (fixtureIndex >= 0 && fixtureIndex + 1 < e.Args.Length)
+            { MainWindow = ComputerUseVerification.Fixture(e.Args[fixtureIndex + 1]); MainWindow.Show(); return; }
             int waitIndex = Array.IndexOf(e.Args, "--wait-for-exit");
             if (waitIndex >= 0 && waitIndex + 1 < e.Args.Length && int.TryParse(e.Args[waitIndex + 1], out int previousId))
             { try { using var previous = System.Diagnostics.Process.GetProcessById(previousId); if (!previous.WaitForExit(60000)) { Shutdown(1); return; } } catch (ArgumentException) { } }
@@ -32,6 +56,100 @@ public partial class App : Application
                 root = Path.Combine(captureDirectory, "preview-data");
             }
             var store = new AppStore(root);
+            int composerIndex = Array.IndexOf(e.Args, "--verify-composer");
+            if (composerIndex >= 0 && composerIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("入力・操作結果の検証には専用の --data-dir が必要です。"); }
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = ComposerVerification.RunAsync(store, e.Args[composerIndex + 1]); return;
+            }
+            int messageExperienceIndex = Array.IndexOf(e.Args, "--verify-message-experience");
+            if (messageExperienceIndex >= 0 && messageExperienceIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("発言の操作検証には専用の --data-dir が必要です。"); }
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = MessageExperienceVerification.RunAsync(store, e.Args[messageExperienceIndex + 1]); return;
+            }
+            int experienceIndex = Array.IndexOf(e.Args, "--verify-experience");
+            if (experienceIndex >= 0 && experienceIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("操作・表示の検証には専用の --data-dir が必要です。"); }
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = ExperienceVerification.RunAsync(store, e.Args[experienceIndex + 1]); return;
+            }
+            int finalSocial = Array.IndexOf(e.Args, "--verify-social-final"); int finalModel = Array.IndexOf(e.Args, "--model-meta"); if (finalSocial >= 0 && finalSocial + 1 < e.Args.Length) { if (root is null || finalModel < 0 || finalModel + 1 >= e.Args.Length) { throw new InvalidOperationException("総合検証には専用の保存先とモデルが必要です。"); } ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = SocialFinalVerification.RunAsync(store, Path.GetFullPath(e.Args[finalSocial + 1]), e.Args[finalModel + 1]); return; }
+            int updatesIndex = Array.IndexOf(e.Args, "--verify-updates"); if (updatesIndex >= 0 && updatesIndex + 1 < e.Args.Length) { if (root is null) { throw new InvalidOperationException("更新の検証には専用の --data-dir が必要です。"); } ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = UpdateVerification.RunAsync(store, Path.GetFullPath(e.Args[updatesIndex + 1])); return; }
+            int emojiIndex = Array.IndexOf(e.Args, "--verify-emoji");
+            if (emojiIndex >= 0 && emojiIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("絵文字の検証には専用の --data-dir が必要です。"); }
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = EmojiVerification.RunAsync(store, e.Args[emojiIndex + 1]); return;
+            }
+            int diagnosticsIndex = Array.IndexOf(e.Args, "--verify-diagnostics");
+            if (diagnosticsIndex >= 0 && diagnosticsIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("診断画面の検証には専用の --data-dir が必要です。"); }
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = DiagnosticsVerification.RunAsync(store, e.Args[diagnosticsIndex + 1]); return;
+            }
+            int autonomyIndex = Array.IndexOf(e.Args, "--verify-autonomy");
+            if (autonomyIndex >= 0 && autonomyIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("自律会話の検証には専用の --data-dir が必要です。"); }
+                int modelIndex = Array.IndexOf(e.Args, "--model-meta"); string? metadata = modelIndex >= 0 && modelIndex + 1 < e.Args.Length ? e.Args[modelIndex + 1] : null;
+                int imageIndex = Array.IndexOf(e.Args, "--image-model"); string? imageModel = imageIndex >= 0 && imageIndex + 1 < e.Args.Length ? e.Args[imageIndex + 1] : null;
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = SocialAutonomyVerification.RunAsync(store, e.Args[autonomyIndex + 1], metadata, imageModel); return;
+            }
+            int socialIndex = Array.IndexOf(e.Args, "--verify-social");
+            if (socialIndex >= 0 && socialIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("会話UI検証には専用の --data-dir が必要です。"); }
+                int modelIndex = Array.IndexOf(e.Args, "--model-meta"); string? metadata = modelIndex >= 0 && modelIndex + 1 < e.Args.Length ? e.Args[modelIndex + 1] : null;
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = SocialChatVerification.RunAsync(store, e.Args[socialIndex + 1], metadata); return;
+            }
+            int agentsIndex = Array.IndexOf(e.Args, "--verify-agents");
+            if (agentsIndex >= 0 && agentsIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("アカウント検証には専用の --data-dir が必要です。"); }
+                int modelIndex = Array.IndexOf(e.Args, "--model-meta"); string? metadata = modelIndex >= 0 && modelIndex + 1 < e.Args.Length ? e.Args[modelIndex + 1] : null;
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = AgentFeaturesVerification.RunAsync(store, e.Args[agentsIndex + 1], metadata); return;
+            }
+            int voiceIndex = Array.IndexOf(e.Args, "--verify-voice");
+            if (voiceIndex >= 0 && voiceIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("ボイス検証には専用の --data-dir が必要です。"); }
+                int modelIndex = Array.IndexOf(e.Args, "--model-meta"); string? metadata = modelIndex >= 0 && modelIndex + 1 < e.Args.Length ? e.Args[modelIndex + 1] : null;
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = VoiceChannelVerification.RunAsync(store, e.Args[voiceIndex + 1], metadata); return;
+            }
+            int discordIndex = Array.IndexOf(e.Args, "--verify-discord");
+            if (discordIndex >= 0 && discordIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("画面検証には専用の --data-dir が必要です。"); }
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = DiscordShellVerification.RunAsync(store, e.Args[discordIndex + 1]); return;
+            }
+            int workspaceIndex = Array.IndexOf(e.Args, "--verify-workspace");
+            if (workspaceIndex >= 0 && workspaceIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("ワークスペース検証には専用の --data-dir が必要です。"); }
+                int modelIndex = Array.IndexOf(e.Args, "--model-meta"); string? metadata = modelIndex >= 0 && modelIndex + 1 < e.Args.Length ? e.Args[modelIndex + 1] : null;
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = WorkspaceVerification.RunAsync(store, e.Args[workspaceIndex + 1], metadata); return;
+            }
+            int browserIndex = Array.IndexOf(e.Args, "--verify-computer-browser");
+            if (browserIndex >= 0 && browserIndex + 1 < e.Args.Length)
+            {
+                int modelIndex = Array.IndexOf(e.Args, "--model-meta"), pageIndex = Array.IndexOf(e.Args, "--fixture-page");
+                if (root is null || modelIndex < 0 || modelIndex + 1 >= e.Args.Length || pageIndex < 0 || pageIndex + 1 >= e.Args.Length) { throw new InvalidOperationException("ブラウザ検証には専用の --data-dir、--model-meta、--fixture-page が必要です。"); }
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = ComputerBrowserVerification.RunAsync(store, e.Args[browserIndex + 1], e.Args[modelIndex + 1], e.Args[pageIndex + 1]); return;
+            }
+            int effectsIndex = Array.IndexOf(e.Args, "--verify-computer-effects");
+            if (effectsIndex >= 0 && effectsIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("画面効果の検証には --data-dir で専用の保存先を指定してください。"); }
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = ComputerEffectsVerification.RunAsync(e.Args[effectsIndex + 1]); return;
+            }
+            int computerIndex = Array.IndexOf(e.Args, "--verify-computer");
+            if (computerIndex >= 0 && computerIndex + 1 < e.Args.Length)
+            {
+                if (root is null) { throw new InvalidOperationException("Computer Useの検証には --data-dir で専用の保存先を指定してください。"); }
+                int modelIndex = Array.IndexOf(e.Args, "--model-meta"); string? metadata = modelIndex >= 0 && modelIndex + 1 < e.Args.Length ? e.Args[modelIndex + 1] : null;
+                ShutdownMode = ShutdownMode.OnExplicitShutdown; _ = ComputerUseVerification.RunAsync(store, e.Args[computerIndex + 1], metadata); return;
+            }
             int restoreCycle = Array.IndexOf(e.Args, "--verify-restore-cycle"), restoredCycle = Array.IndexOf(e.Args, "--verify-restored");
             if ((restoreCycle >= 0 && restoreCycle + 1 < e.Args.Length) || (restoredCycle >= 0 && restoredCycle + 1 < e.Args.Length))
             {
@@ -104,6 +222,8 @@ public partial class App : Application
                 window.Top = -20000;
             }
             window.Show();
+            if (e.Args.Contains("--updated-background")) { window.WindowState = WindowState.Minimized; }
+            int healthIndex = Array.IndexOf(e.Args, "--update-health"); if (healthIndex >= 0 && healthIndex + 1 < e.Args.Length) { _ = UpdateWorker.ConfirmHealthAsync(window, store.Root, e.Args[healthIndex + 1]); }
             if (captureDirectory is not null)
             {
                 int remaining = Array.IndexOf(e.Args, "--verify-remaining");

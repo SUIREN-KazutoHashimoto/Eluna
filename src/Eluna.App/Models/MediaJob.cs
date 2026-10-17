@@ -3,7 +3,8 @@ using Eluna.App.ViewModels;
 
 namespace Eluna.App.Models;
 
-public sealed record MediaRequest(string Kind, string Prompt, string Instruction, Guid? ProjectId, string OutputPath, ArtifactContext? Context = null, ImageGenerationOptions? Image = null);
+public sealed record MediaRequest(string Kind, string Prompt, string Instruction, Guid? ProjectId, string OutputPath, ArtifactContext? Context = null, ImageGenerationOptions? Image = null,
+    Guid? ConversationId = null, Guid? BranchId = null, AgentAccount? Agent = null, string? Caption = null, Guid? ReplyTo = null, bool ArtistGenerated = false, Guid? ParentOperation = null);
 public sealed record SavedMediaJob(Guid Id, string Title, DateTimeOffset CreatedAt, string State, MediaRequest Request, string Text = "", List<KnowledgeReference>? Knowledge = null, List<AppliedSkill>? Skills = null);
 public sealed class MediaJob : ObservableObject
 {

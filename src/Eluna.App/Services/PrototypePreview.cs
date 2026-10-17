@@ -40,18 +40,19 @@ internal static class PrototypePreview
                 Profile: new("画面確認用", "qwen35", 800000000, 262144, "Q4_K_M", true, 24, 1024, 2, 128, 128, "表示サンプル", ["ja", "en"]));
             window.ViewModel.Models.Add(model);
             window.ViewModel.SelectedModel = model;
-            var modeList = (ListBox)window.FindName("ModeList");
-            var popup = (System.Windows.Controls.Primitives.Popup)window.FindName("ModePopup");
+            var modeSettings = new SettingsWindow(window.ViewModel, 7) { Owner = window, WindowStartupLocation = WindowStartupLocation.Manual, Left = -20000, Top = -20000 }; modeSettings.Show();
+            var modeList = (ComboBox)modeSettings.FindName("ThinkingBox");
             foreach (InferenceMode mode in InferenceModes.All)
             {
-                popup.IsOpen = true;
                 modeList.SelectedItem = mode;
-                await window.ViewModel.PersistSafelyAsync();
+                ((Button)modeSettings.FindName("SaveButton")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                for (int attempt = 0; attempt < 300 && !((Button)modeSettings.FindName("SaveButton")).IsEnabled; attempt++) { await Task.Delay(20); }
                 if (window.ViewModel.SelectedMode.Id != mode.Id || (await store.LoadAsync()).Settings.InferenceMode != mode.Id)
                 {
                     throw new InvalidOperationException("Mode selection or persistence failed.");
                 }
             }
+            modeSettings.Close();
             example.Messages[1].ThinkingSeconds = 7;
             await RenderAsync(window, Path.Combine(output, "chat.png"));
             example.Messages[1].Content = "# 結果を整理しました\n\n**重要な点**を表とコードでまとめます。[出典を開く](https://example.com)。\n\n| 項目 | 状態 |\n| --- | --- |\n| 履歴 | 保存済み |\n| 推論 | ローカル |\n\n```csharp\n// 日本語のコメント\npublic int Add(int a, int b)\n{\n    return a + b;\n}\n```\n\n> 元の会話を残して、別の回答も試せます。";
@@ -140,9 +141,8 @@ internal static class PrototypePreview
             var planWindow = new WorkPlanWindow(work) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -20000, Top = -20000 };
             planWindow.Show(); await RenderAsync(planWindow, Path.Combine(output, "work-plan.png")); planWindow.Close();
             window.ViewModel.SelectedWorkMode = WorkModes.Find("chat"); window.ViewModel.SelectedConversation = example;
-            popup.IsOpen = true;
-            await RenderAsync(window, Path.Combine(output, "mode-menu.png"), popup);
-            popup.IsOpen = false;
+            var movedModes = new SettingsWindow(window.ViewModel, 7) { Owner = window, WindowStartupLocation = WindowStartupLocation.Manual, Left = -20000, Top = -20000 }; movedModes.Show();
+            await RenderAsync(movedModes, Path.Combine(output, "mode-settings.png")); movedModes.Close();
             var thinkingMessage = new ChatMessage { Role = "assistant", Mode = "thorough", IsGenerating = true, IsThinking = true };
             example.Messages.Add(thinkingMessage);
             await RenderAsync(window, Path.Combine(output, "thinking.png"));
@@ -150,13 +150,12 @@ internal static class PrototypePreview
             window.Width = 860;
             window.Height = 640;
             await RenderAsync(window, Path.Combine(output, "compact.png"));
-            popup.IsOpen = true;
-            await RenderAsync(window, Path.Combine(output, "compact-menu.png"), popup);
-            popup.IsOpen = false;
             window.Width = window.MinWidth;
             window.Height = window.MinHeight;
             await RenderAsync(window, Path.Combine(output, "minimum.png"));
-            if (((ComboBox)window.FindName("BranchSelector")).SelectedItem != window.ViewModel.SelectedBranch) { throw new InvalidOperationException("Branch selector lost its selection after switching conversations."); }
+            var branchSettings = new SettingsWindow(window.ViewModel, 7) { Owner = window, WindowStartupLocation = WindowStartupLocation.Manual, Left = -20000, Top = -20000 }; branchSettings.Show();
+            if (((ComboBox)branchSettings.FindName("BranchSelector")).SelectedItem != window.ViewModel.SelectedBranch) { throw new InvalidOperationException("Branch selector lost its selection in channel settings."); }
+            branchSettings.Close();
             var welcome = new Conversation();
             window.ViewModel.Conversations.Add(welcome);
             window.ViewModel.SelectedConversation = welcome;
@@ -208,7 +207,8 @@ internal static class PrototypePreview
         window.ViewModel.Models.Add(secondary);
         var options = new WorkOptionsWindow(window.ViewModel) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -20000, Top = -20000 };
         options.Show(); Assert(options.OptionsTabs.SelectedIndex == 0, "Debate settings did not open directly on participants.");
-        Assert(Buttons(window).Any(b => b.Content is "参加者"), "The composer did not expose participant settings in debate mode.");
+        var channelSettings = new SettingsWindow(window.ViewModel, 7) { Owner = window, WindowStartupLocation = WindowStartupLocation.Manual, Left = -20000, Top = -20000 }; channelSettings.Show();
+        Assert(Buttons(channelSettings).Any(b => b.Content is "検索・調査・議論の設定"), "Channel settings did not expose debate settings."); channelSettings.Close();
         DebateParticipantsEditor editor = options.ParticipantsEditor;
         DebateRole[] before = editor.GetRoles().ToArray(); DebateParticipantDraft first = editor.Participants[0], last = editor.Participants[^1];
         Assert(editor.ApplyDrop(editor.ModelData(secondary.Id), first) && first.SelectedModel.Id == secondary.Id && first.Id == before[0].Id, "Replacing a participant's model changed its identity or failed.");
@@ -335,13 +335,13 @@ internal static class PrototypePreview
         var sources = new KnowledgeWindow(knowledge.References) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -20000, Top = -20000 };
         sources.Show(); await RenderAsync(sources, Path.Combine(output, "knowledge-references.png")); sources.Close();
         Directory.CreateDirectory(Path.GetDirectoryName(store.DocumentDraftPath(a.Id))!);
-        await File.WriteAllTextAsync(store.DocumentDraftPath(a.Id), "A_ONLY_DOCUMENT_DRAFT");
-        await File.WriteAllTextAsync(store.DocumentDraftPath(b.Id), "B_ONLY_DOCUMENT_DRAFT");
+        await File.WriteAllTextAsync(store.DocumentDraftPath(a.Id, chat.SelectedConversation!.Id), "A_ONLY_DOCUMENT_DRAFT");
         var mediaA = new MediaWindow(store, chat) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -20000, Top = -20000 };
         mediaA.Show(); Require(mediaA.DraftText == "A_ONLY_DOCUMENT_DRAFT" && mediaA.ScopeMatches, "Project document drafts were read from another scope.");
         chat.SelectProject(b.Id); Require(!mediaA.ScopeMatches, "An open document tool silently followed a different project.");
         Buttons(mediaA).Single(button => button.Content is "AIで作成").RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-        Require(!chat.IsBusy && mediaA.OperationStatus.Contains("開いたプロジェクトに戻す", StringComparison.Ordinal), "Document generation used a different project from the one shown in the tool.");
+        Require(!chat.IsBusy && mediaA.OperationStatus.Contains("開いたチャンネル・分岐へ戻す", StringComparison.Ordinal), "Document generation used a different project from the one shown in the tool.");
+        await File.WriteAllTextAsync(store.DocumentDraftPath(b.Id, chat.SelectedConversation!.Id), "B_ONLY_DOCUMENT_DRAFT");
         var mediaB = new MediaWindow(store, chat) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -20000, Top = -20000 };
         mediaB.Show(); Require(mediaB.DraftText == "B_ONLY_DOCUMENT_DRAFT", "Document draft isolation failed after switching projects."); mediaB.Close(); mediaA.Close(); chat.SelectProject(a.Id); chat.SelectedConversation = example;
         var note = new MemoryNote(Guid.NewGuid(), "取り込み時の共通メモリ確認用 SAMPLE-COMMON-9913", now);

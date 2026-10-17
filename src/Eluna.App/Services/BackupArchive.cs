@@ -23,7 +23,7 @@ internal sealed record RestoreJournal(string Previous, string Stage, List<Restor
 
 public static class BackupArchive
 {
-    private static readonly string[] StateFiles = ["state.json", "state-knowledge.json", "state-skills.json"];
+    private static readonly string[] StateFiles = ["state.json", "state-knowledge.json", "state-skills.json", "state-workspace.json", "state-social.json"];
     private static readonly string[] RootFiles = [.. StateFiles, "media-jobs.json", "downloads.json", "downloads-v2.json", "window.json", "reading-positions.json", "image-model.json", "model-location.json"];
     private static readonly string[] Folders = ["Skills", "Generated", "Models", "ImageModels", "ModelAssets"];
     private const long MaximumBytes = 1L << 40;

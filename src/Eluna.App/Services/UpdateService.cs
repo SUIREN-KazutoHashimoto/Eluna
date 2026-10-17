@@ -6,8 +6,9 @@ using System.Text.RegularExpressions;
 
 namespace Eluna.App.Services;
 
-public sealed record ReleaseInfo(string Tag, string Name, string Notes, Uri Page, DateTimeOffset? Published, bool? IsNewer);
-public sealed class UpdateService : IDisposable
+public sealed record ReleaseAsset(string Name, Uri Url, long Size, string? Digest);
+public sealed record ReleaseInfo(string Tag, string Name, string Notes, Uri Page, DateTimeOffset? Published, bool? IsNewer, bool Prerelease = false, IReadOnlyList<ReleaseAsset>? Assets = null);
+public sealed partial class UpdateService : IDisposable
 {
     private const string ReleasePrefix = "https://github.com/SUIREN-KazutoHashimoto/Eluna/releases/";
     private readonly HttpClient _http;
@@ -19,14 +20,15 @@ public sealed class UpdateService : IDisposable
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("Eluna/" + CurrentVersion);
         _http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
     }
-    public async Task<ReleaseInfo?> CheckAsync(CancellationToken token)
+    public async Task<ReleaseInfo?> CheckAsync(CancellationToken token, string train = "stable")
     {
-        using HttpResponseMessage response = await _http.GetAsync("https://api.github.com/repos/SUIREN-KazutoHashimoto/Eluna/releases/latest", token);
+        if (train is not ("stable" or "develop")) { throw new ArgumentException("更新トレインを確認してください。", nameof(train)); }
+        using HttpResponseMessage response = await _http.GetAsync("https://api.github.com/repos/SUIREN-KazutoHashimoto/Eluna/releases" + (train == "stable" ? "/latest" : "?per_page=100"), token);
         if (response.StatusCode == HttpStatusCode.NotFound) { return null; }
         if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests) { throw new HttpRequestException("GitHubの取得制限に達しました。時間を置いて再試行してください。"); }
         response.EnsureSuccessStatusCode();
         using JsonDocument json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(token));
-        return Parse(json.RootElement, CurrentVersion);
+        return train == "stable" ? Parse(json.RootElement, CurrentVersion) : SelectDevelopment(json.RootElement, CurrentVersion);
     }
     internal static ReleaseInfo Parse(JsonElement release, string current)
     {
@@ -38,7 +40,7 @@ public sealed class UpdateService : IDisposable
         { throw new JsonException("リリースのリンクを確認できませんでした。"); }
         DateTimeOffset? published = release.TryGetProperty("published_at", out JsonElement date) && date.ValueKind == JsonValueKind.String && date.TryGetDateTimeOffset(out DateTimeOffset value) ? value : null;
         return new(tag, release.TryGetProperty("name", out JsonElement name) && name.ValueKind == JsonValueKind.String ? name.GetString()! : tag,
-            release.TryGetProperty("body", out JsonElement body) && body.ValueKind == JsonValueKind.String ? body.GetString()! : "更新内容がありません。", page, published, Compare(tag, current));
+            release.TryGetProperty("body", out JsonElement body) && body.ValueKind == JsonValueKind.String ? body.GetString()! : "更新内容がありません。", page, published, Compare(tag, current), release.TryGetProperty("prerelease", out JsonElement pre) && pre.ValueKind == JsonValueKind.True, ParseAssets(release, tag));
     }
     internal static bool? Compare(string available, string installed)
     {

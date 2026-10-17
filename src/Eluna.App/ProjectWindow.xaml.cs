@@ -20,10 +20,10 @@ public partial class ProjectWindow : Window
     public ProjectWindow(ChatViewModel chat, KnowledgeProject? project = null)
     {
         InitializeComponent(); _chat = chat; _id = project?.Id ?? Guid.NewGuid(); _existing = project is not null; Appearance.Attach(this);
-        Heading.Text = _existing ? "プロジェクトを管理" : "プロジェクトを作成";
-        NameBox.Text = project?.Name ?? "新しいプロジェクト"; InstructionBox.Text = project?.Instruction ?? "";
-        ScopeBox.ItemsSource = new[] { "プロジェクト限定（推奨）", "共通メモリも使う" }; ScopeBox.SelectedIndex = project?.MemoryMode == "shared" ? 1 : 0; ScopeBox.IsEnabled = !_existing;
-        ReferenceChatsBox.IsChecked = project?.ReferenceChats ?? true;
+        Heading.Text = _existing ? "サーバーを管理" : "サーバーを作成";
+        NameBox.Text = project?.Name ?? "新しいサーバー"; InstructionBox.Text = project?.Instruction ?? "";
+        ScopeBox.ItemsSource = new[] { "サーバー限定（推奨）", "共通メモリも使う" }; ScopeBox.SelectedIndex = project?.MemoryMode == "shared" ? 1 : 0; ScopeBox.IsEnabled = !_existing;
+        ReferenceChatsBox.IsChecked = project?.ReferenceChats ?? true; AcceptAgentMemoryBox.IsChecked = project?.AcceptAgentMemory == true;
         foreach (KnowledgeDocument document in project?.Documents ?? []) { _documents.Add(document); }
         DocumentsList.ItemsSource = _documents; DocumentsList.SelectedIndex = _documents.Count > 0 ? 0 : -1;
         ProjectMemoryEditor.LoadNotes(project?.Memories ?? []); DeleteButton.Visibility = _existing ? Visibility.Visible : Visibility.Collapsed;
@@ -35,15 +35,15 @@ public partial class ProjectWindow : Window
     private void Scope_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (ScopeText is null) { return; }
-        ScopeText.Text = ScopeBox.SelectedIndex == 1 ? "共通指示・共通の保存メモリも使います。別プロジェクトの会話・資料・メモリは使いません。" :
-            "このプロジェクトの会話・資料・保存メモリだけを使います。共通指示・共通メモリ・プロジェクト外の会話は参照しません。";
+        ScopeText.Text = ScopeBox.SelectedIndex == 1 ? "共通指示・共通の保存メモリも使います。別サーバーの会話・資料・メモリは使いません。" :
+            "このサーバーの会話・資料・保存メモリだけを使います。共通指示・共通メモリ・サーバー外の会話は参照しません。";
     }
     internal KnowledgeProject CreateDraft() => new(_id, NameBox.Text.Trim(), InstructionBox.Text, ScopeBox.SelectedIndex == 1 ? "shared" : "project-only",
-        ReferenceChatsBox.IsChecked == true, [.. _documents], ProjectMemoryEditor.GetNotes(), _chat.Projects.FirstOrDefault(p => p.Id == _id)?.UseCommonSkills == true);
+        ReferenceChatsBox.IsChecked == true, [.. _documents], ProjectMemoryEditor.GetNotes(), _chat.Projects.FirstOrDefault(p => p.Id == _id)?.UseCommonSkills == true, AcceptAgentMemoryBox.IsChecked == true);
     private string Snapshot() => JsonSerializer.Serialize(CreateDraft(), AppStore.JsonOptions);
-    private void ShowDirty() { if (_baseline.Length > 0) { Title = Snapshot() != _baseline ? "プロジェクト · 変更あり · Eluna" : "プロジェクト · Eluna"; } }
+    private void ShowDirty() { if (_baseline.Length > 0) { Title = Snapshot() != _baseline ? "サーバー · 変更あり · Eluna" : "サーバー · Eluna"; } }
     private async void Save_Click(object sender, RoutedEventArgs e)
-    { if (await SaveDraftAsync()) { DialogResult = true; } }
+    { if (await SaveDraftAsync()) { Close(); } }
     internal async Task<bool> SaveDraftAsync()
     {
         SaveButton.IsEnabled = false;
@@ -54,8 +54,8 @@ public partial class ProjectWindow : Window
     private async void Delete_Click(object sender, RoutedEventArgs e)
     {
         int chats = _chat.Conversations.Count(c => c.ProjectId == _id);
-        if (MessageBox.Show(this, $"このプロジェクトと所属する会話{chats}件、資料、保存メモリを削除します。バックアップには残る場合があります。削除しますか？", "プロジェクトの削除", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) { return; }
-        try { await _chat.DeleteProjectAsync(_id); _baseline = Snapshot(); DialogResult = true; } catch (Exception ex) { StatusText.Text = ex.Message; }
+        if (MessageBox.Show(this, $"このサーバーと所属する会話{chats}件、資料、保存メモリを削除します。バックアップには残る場合があります。削除しますか？", "サーバーの削除", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) { return; }
+        try { await _chat.DeleteProjectAsync(_id); _baseline = Snapshot(); Close(); } catch (Exception ex) { StatusText.Text = ex.Message; }
     }
     private async void AddDocuments_Click(object sender, RoutedEventArgs e)
     {
