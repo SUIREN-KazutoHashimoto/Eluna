@@ -1,0 +1,84 @@
+[CmdletBinding()]
+param([ValidateSet('CreatePr','Draft','Upload','Publish','Status')][string]$Action = 'Status')
+$ErrorActionPreference = 'Stop'
+$taskRoot = Split-Path -Parent $PSScriptRoot
+Set-Location -LiteralPath $taskRoot
+$taskRepo = 'SUIREN-KazutoHashimoto/Eluna'
+$taskApi = "https://api.github.com/repos/$taskRepo"
+$taskTag = 'v0.1.0-beta'
+$env:GCM_INTERACTIVE = 'Never'
+$taskLines = @('protocol=https','host=github.com','') | git credential fill
+if ($LASTEXITCODE -ne 0) { throw 'GitHub credential lookup failed.' }
+$taskCredential = @{}
+foreach ($line in $taskLines) { $pair = $line.Split('=', 2); if ($pair.Length -eq 2) { $taskCredential[$pair[0]] = $pair[1] } }
+if (-not $taskCredential['password']) { throw 'GitHub credential missing.' }
+$taskHeaders = @{ Authorization = 'Bearer ' + $taskCredential['password']; Accept = 'application/vnd.github+json'; 'User-Agent' = 'Eluna-Release'; 'X-GitHub-Api-Version' = '2022-11-28' }
+function Invoke-TaskJson([string]$Method, [string]$Uri, $Body = $null) {
+    $args = @{ Method=$Method; Uri=$Uri; Headers=$taskHeaders; TimeoutSec=120 }
+    if ($null -ne $Body) { $args.Body = [Text.Encoding]::UTF8.GetBytes(($Body | ConvertTo-Json -Depth 12)); $args.ContentType='application/json; charset=utf-8' }
+    try { $taskResponse = Invoke-RestMethod @args; return $taskResponse } catch { Write-Host "GitHub request failed: $Method $Uri"; throw }
+}
+function Read-TaskRelease {
+    $saved = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'beta-release.json') -Raw | ConvertFrom-Json
+    $release = Invoke-TaskJson 'Get' "$taskApi/releases/$($saved.id)"
+    if ($release.tag_name -cne $taskTag) { throw 'Unexpected release tag.' }
+    return $release
+}
+function Assert-TaskAssets($Release) {
+    $paths = @('Eluna.exe','Eluna-Setup.exe','update-manifest.json','SHA256SUMS.txt')
+    if (@($Release.assets).Count -ne $paths.Count) { throw 'The release must contain exactly four assets.' }
+    foreach ($name in $paths) {
+        $path = Join-Path $taskRoot "artifacts/release-0.1.0-beta/$name"
+        $asset = @($Release.assets | Where-Object name -CEQ $name)
+        $hash = 'sha256:' + (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($asset.Count -ne 1 -or $asset[0].digest -cne $hash -or $asset[0].size -ne (Get-Item -LiteralPath $path).Length -or $asset[0].state -ne 'uploaded') { throw "GitHub asset verification failed: $name" }
+    }
+}
+try {
+    $taskSha = (git rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot determine source commit.' }
+    if ($Action -eq 'CreatePr') {
+        $taskPrs = @(Invoke-TaskJson 'Get' ($taskApi + '/pulls?state=open&base=develop&head=SUIREN-KazutoHashimoto:codex%2Fsocial-autonomy'))
+        if ($taskPrs.Count -gt 1) { throw 'Multiple matching PRs.' }
+        $taskBody = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'beta-pr-body.md') -Raw
+        if ($taskPrs.Count -eq 0) {
+            $taskPr = Invoke-TaskJson 'Post' "$taskApi/pulls" @{ title='Integrate Discord-style account chat, Computer Use and 0.1.0beta'; head='codex/social-autonomy'; base='develop'; body=$taskBody; draft=$false; maintainer_can_modify=$true }
+        } else { $taskPr = Invoke-TaskJson 'Patch' "$taskApi/pulls/$($taskPrs[0].number)" @{body=$taskBody} }
+        if ($taskPr.base.ref -ne 'develop' -or $taskPr.head.sha -ne $taskSha) { throw 'PR does not target the expected source/base.' }
+        $taskPr | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'beta-pr.json') -Encoding utf8NoBOM
+        $taskPr | Select-Object number,html_url,state,mergeable,@{n='head';e={$_.head.sha}},@{n='base';e={$_.base.ref}} | ConvertTo-Json
+    } elseif ($Action -eq 'Draft') {
+        $taskExisting = @(Invoke-TaskJson 'Get' "$taskApi/releases?per_page=100" | Where-Object tag_name -CEQ $taskTag)
+        if ($taskExisting.Count -gt 0) { throw 'Release tag already exists; refusing to overwrite.' }
+        $taskNotes = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'beta-release-notes.md') -Raw
+        $taskRelease = Invoke-TaskJson 'Post' "$taskApi/releases" @{ tag_name=$taskTag; target_commitish=$taskSha; name='Eluna 0.1.0beta'; body=$taskNotes; draft=$true; prerelease=$true; make_latest='false' }
+        $taskRelease | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'beta-release.json') -Encoding utf8NoBOM
+        $taskRelease | Select-Object id,tag_name,draft,prerelease,target_commitish,html_url | ConvertTo-Json
+    } elseif ($Action -eq 'Upload') {
+        $taskRelease = Read-TaskRelease
+        if (-not $taskRelease.draft -or -not $taskRelease.prerelease -or $taskRelease.target_commitish -ne $taskSha) { throw 'Upload target is not the expected draft/commit.' }
+        foreach ($taskName in @('Eluna.exe','Eluna-Setup.exe','update-manifest.json','SHA256SUMS.txt')) {
+            if (@($taskRelease.assets | Where-Object name -CEQ $taskName).Count -gt 0) { Write-Output "Already uploaded: $taskName"; continue }
+            $taskFile = Join-Path $taskRoot "artifacts/release-0.1.0-beta/$taskName"
+            $taskUploadUri = $taskRelease.upload_url.Split('{')[0] + '?name=' + [Uri]::EscapeDataString($taskName)
+            $taskAsset = Invoke-RestMethod -Method Post -Uri $taskUploadUri -Headers $taskHeaders -ContentType 'application/octet-stream' -InFile $taskFile -TimeoutSec 900
+            $taskAsset | Select-Object name,size,digest,state | ConvertTo-Json -Compress | Write-Output
+        }
+        $taskRelease = Read-TaskRelease
+        Assert-TaskAssets $taskRelease
+        Write-Output 'All four uploaded asset digests and lengths match the local verified payload.'
+    } elseif ($Action -eq 'Publish') {
+        $taskRelease = Read-TaskRelease
+        if (-not $taskRelease.draft -or -not $taskRelease.prerelease -or $taskRelease.target_commitish -ne $taskSha) { throw 'Publish target is not the expected draft/commit.' }
+        Assert-TaskAssets $taskRelease
+        $taskRelease = Invoke-TaskJson 'Patch' "$taskApi/releases/$($taskRelease.id)" @{draft=$false;prerelease=$true;make_latest='false'}
+        if ($taskRelease.draft -or -not $taskRelease.prerelease) { throw 'Release was not published as a prerelease.' }
+        $taskRelease | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'beta-release.json') -Encoding utf8NoBOM
+        $taskRelease | Select-Object id,tag_name,name,draft,prerelease,target_commitish,html_url,published_at | ConvertTo-Json
+    } else {
+        $taskPrs = @(Invoke-TaskJson 'Get' ($taskApi + '/pulls?state=open&base=develop&head=SUIREN-KazutoHashimoto:codex%2Fsocial-autonomy'))
+        $taskRelease = Read-TaskRelease
+        $taskChecks = Invoke-TaskJson 'Get' "$taskApi/commits/$taskSha/check-runs"
+        [ordered]@{commit=$taskSha;pr=@($taskPrs | Select-Object number,html_url,state,mergeable);release=($taskRelease | Select-Object tag_name,draft,prerelease,html_url,target_commitish,published_at);assets=@($taskRelease.assets | Select-Object name,size,digest,state);checks=@($taskChecks.check_runs | Select-Object name,status,conclusion,html_url)} | ConvertTo-Json -Depth 8
+    }
+} finally { $taskHeaders.Clear(); $taskCredential.Clear(); $taskLines=$null }

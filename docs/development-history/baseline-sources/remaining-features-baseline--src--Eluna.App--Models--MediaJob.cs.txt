@@ -1,0 +1,15 @@
+namespace Eluna.App.Models;
+
+public sealed class MediaJob(string title, Func<CancellationToken, Task> operation, CancellationToken token) : ObservableObject
+{
+    private string _state = "queued", _detail = "実行中の推論・準備処理が終わるまで待っています";
+    internal Func<CancellationToken, Task> Operation { get; } = operation;
+    internal CancellationTokenSource Cancellation { get; } = CancellationTokenSource.CreateLinkedTokenSource(token);
+    internal TaskCompletionSource Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
+    public string Title { get; } = title;
+    public string State { get => _state; internal set { Set(ref _state, value); Notify(nameof(IsPending)); } }
+    public string Detail { get => _detail; internal set => Set(ref _detail, value); }
+    public bool IsPending => State is "queued" or "active";
+    public void Cancel() => Cancellation.Cancel();
+}

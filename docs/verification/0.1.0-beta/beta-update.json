@@ -1,0 +1,5 @@
+{
+  "success": true,
+  "checks": "WPF update/setup dark/light at minimum and 130%, train/automatic settings persistence, active/queued work deferral, real self-contained install without registry/shortcuts, actual helper waits for prior process, atomic exe replacement, real WPF startup health, previous exe and model preservation",
+  "systemRegistration": "not changed by verification"
+}

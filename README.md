@@ -1,5 +1,7 @@
 # Eluna
 
+**別マシンで開発を再開する場合は[開発引き継ぎ（2026-10-19）](docs/development-handoff.md)を最初に確認してください。** 現在の最新開発ブランチ、未マージPR、残作業、環境構築とローカル補助ファイルの保存先をまとめています。
+
 **0.1.0beta（Windows x64の開発プレリリース）**の配布先は[GitHub Releases](https://github.com/SUIREN-KazutoHashimoto/Eluna/releases/tag/v0.1.0-beta)です。導入には`Eluna-Setup.exe`、インストールせず使う場合は`Eluna.exe`を選びます。モデルの重みは含まず、初回にアプリから取得します。[変更点と確認範囲](docs/releases/0.1.0-beta.md)も確認してください。以下のローカルexeパスは各機能追加時点の記録です。
 
 N01〜N20の機能を実装しました。アカウント同士の会話・自発的な開始、初期12アカウントとサーバー最大50人、絵描きスキル、カラー絵文字、個別の生成設定、VC参加者、開発者ログに対応しています。インストーラーと正式版／開発版を選ぶ自動更新も追加しました。[実装・検証と未確認範囲](docs/social-autonomy-status.md)、[導入と更新の仕様](docs/installation-updates.md)を参照してください。

@@ -1,0 +1,66 @@
+{
+  "sourceCommit": "05312a0ed34debe3b1bf80c3c69607f3cde88720",
+  "observedAtUtc": "2026-10-19T02:26:59.7200510Z",
+  "checks": [
+    {
+      "name": "Portable prototype build",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/SUIREN-KazutoHashimoto/Eluna/actions/runs/39030909364/job/117390986170"
+    },
+    {
+      "name": "Native Vulkan build",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/SUIREN-KazutoHashimoto/Eluna/actions/runs/39030909364/job/117390986052"
+    },
+    {
+      "name": "Branch policy",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/SUIREN-KazutoHashimoto/Eluna/actions/runs/39030909364/job/117390986023"
+    },
+    {
+      "name": "Native CPU build",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/SUIREN-KazutoHashimoto/Eluna/actions/runs/39030909364/job/117390986000"
+    },
+    {
+      "name": "Managed build",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/SUIREN-KazutoHashimoto/Eluna/actions/runs/39030909364/job/117390985880"
+    },
+    {
+      "name": "Portable prototype build",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/SUIREN-KazutoHashimoto/Eluna/actions/runs/39030826088/job/117390750715"
+    },
+    {
+      "name": "Branch policy",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/SUIREN-KazutoHashimoto/Eluna/actions/runs/39030826088/job/117390750678"
+    },
+    {
+      "name": "Native Vulkan build",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/SUIREN-KazutoHashimoto/Eluna/actions/runs/39030826088/job/117390750644"
+    },
+    {
+      "name": "Managed build",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/SUIREN-KazutoHashimoto/Eluna/actions/runs/39030826088/job/117390750640"
+    },
+    {
+      "name": "Native CPU build",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/SUIREN-KazutoHashimoto/Eluna/actions/runs/39030826088/job/117390750466"
+    }
+  ]
+}

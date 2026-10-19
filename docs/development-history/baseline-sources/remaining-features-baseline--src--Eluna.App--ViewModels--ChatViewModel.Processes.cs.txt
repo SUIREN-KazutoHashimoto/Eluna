@@ -1,0 +1,64 @@
+using System.Collections.ObjectModel;
+using Eluna.App.Models;
+
+namespace Eluna.App.ViewModels;
+
+public sealed partial class ChatViewModel
+{
+    public ObservableCollection<MediaJob> MediaJobs { get; } = [];
+    private bool _pumpingMedia, _updatingMedia, _mediaSuspended;
+    private Task? _mediaExecution;
+    public string ProcessSummary
+    {
+        get
+        {
+            int active = Inferences.ActiveCount + Downloads.Items.Count(d => d.Status == "active") + MediaJobs.Count(m => m.State == "active");
+            int waiting = Inferences.WaitingCount + Downloads.Items.Count(d => d.Status == "queued") + MediaJobs.Count(m => m.State == "queued");
+            int attention = Inferences.Items.Count(i => i.State is "paused" or "failed") + Downloads.Items.Count(d => d.Status is "paused" or "failed") + MediaJobs.Count(m => m.State == "failed");
+            return active + waiting > 0 ? $"実行 {active} · 予約 {waiting}" : attention > 0 ? $"要確認 {attention}" : "";
+        }
+    }
+    public Task QueueMediaOperationAsync(string title, Func<CancellationToken, Task> operation, CancellationToken token)
+    {
+        if (_shuttingDown || MediaJobs.Count(j => j.IsPending) >= 20) { throw new InvalidOperationException("作成処理の予約は20件までです。"); }
+        var job = new MediaJob(title, operation, token); MediaJobs.Add(job);
+        _ = AwaitMediaCancellationAsync(job); PumpMedia(); return job.Completion.Task;
+    }
+    private async Task AwaitMediaCancellationAsync(MediaJob job)
+    {
+        using CancellationTokenRegistration registration = job.Cancellation.Token.Register(() => System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
+        {
+            if (job.State == "queued") { job.State = "canceled"; job.Detail = "予約を取り消しました"; job.Completion.TrySetCanceled(); PumpMedia(); }
+        }));
+        try { await job.Completion.Task; } catch (Exception) { }
+        job.Cancellation.Dispose();
+    }
+    private void PumpMedia()
+    {
+        Notify(nameof(ProcessSummary));
+        if (_pumpingMedia || _updatingMedia || _shuttingDown) { return; }
+        bool waiting = MediaJobs.Any(j => j.State == "queued");
+        if (!waiting && !_mediaSuspended) { return; }
+        _mediaSuspended = waiting;
+        _updatingMedia = true;
+        try { Inferences.Suspended = _isBusy || waiting; } finally { _updatingMedia = false; }
+        if (!waiting || _isBusy || _modelsChanging || Inferences.ActiveCount > 0) { return; }
+        MediaJob job = MediaJobs.First(j => j.State == "queued");
+        _pumpingMedia = true; job.State = "active"; job.Detail = "処理を開始しています";
+        _generation = CancellationTokenSource.CreateLinkedTokenSource(job.Cancellation.Token); IsBusy = true; ReleaseIdleEngines();
+        _mediaExecution = RunQueuedMediaAsync(job); _generationTask = _mediaExecution;
+    }
+    private async Task RunQueuedMediaAsync(MediaJob job)
+    {
+        await Task.Yield();
+        try { await job.Operation(_generation!.Token); job.State = "complete"; job.Detail = "完了しました"; job.Completion.TrySetResult(); }
+        catch (OperationCanceledException) { job.State = "canceled"; job.Detail = "停止しました"; job.Completion.TrySetCanceled(); }
+        catch (Exception ex) { job.State = "failed"; job.Detail = Services.DiagnosticsService.Explain(ex); job.Completion.TrySetException(ex); }
+        finally
+        {
+            _llama.Stop(); _generation?.Dispose(); _generation = null; _pumpingMedia = false; IsBusy = false;
+            foreach (MediaJob old in MediaJobs.Where(j => !j.IsPending).Reverse().Skip(20).ToArray()) { MediaJobs.Remove(old); }
+            PumpMedia(); await FlushModelRefreshAsync();
+        }
+    }
+}

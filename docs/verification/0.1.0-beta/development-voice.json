@@ -1,0 +1,10 @@
+{
+  "explicitVoiceParticipants": true,
+  "ttsWaveBytes": 166014,
+  "recognition": {
+    "engine": "Windows \u7528 Microsoft \u97F3\u58F0\u8A8D\u8B58\u30A8\u30F3\u30B8\u30F3 8.0 (\u65E5\u672C\u8A9E - \u65E5\u672C)",
+    "text": "\u3053\u3093\u306B\u3061\u306F\u4ECA\u65E5\u306F\u826F\u3044\u5929\u6C17\u3067\u3059\u306D"
+  },
+  "success": true,
+  "profileServerVoiceShareUi": true
+}

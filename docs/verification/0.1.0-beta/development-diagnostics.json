@@ -1,0 +1,4 @@
+{
+  "success": true,
+  "checks": "UI metadata without field values, developer visibility independent from capture, message-scoped errors and model I/O, no diagnostic text in reply, persistence, ZIP and minimum dark/light at 130%"
+}

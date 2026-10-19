@@ -1,0 +1,17 @@
+param([string]$RunName = 'experience-ui-final')
+$ErrorActionPreference = 'Stop'
+$taskRoot = Split-Path -Parent $PSScriptRoot
+$taskExe = Join-Path $taskRoot 'src/Eluna.App/bin/Release/net10.0-windows/Eluna.exe'
+$taskOutputRoot = Join-Path $PSScriptRoot $RunName
+if (Test-Path -LiteralPath $taskOutputRoot) { throw 'Use a fresh output name for isolated UI checks.' }
+foreach ($taskKind in @('messages','navigation','polish')) {
+    $taskOutput = Join-Path $taskOutputRoot $taskKind
+    if ($taskKind -eq 'polish') { $taskArgs = @('--capture-dir', ('"'+$taskOutput+'"'), '--verify-ui-ux') }
+    else { $taskArgs = @($(if ($taskKind -eq 'messages') { '--verify-message-experience' } else { '--verify-experience' }), ('"'+$taskOutput+'"'), '--data-dir', ('"'+(Join-Path $taskOutput 'data')+'"')) }
+    $taskProcess = Start-Process -FilePath $taskExe -ArgumentList $taskArgs -WindowStyle Hidden -PassThru
+    $taskDeadline = [DateTime]::UtcNow.AddMinutes(6)
+    while (-not $taskProcess.WaitForExit(1000)) { if ([DateTime]::UtcNow -gt $taskDeadline) { $taskProcess.Kill(); throw ($taskKind+' timed out') } }
+    $taskResult = Join-Path $taskOutput 'result.txt'
+    if (Test-Path -LiteralPath $taskResult) { Get-Content -LiteralPath $taskResult }
+    if ($taskProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $taskResult) -or (Get-Content -LiteralPath $taskResult -Raw) -notmatch ': OK') { throw ($taskKind+' failed') }
+}

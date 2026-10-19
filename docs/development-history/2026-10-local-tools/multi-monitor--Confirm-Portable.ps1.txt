@@ -1,0 +1,41 @@
+$ErrorActionPreference = 'Stop'
+$taskRoot = Join-Path (Get-Location) 'artifacts/multi-monitor/portable'
+$taskWindow = Get-Content (Join-Path $taskRoot 'window-check/window-verification.json') -Raw | ConvertFrom-Json
+if (-not $taskWindow.Success -or $taskWindow.Results.Count -ne 12) { throw 'Window verification failed.' }
+foreach ($taskCase in @('ui-check', 'regression')) {
+    $taskResultText = Get-Content (Join-Path $taskRoot "$taskCase/result.txt") -Raw
+    if (-not $taskResultText.Trim().EndsWith('OK.', [StringComparison]::Ordinal)) { throw "$taskCase result is $taskResultText" }
+}
+$taskRuntime = Get-ChildItem (Join-Path $taskRoot 'window-data/main/Runtime') -Directory | Select-Object -First 1
+$taskExpected = @{
+    'cpu/llama-server.exe' = '5D51ED395C3656F81A10F9E4A7C829F15C7EB9977F365C4608C9362911F70139'
+    'vulkan/llama-server.exe' = '9ADE48D2D8042CF4009F068B78EDAD79490270A9C36B8D0D3C2774CF803FA3C3'
+    'cpu/sd-cli.exe' = 'F903F20B757D2B7902EA877B76A90C8895A1ED40FA32426DAE99C52C0E24CD80'
+    'vulkan/sd-cli.exe' = '191808266667B1C6E9526D8531D8C952F6D4AE8965374C97F8270BAD88A112B5'
+}
+$taskEngines = @()
+foreach ($taskKey in $taskExpected.Keys) {
+    $taskEngine = Join-Path $taskRuntime.FullName $taskKey
+    $taskHash = (Get-FileHash -LiteralPath $taskEngine -Algorithm SHA256).Hash
+    if ($taskHash -ne $taskExpected[$taskKey]) { throw "Engine hash mismatch: $taskKey" }
+    $taskLog = Join-Path $taskRoot ($taskKey.Replace('/', '-') + '.version')
+    $taskProcess = Start-Process -FilePath $taskEngine -ArgumentList '--version' -WindowStyle Hidden -PassThru -Wait -RedirectStandardOutput $taskLog -RedirectStandardError ($taskLog + '.err')
+    if ($taskProcess.ExitCode -ne 0) { throw "Engine failed to start: $taskKey" }
+    $taskEngines += @{ Name = $taskKey; Hash = $taskHash; ExitCode = $taskProcess.ExitCode }
+}
+$taskDllCount = @(Get-ChildItem $taskRuntime.FullName -Filter '*.dll' -Recurse).Count
+$taskLicenseCount = @(Get-ChildItem (Join-Path $taskRuntime.FullName 'Licenses') -File -Recurse).Count
+if ($taskDllCount -ne 0 -or $taskLicenseCount -ne 23) { throw 'Unexpected engine DLL/license count.' }
+$taskExe = Get-Item (Join-Path $taskRoot 'Eluna.exe')
+$taskReleaseHash = (Get-FileHash 'artifacts/release-multi-monitor/Eluna.exe' -Algorithm SHA256).Hash
+$taskExeHash = (Get-FileHash $taskExe.FullName -Algorithm SHA256).Hash
+if ($taskExeHash -ne $taskReleaseHash) { throw 'Portable EXE differs from published EXE.' }
+$taskReport = @{
+    Success = $true; Sha256 = $taskExeHash; Bytes = $taskExe.Length; WindowChecks = $taskWindow.Results.Count
+    Displays = $taskWindow.Displays.Count; UiRegression = $true; MainWindowRestored = $taskWindow.MainWindowRestored
+    LegacyUpgrade = $taskWindow.LegacyUpgrade; FailedSaveCleanup = $taskWindow.FailedSaveCleanup
+    Engines = $taskEngines; EngineSharedDllCount = $taskDllCount; EngineLicenseCount = $taskLicenseCount
+    InstalledDotnetDisabledForLaunch = $true
+}
+$taskReport | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $taskRoot 'portable-verification.json') -Encoding utf8
+$taskReport | ConvertTo-Json -Depth 6

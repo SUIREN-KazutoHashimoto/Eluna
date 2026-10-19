@@ -1,0 +1,5 @@
+{
+  "success": true,
+  "checks": "native color pixels, skin tone and ZWJ graphemes, selectable Unicode including flag fallback, composer undo, simulated IME overlay suppression, picker, dark/light",
+  "physicalImeAndDpi": false
+}

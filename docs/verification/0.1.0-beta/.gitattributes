@@ -1,0 +1,2 @@
+# Keep captured JSON evidence bytes stable across Windows Git configurations.
+*.json -text whitespace=cr-at-eol

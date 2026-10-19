@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>Eluna</AssemblyName>
+    <RootNamespace>Eluna.App</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../LICENSE" LogicalName="Eluna.Licenses.Eluna-Apache-2.0.txt" />
+    <EmbeddedResource Include="../../THIRD_PARTY_NOTICES.md" LogicalName="Eluna.Licenses.THIRD_PARTY_NOTICES.md" />
+    <EmbeddedResource Include="../../third_party/llama.cpp/LICENSE" LogicalName="Eluna.Licenses.llama.cpp-MIT.txt" />
+    <EmbeddedResource Include="../../third_party/stable-diffusion.cpp/LICENSE" LogicalName="Eluna.Licenses.stable-diffusion-LICENSE" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(NativeRuntimeBundlePath)' != ''">
+    <EmbeddedResource Include="$(NativeRuntimeBundlePath)" LogicalName="Eluna.NativeRuntime.zip" />
+  </ItemGroup>
+</Project>

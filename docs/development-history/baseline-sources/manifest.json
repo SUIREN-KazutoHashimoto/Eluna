@@ -1,0 +1,275 @@
+[
+  {
+    "source": "artifacts/multi-monitor-baseline/App.xaml.cs",
+    "archive": "multi-monitor-baseline--App.xaml.cs.txt",
+    "bytes": 5566,
+    "sha256": "050b6cf8ac98a5a50d3d89895520979d3dfc81f7481d6c2150ca0d6de79bc2f1",
+    "gitBlob": "f4fd13d8b507ce4990ba993ddeeefa41503e99ab"
+  },
+  {
+    "source": "artifacts/multi-monitor-baseline/Eluna.App.csproj",
+    "archive": "multi-monitor-baseline--Eluna.App.csproj.txt",
+    "bytes": 902,
+    "sha256": "531917c8a1139f18fe0ad2f4b5785ee5a0e2af0fbf2c9c8e2f68454243864c25",
+    "gitBlob": "90dfa8304d891e9267ed89c9b65b2145a26476ce"
+  },
+  {
+    "source": "artifacts/multi-monitor-baseline/Program.cs",
+    "archive": "multi-monitor-baseline--Program.cs.txt",
+    "bytes": 51362,
+    "sha256": "0af64aaa85b88dd00998d203817bced1960fc267ad7a6aed28ffa35a0b9c5f3b",
+    "gitBlob": "55e7ae5a22f9ee12a3ff9675ef3c32f9f0ce3d84"
+  },
+  {
+    "source": "artifacts/multi-monitor-baseline/WindowPlacement.cs",
+    "archive": "multi-monitor-baseline--WindowPlacement.cs.txt",
+    "bytes": 2116,
+    "sha256": "d0010c7568f30ac00ec7b27f29ded81f3b89969f3d9684ca7e7202892ebff10c",
+    "gitBlob": "ca86d70ab26bda80af7c29f59ca0986e73fe62ce"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/docs/concurrent-work.md",
+    "archive": "remaining-features-baseline--docs--concurrent-work.md.txt",
+    "bytes": 8103,
+    "sha256": "8b5e95c617bd711a983ee2de56f809bdee69b1eb9126ed69e178e5bee87d6817",
+    "gitBlob": "10c54e0e02afc7883946af4f71e254055a15ef5c"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/docs/design.md",
+    "archive": "remaining-features-baseline--docs--design.md.txt",
+    "bytes": 9434,
+    "sha256": "bd6dec0837ead14a9b4488a1dd6d5503e0c998b54c1bd47ff2bf0076286a155b",
+    "gitBlob": "4e157fe83471d144a8aa92accdba4097971d1b2c"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/docs/implementation-status.md",
+    "archive": "remaining-features-baseline--docs--implementation-status.md.txt",
+    "bytes": 11602,
+    "sha256": "d9b9ef21ce7fc7f412c779813dacf7c36f9ecbca16ce7d1da9990815f6851339",
+    "gitBlob": "7a22526d2fcdf20154441a79eb4ca4f6895647cb"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/docs/media-documents.md",
+    "archive": "remaining-features-baseline--docs--media-documents.md.txt",
+    "bytes": 10114,
+    "sha256": "e8d8cb167e13574c2dc2e29c3cf6c167efe24688d06a71b09d4b8d8dbe8becbc",
+    "gitBlob": "589fb15c492d06e41cbe4e8f48781b3ade1b802a"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/docs/models.md",
+    "archive": "remaining-features-baseline--docs--models.md.txt",
+    "bytes": 4545,
+    "sha256": "baa92fb805b35c65f003e19f447263237ce2b11f88fa0fe4cea1e9d04877bbaa",
+    "gitBlob": "0521dfbe02d663f6308fb7048316c7768d83384d"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/docs/skills.md",
+    "archive": "remaining-features-baseline--docs--skills.md.txt",
+    "bytes": 13585,
+    "sha256": "f9b990cb89fbd5b136428a25137cca0ea36a5930426bb8aa18f65851e3a0d8ce",
+    "gitBlob": "7f376f4f88ccdc55bca7c6004abe283b9db43565"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/docs/ui-ux-polish.md",
+    "archive": "remaining-features-baseline--docs--ui-ux-polish.md.txt",
+    "bytes": 12599,
+    "sha256": "943bf934d17ea66227f3f214e9b76878d04f488298a3a3869b014152c8c6d955",
+    "gitBlob": "a1f175d9d9c08aa665a17c82a208329b393a7b22"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/docs/using-eluna.md",
+    "archive": "remaining-features-baseline--docs--using-eluna.md.txt",
+    "bytes": 10249,
+    "sha256": "3702dbe365d20460df600873035828bb76c7f0ac1b8bb01fb2a3f6f451f434c2",
+    "gitBlob": "88a8c1f092814bf86c03ab476f536ce4d7c9d843"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/App.xaml.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--App.xaml.cs.txt",
+    "bytes": 5319,
+    "sha256": "4e25c8704c4f0301d762d7407058eecffde27c1f246eeffc058aeb0cc515cab9",
+    "gitBlob": "df93053fe8513bb3fd245c73da31b34c4c3c787a"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/Controls/MarkdownView.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--Controls--MarkdownView.cs.txt",
+    "bytes": 15580,
+    "sha256": "57876c2060ffa52e4bf362d992ca74b341142b82116c7492b1d47c5d9d78b6bb",
+    "gitBlob": "9bcae02fcd645885836bfbf2643a682125ed219d"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/Controls/ProcessListPanel.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--Controls--ProcessListPanel.cs.txt",
+    "bytes": 8650,
+    "sha256": "0ac5aa70ae32471c611aa0755158a1527ab8cdefc4973a66c2d6610ea48954f0",
+    "gitBlob": "1e8205830963bb163ad38f371e5d124ec003bfcb"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/Eluna.App.csproj",
+    "archive": "remaining-features-baseline--src--Eluna.App--Eluna.App.csproj.txt",
+    "bytes": 902,
+    "sha256": "531917c8a1139f18fe0ad2f4b5785ee5a0e2af0fbf2c9c8e2f68454243864c25",
+    "gitBlob": "90dfa8304d891e9267ed89c9b65b2145a26476ce"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/MainWindow.xaml.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--MainWindow.xaml.cs.txt",
+    "bytes": 27885,
+    "sha256": "e3e9e3f2c6f608e19e041bed17ced2b52df3a42181845e4530dcfbc18621a928",
+    "gitBlob": "82d133fa4d5e38cc5d8ce7343f72bb62b0da3521"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/MediaWindow.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--MediaWindow.cs.txt",
+    "bytes": 28640,
+    "sha256": "1ca70f67d72a0f0184b2849a29e942949e0353c6d91c906d013560d4cadad825",
+    "gitBlob": "5d87c250ee545beb805ff922e339a77a371df053"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/ModelWindow.xaml",
+    "archive": "remaining-features-baseline--src--Eluna.App--ModelWindow.xaml.txt",
+    "bytes": 6311,
+    "sha256": "eda10cf09ba84f3aca53f046ed9ed51e9b8f9d365030ea29180008c82be2027d",
+    "gitBlob": "67de694ed86b77dddd4300e45f25d44526e76776"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/ModelWindow.xaml.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--ModelWindow.xaml.cs.txt",
+    "bytes": 14010,
+    "sha256": "31373d7e1f47f74c6957a36fa9d79083aba01856b69101720fb09192eb4d145c",
+    "gitBlob": "a718c4e45c1e949565eef6bb2d0b30c8117711d0"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/Models/AppModels.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--Models--AppModels.cs.txt",
+    "bytes": 14677,
+    "sha256": "8d0fa8c38c573a1655806465fcd3feea47913f00318e4b33944ecb414bae0cf2",
+    "gitBlob": "eec565f68b00b4cfcde4f3f3dd899b7125819e74"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/Models/MediaJob.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--Models--MediaJob.cs.txt",
+    "bytes": 1007,
+    "sha256": "5857748d391301ffb4e2ec371bebd5607fec9190a1a6fc0b534cd91dd4a42c30",
+    "gitBlob": "4617ad8c8429966dab890c82f5c057675812584a"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/Resources/Styles.xaml",
+    "archive": "remaining-features-baseline--src--Eluna.App--Resources--Styles.xaml.txt",
+    "bytes": 21531,
+    "sha256": "76d8705479697f4e62d9208031526d9ab5de5f32e2db05265537a58ffb07b75c",
+    "gitBlob": "60f41ba600ec315ecc6efd4dc4fee3b482a69e8b"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/Services/AppStore.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--Services--AppStore.cs.txt",
+    "bytes": 16458,
+    "sha256": "f6a4c982d351a3f969c803aca9c5c7dcc191f51ea519480e12a142cf1a24c5b6",
+    "gitBlob": "a5d7107ef5c090ffe64b1f076a19f897238cac75"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/Services/DownloadQueue.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--Services--DownloadQueue.cs.txt",
+    "bytes": 10480,
+    "sha256": "24edc53bb28cd2b0296f53352d561efaba79518315f598845399639a9f9e2e0c",
+    "gitBlob": "c6ea1ab3abc9cd36038da069cdbf7acd695cd71f"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/Services/HardwareAdvisor.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--Services--HardwareAdvisor.cs.txt",
+    "bytes": 2894,
+    "sha256": "c0acd84a0e44c1a247e989f02e74124577402c5d6079877b13e095427b5709e4",
+    "gitBlob": "665326b167b5e64b0638b253f6148a4a9bde1e07"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/Services/MarkdownParser.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--Services--MarkdownParser.cs.txt",
+    "bytes": 6609,
+    "sha256": "1c977b1431c48309ed93ac05c368095ac2c3d0bdb00c3e92964c1287fb1c60d4",
+    "gitBlob": "e2cc853109b790e1ea2239e96c598c67259ee066"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/Services/ModelCatalog.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--Services--ModelCatalog.cs.txt",
+    "bytes": 22094,
+    "sha256": "a47b6f0b14408442657035184daaf873ba72b533860916c36892768bf562b238",
+    "gitBlob": "5c4ae0cea98e7ef2cf4f935f0370eefe35bc8809"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/Services/WindowPlacement.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--Services--WindowPlacement.cs.txt",
+    "bytes": 2116,
+    "sha256": "d0010c7568f30ac00ec7b27f29ded81f3b89969f3d9684ca7e7202892ebff10c",
+    "gitBlob": "ca86d70ab26bda80af7c29f59ca0986e73fe62ce"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/SettingsWindow.xaml",
+    "archive": "remaining-features-baseline--src--Eluna.App--SettingsWindow.xaml.txt",
+    "bytes": 8176,
+    "sha256": "dacaa751dd9d5fd750f28cd47331e2eb956dad42bef41970ef20798c1b6be690",
+    "gitBlob": "468fb59c8e3ae2dcff9586ccb7c5e5668665dc5a"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/SettingsWindow.xaml.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--SettingsWindow.xaml.cs.txt",
+    "bytes": 6183,
+    "sha256": "3419d09d5e84e1ac18e568a61d917ebecc3b2af19f7cfd3b6eb9aaa6b34ae772",
+    "gitBlob": "f9ef3cadea09f1ea8da371a64888cf6abd66d41e"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/SkillsWindow.xaml",
+    "archive": "remaining-features-baseline--src--Eluna.App--SkillsWindow.xaml.txt",
+    "bytes": 7876,
+    "sha256": "1fdfe3f6fc902dec48086b8266ed7a89112eb635baf0e7299403f4288316bc1b",
+    "gitBlob": "7cfd6470f20665b42701180c9848a842282410c4"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/SkillsWindow.xaml.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--SkillsWindow.xaml.cs.txt",
+    "bytes": 15821,
+    "sha256": "a18e24e332a24fd2bad72b2fcdd1987b16fde50ac520166d712f2dd3145ccd3f",
+    "gitBlob": "4b1846783dae6b22a9523f49a6694a62c8ea06f9"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/ViewModels/ChatViewModel.Artifacts.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--ViewModels--ChatViewModel.Artifacts.cs.txt",
+    "bytes": 1038,
+    "sha256": "e9869a5d75e4c02b17d40754c0decac4cadeabcf7594454a9b2a5f7ba11377bb",
+    "gitBlob": "cf82cdc291e7ee0187e51c3d341f697b1e61017c"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/ViewModels/ChatViewModel.Processes.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--ViewModels--ChatViewModel.Processes.cs.txt",
+    "bytes": 3753,
+    "sha256": "71ef6e0954816983d52e66fb1b8f13a670a87ef71c4836839181a148fa807549",
+    "gitBlob": "8d42fa8dd6e51314cb8ed8a86eea0ea12340e482"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/ViewModels/ChatViewModel.Projects.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--ViewModels--ChatViewModel.Projects.cs.txt",
+    "bytes": 9943,
+    "sha256": "5f69e17c80883c20dd063cacc63fe2695dc941f1f14a9fb15d8dc6a27446876d",
+    "gitBlob": "a74a501c4d62d8987c17932e8fc386619e6a771c"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/ViewModels/ChatViewModel.Queue.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--ViewModels--ChatViewModel.Queue.cs.txt",
+    "bytes": 12182,
+    "sha256": "17be26d25145bb9d3148d851ee24d119d00950c2687dab949fb35f96cecfe227",
+    "gitBlob": "40130889fa1b06da8646ed36c602f0abc8f5ea91"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/src/Eluna.App/ViewModels/ChatViewModel.cs",
+    "archive": "remaining-features-baseline--src--Eluna.App--ViewModels--ChatViewModel.cs.txt",
+    "bytes": 51597,
+    "sha256": "cd87de7bb44f137112e89c17d450f4e478e05d7f955c6a6e47bd5287ac80fa2f",
+    "gitBlob": "2cbc231490dd73168e9586192c208f770f9d07f1"
+  },
+  {
+    "source": "artifacts/remaining-features-baseline/tests/Eluna.Checks/Program.cs",
+    "archive": "remaining-features-baseline--tests--Eluna.Checks--Program.cs.txt",
+    "bytes": 51246,
+    "sha256": "1bbce79cc25f5a5581fc7e425c131677478486221444dcc8834c0aa4b0f1bbd7",
+    "gitBlob": "95c4659c224a00f9c103b351cd7a7621f07a3001"
+  }
+]

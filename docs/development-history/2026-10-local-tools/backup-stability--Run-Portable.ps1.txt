@@ -1,0 +1,54 @@
+param([ValidateSet('soak','checks')][string]$Case)
+$ErrorActionPreference = 'Stop'
+$taskRoot = Join-Path (Get-Location) 'artifacts/backup-stability/portable-final'
+$taskExe = Join-Path $taskRoot 'Eluna.exe'
+$taskModel = Join-Path (Get-Location) 'artifacts/prototype-checks/real-model/Models/a829a5c72c9d094614352983/model.json'
+$env:DOTNET_ROOT = Join-Path $taskRoot 'no-installed-dotnet'
+$env:DOTNET_ROOT_X64 = $env:DOTNET_ROOT
+$env:DOTNET_MULTILEVEL_LOOKUP = '0'
+$env:DOTNET_BUNDLE_EXTRACT_BASE_DIR = Join-Path $taskRoot 'bundle-extract'
+function Run-App([string[]]$Arguments) {
+    $taskProcess = Start-Process -FilePath $taskExe -ArgumentList $Arguments -WindowStyle Hidden -PassThru -Wait
+    if ($taskProcess.ExitCode -ne 0) { throw "Application check failed: $($taskProcess.ExitCode) $($Arguments -join ' ')" }
+}
+if ($Case -eq 'soak') {
+    Run-App @('--data-dir', ('"' + (Join-Path $taskRoot 'soak-data') + '"'), '--verify-backup', ('"' + (Join-Path $taskRoot 'soak-check') + '"'), '--model-meta', ('"' + $taskModel + '"'), '--stress-seconds', '600')
+    Get-Content (Join-Path $taskRoot 'soak-check/backup-verification.json') -Raw
+    Get-Content (Join-Path $taskRoot 'soak-check/stress-progress.json') -Raw
+    exit 0
+}
+Run-App @('--data-dir', ('"' + (Join-Path $taskRoot 'restart-data') + '"'), '--verify-restore-cycle', ('"' + (Join-Path $taskRoot 'restart-check') + '"'))
+$taskDeadline = [DateTime]::UtcNow.AddSeconds(45)
+$taskRestartReport = Join-Path $taskRoot 'restart-check/restart-verification.json'
+while (-not (Test-Path -LiteralPath $taskRestartReport) -and [DateTime]::UtcNow -lt $taskDeadline) { Start-Sleep -Milliseconds 200 }
+if (-not (Test-Path -LiteralPath $taskRestartReport)) { throw 'Restart verification did not produce a report.' }
+if (-not (Get-Content $taskRestartReport -Raw | ConvertFrom-Json).Success) { throw 'Restart verification failed.' }
+foreach ($taskCheck in @('ui-check', 'regression')) {
+    $taskArguments = @('--capture-dir', ('"' + (Join-Path $taskRoot $taskCheck) + '"'))
+    if ($taskCheck -eq 'ui-check') { $taskArguments += '--verify-ui-ux' }
+    Run-App $taskArguments
+    if (-not (Get-Content (Join-Path $taskRoot "$taskCheck/result.txt") -Raw).Trim().EndsWith('OK.', [StringComparison]::Ordinal)) { throw "$taskCheck failed." }
+    Write-Output "$($taskCheck): OK"
+}
+./scripts/Test-AppRecovery.ps1 -ExePath $taskExe -ModelMetadata $taskModel -OutputDirectory (Join-Path $taskRoot 'forced-recovery')
+$taskRuntime = Get-ChildItem (Join-Path $taskRoot 'restart-data/Runtime') -Directory | Select-Object -First 1
+$taskExpected = @{
+    'cpu/llama-server.exe' = '5D51ED395C3656F81A10F9E4A7C829F15C7EB9977F365C4608C9362911F70139'
+    'vulkan/llama-server.exe' = '9ADE48D2D8042CF4009F068B78EDAD79490270A9C36B8D0D3C2774CF803FA3C3'
+    'cpu/sd-cli.exe' = 'F903F20B757D2B7902EA877B76A90C8895A1ED40FA32426DAE99C52C0E24CD80'
+    'vulkan/sd-cli.exe' = '191808266667B1C6E9526D8531D8C952F6D4AE8965374C97F8270BAD88A112B5'
+}
+$taskEngines = @()
+foreach ($taskKey in $taskExpected.Keys) {
+    $taskEngine = Join-Path $taskRuntime.FullName $taskKey; $taskHash = (Get-FileHash $taskEngine -Algorithm SHA256).Hash
+    if ($taskHash -ne $taskExpected[$taskKey]) { throw "Native hash mismatch: $taskKey" }
+    $taskLog = Join-Path $taskRoot ($taskKey.Replace('/', '-') + '.version')
+    $taskProcess = Start-Process -FilePath $taskEngine -ArgumentList '--version' -WindowStyle Hidden -PassThru -Wait -RedirectStandardOutput $taskLog -RedirectStandardError ($taskLog + '.err')
+    if ($taskProcess.ExitCode -ne 0) { throw "Native startup failed: $taskKey" }
+    $taskEngines += @{ Name = $taskKey; Hash = $taskHash; ExitCode = $taskProcess.ExitCode }
+}
+$taskDlls = @(Get-ChildItem $taskRuntime.FullName -Filter '*.dll' -Recurse).Count
+$taskLicenses = @(Get-ChildItem (Join-Path $taskRuntime.FullName 'Licenses') -File -Recurse).Count
+if ($taskDlls -ne 0 -or $taskLicenses -ne 23) { throw 'Unexpected engine packaging.' }
+@{ Success = $true; SourceCommit = (git rev-parse HEAD); Sha256 = (Get-FileHash $taskExe -Algorithm SHA256).Hash; Bytes = (Get-Item $taskExe).Length; InstalledDotnetDisabled = $true; Restart = $true; UiRegression = $true; ForcedTermination = $true; Engines = $taskEngines; EngineSharedDlls = $taskDlls; LicenseNotices = $taskLicenses } | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $taskRoot 'portable-verification.json') -Encoding utf8
+Get-Content (Join-Path $taskRoot 'portable-verification.json') -Raw

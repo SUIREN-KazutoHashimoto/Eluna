@@ -1,0 +1,10 @@
+{
+  "success": true,
+  "evidence": [
+    "Unpublished streaming draft, completion delivery, retained reading position, immediate placeholder visibility and window icon: OK",
+    "Real stable-diffusion backend: artist-generated English prompt, queued unpublished drawing, completed image preview and account-authored caption: OK",
+    "Real local model: initial peer post, typed-only progress, structured account call, second account response, stop and saved pause: OK"
+  ],
+  "physicalIme": "not verified",
+  "realDpiSwitch": "not verified"
+}

@@ -1,0 +1,27 @@
+$ErrorActionPreference = 'Stop'
+$taskRoot = Join-Path (Get-Location) 'artifacts/multi-monitor/portable'
+New-Item -ItemType Directory -Path $taskRoot -Force | Out-Null
+$taskExe = Join-Path $taskRoot 'Eluna.exe'
+Copy-Item -LiteralPath 'artifacts/release-multi-monitor/Eluna.exe' -Destination $taskExe
+$env:DOTNET_ROOT = Join-Path $taskRoot 'no-installed-dotnet'
+$env:DOTNET_ROOT_X64 = $env:DOTNET_ROOT
+$env:DOTNET_MULTILEVEL_LOOKUP = '0'
+$env:DOTNET_BUNDLE_EXTRACT_BASE_DIR = Join-Path $taskRoot 'bundle-extract'
+$taskCases = @(
+    @{ Name = 'window-check'; Arguments = @('--data-dir', ('"' + (Join-Path $taskRoot 'window-data') + '"'), '--verify-window-placement', ('"' + (Join-Path $taskRoot 'window-check') + '"')) },
+    @{ Name = 'ui-check'; Arguments = @('--capture-dir', ('"' + (Join-Path $taskRoot 'ui-check') + '"'), '--verify-ui-ux') },
+    @{ Name = 'regression'; Arguments = @('--capture-dir', ('"' + (Join-Path $taskRoot 'regression') + '"')) }
+)
+foreach ($taskCase in $taskCases) {
+    $taskProcess = Start-Process -FilePath $taskExe -ArgumentList $taskCase.Arguments -WindowStyle Hidden -PassThru -Wait
+    if ($taskProcess.ExitCode -ne 0) { throw "$($taskCase.Name) failed: $($taskProcess.ExitCode)" }
+    Write-Output "$($taskCase.Name): exit 0"
+}
+$taskResult = Get-Content (Join-Path $taskRoot 'window-check/window-verification.json') -Raw | ConvertFrom-Json
+if (-not $taskResult.Success) { throw 'Window check was not successful.' }
+foreach ($taskCase in @('ui-check', 'regression')) {
+    $taskResultText = Get-Content (Join-Path $taskRoot "$taskCase/result.txt") -Raw
+    if (-not $taskResultText.Trim().EndsWith('OK.', [StringComparison]::Ordinal)) { throw "$taskCase result is $taskResultText" }
+}
+Get-FileHash -LiteralPath $taskExe -Algorithm SHA256 | Select-Object Hash
+Get-Item -LiteralPath $taskExe | Select-Object Length

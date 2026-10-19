@@ -1,0 +1,37 @@
+[
+  {
+    "file": "beta-emoji.json",
+    "source": "artifacts/beta-emoji-check/result.json",
+    "sha256": "cf615561a56fb535a8c19ab3f31c0f3c4847d43f46cd078e96fa0ceb0ff2ab0e"
+  },
+  {
+    "file": "beta-native.json",
+    "source": "artifacts/beta-native-check.json",
+    "sha256": "d9dade91c346d4873bf1dc907dea2af6547bba0968ea3e6ab39c8901d70ad95f"
+  },
+  {
+    "file": "beta-public.json",
+    "source": "artifacts/beta-public-result.json",
+    "sha256": "be26f2647803e9e7575313db76a7a7ae1e51b1cd22275904889af92d244140b3"
+  },
+  {
+    "file": "beta-update.json",
+    "source": "artifacts/beta-update-check/result.json",
+    "sha256": "57054794939eaad6682e50892916f6243cec6c43ac1e0d7020fc5c5e9ccd83e5"
+  },
+  {
+    "file": "development-autonomy.json",
+    "source": "artifacts/autonomy-portable-final/result.json",
+    "sha256": "c5a0334e1bbe808de978d3c5aed854c5dc2d0ecde2a317cc5887bf4d65bb315a"
+  },
+  {
+    "file": "development-diagnostics.json",
+    "source": "artifacts/diagnostics-portable-final/result.json",
+    "sha256": "4d4998f2cdb0479ee17668107ddd82fe0955040b1b4effe2e30e1346218bf813"
+  },
+  {
+    "file": "development-voice.json",
+    "source": "artifacts/social-autonomy-voice/verification.json",
+    "sha256": "656209f615f35657b8e3593a0230b117a812b9fb38aa26e684f90285dd06ee4d"
+  }
+]
