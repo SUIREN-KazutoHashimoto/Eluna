@@ -72,7 +72,10 @@ jobs:
           if ($env:RELEASE_TRAIN -eq 'develop') { $arguments += '--prerelease' }
           & gh @arguments
           if ($LASTEXITCODE -ne 0) { throw 'Draft upload failed. No release was published.' }
-          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" | ConvertFrom-Json
+          # A pending tag is not available from REST releases/tags until the draft is published.
+          $releaseApiUrl = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json apiUrl --jq .apiUrl
+          if ($LASTEXITCODE -ne 0 -or -not $releaseApiUrl) { throw 'Draft release lookup failed. No release was published.' }
+          $release = gh api $releaseApiUrl | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw 'Release metadata verification failed.' }
           foreach ($path in $assets) {
             $name = Split-Path -Leaf $path
