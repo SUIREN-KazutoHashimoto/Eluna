@@ -10,6 +10,9 @@ namespace Eluna.App;
 public sealed class WorkOptionsWindow : Window
 {
     private readonly TextBox _searches, _pages, _parallel, _seconds, _tokens, _rounds;
+    private readonly ComboBox _style = new() { DisplayMemberPath = "Value", SelectedValuePath = "Key" }, _debateSearch = new() { DisplayMemberPath = "Value", SelectedValuePath = "Key" };
+    private readonly CheckBox _automatic = new() { Content = "自由形ディベートを自動で進める" };
+    private readonly TextBox _turns;
     internal DebateParticipantsEditor ParticipantsEditor { get; }
     internal TabControl OptionsTabs { get; }
     public WorkOptionsWindow(ChatViewModel viewModel)
@@ -26,6 +29,12 @@ public sealed class WorkOptionsWindow : Window
         panel.Children.Add(new TextBlock { Text = "検索語を外部サービスへ送信します。本文が取れない資料は根拠として扱いません。設定した時間・回数・生成量で作業を止めます。", TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 16) });
         TextBox Field(string label, int value) { panel.Children.Add(new TextBlock { Text = label, Margin = new(0, 8, 0, 6) }); var input = new TextBox { Text = value.ToString(System.Globalization.CultureInfo.InvariantCulture), Width = 180, HorizontalAlignment = HorizontalAlignment.Left }; System.Windows.Automation.AutomationProperties.SetName(input, label); panel.Children.Add(input); return input; }
         _searches = Field("検索語の回数（1〜20、各回で最大3つの検索先）", current.SearchLimit); _pages = Field("本文の取得件数（1〜30）", current.PageLimit); _parallel = Field("同時に取得するページ（1〜3）", current.ParallelPages); _seconds = Field("作業時間・秒（30〜3600）", current.SecondsLimit); _tokens = Field("全工程の生成量・token（2000〜40000）", current.TokenLimit); _rounds = Field("議論のラウンド数（1〜5）", current.Rounds);
+        panel.Children.Insert(1, new TextBlock { Text = "議論の進め方", Margin = new(0, 8, 0, 6) });
+        _style.ItemsSource = new[] { new KeyValuePair<string, string>("rounds", "ラウンド制"), new("free", "自由形式") }; _style.SelectedValue = current.DebateStyle; panel.Children.Insert(2, _style);
+        _turns = Field("自由形式のAI発言上限（2〜60）", current.MaxTurns); _automatic.IsChecked = current.AutomaticDebate; _automatic.Margin = new(0, 12, 0, 12); panel.Children.Add(_automatic);
+        panel.Children.Add(new TextBlock { Text = "自由形式のWeb検索", Margin = new(0, 8, 0, 6) });
+        _debateSearch.ItemsSource = new[] { new KeyValuePair<string, string>("auto", "必要に応じて検索"), new("always", "必ず検索"), new("off", "検索しない") }; _debateSearch.SelectedValue = current.DebateSearch; panel.Children.Add(_debateSearch);
+        panel.Children.Add(new TextBlock { Text = "チャンネルにAIが2名以上参加している場合は、そのメンバーで議論します。参加者の追加・モデル変更はチャンネル設定とエージェント管理から行えます。", TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 12, 0, 0) });
         var save = new Button { Content = "保存", Margin = new(8, 0, 0, 0) }; save.SetResourceReference(StyleProperty, "PrimaryButton");
         save.Click += async (_, _) =>
         {
@@ -42,7 +51,8 @@ public sealed class WorkOptionsWindow : Window
     {
         if (!int.TryParse(_searches.Text, out int searches) || !int.TryParse(_pages.Text, out int pages) || !int.TryParse(_parallel.Text, out int parallel) || !int.TryParse(_seconds.Text, out int seconds) || !int.TryParse(_tokens.Text, out int tokens) || !int.TryParse(_rounds.Text, out int rounds))
         { throw new System.IO.InvalidDataException("上限には整数を入力してください。"); }
-        var options = new WorkOptions(searches, pages, parallel, seconds, tokens, rounds, ParticipantsEditor.GetRoles()); ResearchRunner.ValidateOptions(options); return options;
+        if (!int.TryParse(_turns.Text, out int turns)) { throw new System.IO.InvalidDataException("発言上限は整数にしてください。"); }
+        var options = new WorkOptions(searches, pages, parallel, seconds, tokens, rounds, ParticipantsEditor.GetRoles(), (string)_style.SelectedValue, _automatic.IsChecked == true, turns, (string)_debateSearch.SelectedValue); ResearchRunner.ValidateOptions(options); return options;
     }
 }
 
@@ -67,7 +77,7 @@ public sealed class WorkPlanWindow : Window
         start.Click += (_, _) =>
         {
             List<string> lines = ResearchRunner.ParseQueries(queries.Text, work.Options.SearchLimit);
-            if (lines.Count == 0 || string.IsNullOrWhiteSpace(plan.Text)) { MessageBox.Show(this, "論点と検索語を入力してください。"); return; }
+            if ((lines.Count == 0 && work.WebEnabled != false) || string.IsNullOrWhiteSpace(plan.Text)) { MessageBox.Show(this, "論点と検索語を入力してください。"); return; }
             work.Plan = plan.Text; work.Queries.Clear(); work.Queries.AddRange(lines); Accepted = true; if (modeless) { Close(); } else { DialogResult = true; }
         }; footer.Children.Add(start); Content = root;
     }

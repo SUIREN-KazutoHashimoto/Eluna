@@ -1,0 +1,122 @@
+[
+  {
+    "source": "artifacts/Beta-GitHub.ps1",
+    "archive": "Beta-GitHub.ps1.txt",
+    "bytes": 7237,
+    "sha256": "88ac624ec3e943883839f2f593c9a9dd18315d9affbd5f79a370907b2bc30350"
+  },
+  {
+    "source": "artifacts/remaining-edits.py",
+    "archive": "remaining-edits.py.txt",
+    "bytes": 4675,
+    "sha256": "fd86128f09b88a88b93401b5fe0692dec03e888b36eeb63a1367e701c6285417"
+  },
+  {
+    "source": "artifacts/remaining-media-integration.py",
+    "archive": "remaining-media-integration.py.txt",
+    "bytes": 9423,
+    "sha256": "c275771b2482183cdc40f7840eba81b2bb234f1a7f3b0b9bd6ec6f543b7a69b9"
+  },
+  {
+    "source": "artifacts/Update-MessageLayout.ps1",
+    "archive": "Update-MessageLayout.ps1.txt",
+    "bytes": 5779,
+    "sha256": "677920c6c5680da6d3e05723c439ba9e00588125580f1dad30ca920a7383eade"
+  },
+  {
+    "source": "artifacts/Verify-AgentPortable.ps1",
+    "archive": "Verify-AgentPortable.ps1.txt",
+    "bytes": 2484,
+    "sha256": "d529b5ce5eb8e47e27f187a1b7d8ea7fc55e40f181382c6ee00ad56693e85648"
+  },
+  {
+    "source": "artifacts/Verify-AgentRegression.ps1",
+    "archive": "Verify-AgentRegression.ps1.txt",
+    "bytes": 1545,
+    "sha256": "ab2db2c834a28f98369ee54ac23c9d8768b3e326c87e19da253e7c25c264e8e7"
+  },
+  {
+    "source": "artifacts/Verify-ComputerAwakePortable.ps1",
+    "archive": "Verify-ComputerAwakePortable.ps1.txt",
+    "bytes": 2229,
+    "sha256": "9ec6025a7cedaaf5b9383e530f4ea2da1732d5043c204b9dcbacfeecc1f8169f"
+  },
+  {
+    "source": "artifacts/Verify-ComputerEffectsPortable.ps1",
+    "archive": "Verify-ComputerEffectsPortable.ps1.txt",
+    "bytes": 1965,
+    "sha256": "72397e018ca6963b6c078f7941b8360a9e979eb3947cefddf979b1c5ca153822"
+  },
+  {
+    "source": "artifacts/Verify-DiscordPortable.ps1",
+    "archive": "Verify-DiscordPortable.ps1.txt",
+    "bytes": 3697,
+    "sha256": "00ff4228da10fdf4972ecd4d3267ca79476face87ed526b55d99730ee3fa482b"
+  },
+  {
+    "source": "artifacts/Verify-MessageUi.ps1",
+    "archive": "Verify-MessageUi.ps1.txt",
+    "bytes": 1422,
+    "sha256": "8094a8e49948828da03dd93573cd49ae08943e0cd6e7e5142550a888c05749d0"
+  },
+  {
+    "source": "artifacts/Verify-SocialPortable.ps1",
+    "archive": "Verify-SocialPortable.ps1.txt",
+    "bytes": 2730,
+    "sha256": "9530c3cfaf5e5190a75d00a60da93e9f76f20fb87d8207ed50dd2944b1179901"
+  },
+  {
+    "source": "artifacts/Verify-SocialRegression.ps1",
+    "archive": "Verify-SocialRegression.ps1.txt",
+    "bytes": 1546,
+    "sha256": "eb3cb4907bf3a13a15ac46c81457f8af6afc7e5a0619a3bc6fd41c60a962edbe"
+  },
+  {
+    "source": "artifacts/Verify-VoicePortable.ps1",
+    "archive": "Verify-VoicePortable.ps1.txt",
+    "bytes": 3920,
+    "sha256": "d36f511b95ca6d2d5f61f3d4ed0ed9bd44b497651ddf413ab5fd8c1b3feccfe9"
+  },
+  {
+    "source": "artifacts/Verify-VoicePortableFinal.ps1",
+    "archive": "Verify-VoicePortableFinal.ps1.txt",
+    "bytes": 3926,
+    "sha256": "6807eaa6acbd14632e407b49c79164bc091841919b93bb025f3e07613c958464"
+  },
+  {
+    "source": "artifacts/Verify-WorkspacePortable.ps1",
+    "archive": "Verify-WorkspacePortable.ps1.txt",
+    "bytes": 3376,
+    "sha256": "dd31743cb9c789fb012ac8ea02e47d62a41a8141b8f6bdf3c9ff3b328363c22a"
+  },
+  {
+    "source": "artifacts/backup-stability/Run-Portable.ps1",
+    "archive": "backup-stability--Run-Portable.ps1.txt",
+    "bytes": 4463,
+    "sha256": "a4bdce6dd2dd35ea39a69e2a112118dd2b5f1d45167aab0ce991d8d0649e5c7b"
+  },
+  {
+    "source": "artifacts/multi-monitor/Confirm-Portable.ps1",
+    "archive": "multi-monitor--Confirm-Portable.ps1.txt",
+    "bytes": 3101,
+    "sha256": "bdd43b8bc7e9830eb676a7db1888d34988ea003c62b902d3681f052e2e678e5a"
+  },
+  {
+    "source": "artifacts/multi-monitor/Verify-Portable.ps1",
+    "archive": "multi-monitor--Verify-Portable.ps1.txt",
+    "bytes": 1848,
+    "sha256": "384320b0a30270fbcb4adde7142d16a1d198da027d1c2440fa773da80524b294"
+  },
+  {
+    "source": "artifacts/beta-pr-body.md",
+    "archive": "beta-pr-body.md.txt",
+    "bytes": 3528,
+    "sha256": "18374b0b3268f0acf6664c0dd949c8865d33e6d0a61f482f5f2a2e47d1fd7496"
+  },
+  {
+    "source": "artifacts/beta-release-notes.md",
+    "archive": "beta-release-notes.md.txt",
+    "bytes": 3306,
+    "sha256": "8a41d04405602e3350bc80191a392a236f46d88307ab239cc1483545b9c2cb46"
+  }
+]

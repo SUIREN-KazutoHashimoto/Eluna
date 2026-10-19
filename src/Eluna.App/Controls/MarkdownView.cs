@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using System.Windows;
@@ -5,17 +6,23 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Eluna.App.Models;
 using Eluna.App.Services;
 
 namespace Eluna.App.Controls;
 
 public sealed class ReferenceEventArgs(string kind, int number) : EventArgs { public string Kind { get; } = kind; public int Number { get; } = number; }
+public sealed class MentionEventArgs(Guid? account, bool all) : EventArgs { public Guid? Account { get; } = account; public bool All { get; } = all; }
 
 public sealed class MarkdownView : UserControl
 {
     public static readonly DependencyProperty MarkdownProperty = DependencyProperty.Register(nameof(Markdown), typeof(string), typeof(MarkdownView), new PropertyMetadata("", Changed));
     public static readonly DependencyProperty TextSizeProperty = DependencyProperty.Register(nameof(TextSize), typeof(double), typeof(MarkdownView), new PropertyMetadata(15.0, Changed));
     public static readonly DependencyProperty TextLineHeightProperty = DependencyProperty.Register(nameof(TextLineHeight), typeof(double), typeof(MarkdownView), new PropertyMetadata(25.0, Changed));
+    public static readonly DependencyProperty PlainTextProperty = DependencyProperty.Register(nameof(PlainText), typeof(bool), typeof(MarkdownView), new PropertyMetadata(false, Changed));
+    public static readonly DependencyProperty AccountsProperty = DependencyProperty.Register(nameof(Accounts), typeof(IEnumerable<AgentAccount>), typeof(MarkdownView), new PropertyMetadata(null, AccountsChanged));
+    public bool PlainText { get => (bool)GetValue(PlainTextProperty); set => SetValue(PlainTextProperty, value); }
+    public IEnumerable<AgentAccount>? Accounts { get => (IEnumerable<AgentAccount>?)GetValue(AccountsProperty); set => SetValue(AccountsProperty, value); }
     public string Markdown { get => (string)GetValue(MarkdownProperty); set => SetValue(MarkdownProperty, value); }
     public double TextSize { get => (double)GetValue(TextSizeProperty); set => SetValue(TextSizeProperty, value); }
     public double TextLineHeight { get => (double)GetValue(TextLineHeightProperty); set => SetValue(TextLineHeightProperty, value); }
@@ -26,6 +33,7 @@ public sealed class MarkdownView : UserControl
     private bool _dirty = true;
     private double _font, _line;
     public event EventHandler<ReferenceEventArgs>? ReferenceClicked;
+    public event EventHandler<MentionEventArgs>? MentionClicked;
 
     public MarkdownView()
     {
@@ -44,18 +52,27 @@ public sealed class MarkdownView : UserControl
         _reader.SetResourceReference(ForegroundProperty, "TextBrush");
         var layout = new DockPanel();
         _resume = new Button { Content = "選択中の更新を表示（選択を解除）", Visibility = Visibility.Collapsed, Padding = new(8, 3, 8, 3), FontSize = 11, HorizontalAlignment = HorizontalAlignment.Left };
-        DockPanel.SetDock(_resume, Dock.Top); layout.Children.Add(_resume); layout.Children.Add(_reader); Content = layout;
+        DockPanel.SetDock(_resume, Dock.Top); layout.Children.Add(_resume); var body = new Grid(); body.Children.Add(_reader); body.Children.Add(new RichEmojiLayer(_reader)); layout.Children.Add(body); Content = layout;
         _resume.Click += (_, _) => { _reader.Selection.Select(_reader.Document.ContentEnd, _reader.Document.ContentEnd); foreach (CodeView code in Codes()) { code.ClearSelection(); } Render(); };
         _reader.SelectionChanged += (_, _) => { if (_dirty && _reader.Selection.IsEmpty) { _renderTimer?.Start(); } };
         _renderTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(150), DispatcherPriority.Background, (_, _) => { _renderTimer!.Stop(); Render(); }, Dispatcher);
         _renderTimer.Stop();
-        Loaded += (_, _) => { if (_parseCancellation.IsCancellationRequested) { _parseCancellation.Dispose(); _parseCancellation = new(); } Render(); };
+        Loaded += (_, _) => { ObserveAccounts(true); if (_parseCancellation.IsCancellationRequested) { _parseCancellation.Dispose(); _parseCancellation = new(); } Render(); };
         DataContextChanged += (_, _) => { _parser = new(); _rendered.Clear(); _reader.Document = new FlowDocument(); _dirty = true; _renderTimer.Start(); };
-        Unloaded += (_, _) => { _renderTimer.Stop(); _parseCancellation.Cancel(); };
+        Unloaded += (_, _) => { ObserveAccounts(false); _renderTimer.Stop(); _parseCancellation.Cancel(); };
     }
 
     private static void Changed(DependencyObject sender, DependencyPropertyChangedEventArgs _)
-    { var view = (MarkdownView)sender; view._dirty = true; view._renderTimer?.Start(); }
+    { var view = (MarkdownView)sender; view._dirty = true; if (_.Property == PlainTextProperty) { view._rendered.Clear(); } view._renderTimer?.Start(); }
+    private static void AccountsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var view = (MarkdownView)d;
+        if (e.OldValue is INotifyCollectionChanged old) { old.CollectionChanged -= view.MembersChanged; }
+        view.ObserveAccounts(view.IsLoaded);
+        view.MembersChanged(null, null!);
+    }
+    private void ObserveAccounts(bool observe) { if (Accounts is INotifyCollectionChanged accounts) { accounts.CollectionChanged -= MembersChanged; if (observe) { accounts.CollectionChanged += MembersChanged; } } }
+    private void MembersChanged(object? sender, NotifyCollectionChangedEventArgs e) { _rendered.Clear(); _dirty = true; _renderTimer?.Start(); }
     private IEnumerable<CodeView> Codes() => _reader.Document.Blocks.OfType<BlockUIContainer>().Select(b => b.Child).OfType<CodeView>();
     private static bool Same(MarkdownBlock a, MarkdownBlock b) => a.Kind == b.Kind && a.Text == b.Text && a.Level == b.Level && a.Language == b.Language &&
         (a.Rows is null && b.Rows is null || a.Rows is not null && b.Rows is not null && a.Rows.Count == b.Rows.Count && a.Rows.Zip(b.Rows).All(pair => pair.First.SequenceEqual(pair.Second)));
@@ -72,7 +89,7 @@ public sealed class MarkdownView : UserControl
         _parsing = true; string markdown = Markdown; StreamingMarkdownParser parser = _parser;
         IReadOnlyList<MarkdownBlock> parsed;
         CancellationToken token = _parseCancellation.Token;
-        try { parsed = await Task.Run(() => parser.Update(markdown, token), token); }
+        try { parsed = PlainText ? [new MarkdownBlock("plain", markdown)] : await Task.Run(() => parser.Update(markdown, token), token); }
         catch (OperationCanceledException) { return; }
         finally { _parsing = false; if (_dirty && IsLoaded) { _renderTimer.Start(); } }
         if (!IsLoaded || parser != _parser || markdown != Markdown) { if (IsLoaded) { _renderTimer.Start(); } return; }
@@ -131,14 +148,15 @@ public sealed class MarkdownView : UserControl
 
     private Paragraph Paragraph(string text)
     {
-        var paragraph = new Paragraph { Margin = new(0, 0, 0, 8) };
-        AddInlines(paragraph.Inlines, text);
+        var paragraph = new Paragraph { Margin = PlainText ? new(0) : new(0, 0, 0, 8) };
+        if (PlainText) { AddText(paragraph.Inlines, text); } else { AddInlines(paragraph.Inlines, text); }
         return paragraph;
     }
 
-    private void AddInlines(InlineCollection inlines, string text)
+    private void AddInlines(InlineCollection inlines, string text, int depth = 0)
     {
-        string pattern = @"(?<reference>\[(?<referenceKind>[SK])(?<referenceNumber>\d{1,3})\](?!\())|(?<link>\[(?<label>[^\]\n]+)\]\((?:<(?<url>https?://[^\s>]+)>|(?<url>https?://[^\s)]+))\))|(?<code>`(?<codeText>[^`]+)`)|(?<bold>\*\*(?<boldText>.+?)\*\*)|(?<italic>(?<!\*)\*(?<italicText>[^*\n]+)\*(?!\*))";
+        if (depth > 8) { AddText(inlines, text); return; }
+        string pattern = @"(?<escaped>\\(?<escapeChar>[\\`*_{}\[\]()#+\-.!>~]))|(?<reference>\[(?<referenceKind>[SK])(?<referenceNumber>\d{1,3})\](?!\())|(?<link>\[(?<label>[^\]\n]+)\]\((?:<(?<url>https?://[^\s>]+)>|(?<url>https?://[^\s)]+))\))|(?<code>`(?<codeText>[^`]+)`)|(?<strongEm>\*\*\*(?<strongEmText>.+?)\*\*\*)|(?<bold>\*\*(?<boldText>.+?)\*\*)|(?<strike>~~(?<strikeText>.+?)~~)|(?<italic>(?<!\*)\*(?<italicText>[^*\n]+)\*(?!\*))";
         int start = 0;
         Match[] matches;
         try { matches = Regex.Matches(text, pattern, RegexOptions.None, TimeSpan.FromMilliseconds(200)).ToArray(); }
@@ -146,7 +164,8 @@ public sealed class MarkdownView : UserControl
         foreach (Match match in matches)
         {
             if (match.Index > start) { AddText(inlines, text[start..match.Index]); }
-            if (match.Groups["reference"].Success)
+            if (match.Groups["escaped"].Success) { inlines.Add(new Run(match.Groups["escapeChar"].Value)); }
+            else if (match.Groups["reference"].Success)
             {
                 var link = new Hyperlink(new Run(match.Value)) { ToolTip = "生成時の根拠を開く" }; link.SetResourceReference(TextElement.ForegroundProperty, "AccentBrush");
                 link.Click += (_, e) => { ReferenceClicked?.Invoke(this, new(match.Groups["referenceKind"].Value, int.Parse(match.Groups["referenceNumber"].Value, System.Globalization.CultureInfo.InvariantCulture))); e.Handled = true; }; inlines.Add(link);
@@ -172,17 +191,27 @@ public sealed class MarkdownView : UserControl
                 run.SetResourceReference(TextElement.BackgroundProperty, "SurfaceBrush");
                 inlines.Add(run);
             }
-            else if (match.Groups["bold"].Success) { inlines.Add(new Bold(new Run(match.Groups["boldText"].Value))); }
-            else { inlines.Add(new Italic(new Run(match.Groups["italicText"].Value))); }
+            else if (match.Groups["strongEm"].Success) { var bold = new Bold(); var italic = new Italic(); AddInlines(italic.Inlines, match.Groups["strongEmText"].Value, depth + 1); bold.Inlines.Add(italic); inlines.Add(bold); }
+            else if (match.Groups["bold"].Success) { var bold = new Bold(); AddInlines(bold.Inlines, match.Groups["boldText"].Value, depth + 1); inlines.Add(bold); }
+            else if (match.Groups["strike"].Success) { var strike = new Span { TextDecorations = TextDecorations.Strikethrough }; AddInlines(strike.Inlines, match.Groups["strikeText"].Value, depth + 1); inlines.Add(strike); }
+            else { var italic = new Italic(); AddInlines(italic.Inlines, match.Groups["italicText"].Value, depth + 1); inlines.Add(italic); }
             start = match.Index + match.Length;
         }
         if (start < text.Length) { AddText(inlines, text[start..]); }
     }
 
-    private static void AddText(InlineCollection inlines, string text)
+    private void AddText(InlineCollection inlines, string text)
     {
-        string[] lines = text.Split('\n');
-        for (int i = 0; i < lines.Length; i++) { if (i > 0) { inlines.Add(new LineBreak()); } inlines.Add(new Run(lines[i])); }
+        void Plain(string part) { string[] lines = part.Split('\n'); for (int i = 0; i < lines.Length; i++) { if (i > 0) { inlines.Add(new LineBreak()); } int at = 0; foreach (var element in EmojiRasterizer.Elements(lines[i]).Where(e => e.Emoji)) { if (element.Index > at) { inlines.Add(new Run(lines[i][at..element.Index])); } inlines.Add(new EmojiRun(element.Text) { FontFamily = new FontFamily("Segoe UI Emoji") }); at = element.Index + element.Text.Length; } if (at < lines[i].Length) { inlines.Add(new Run(lines[i][at..])); } } }
+        int at = 0;
+        foreach (MentionToken token in MentionService.Scan(text, Accounts ?? []))
+        {
+            Plain(text[at..token.Start]);
+            var link = new Hyperlink(new Run(token.Text)) { TextDecorations = null, FontWeight = FontWeights.SemiBold, ToolTip = token.All ? "メンバー一覧" : "プロフィールを開く" };
+            link.SetResourceReference(TextElement.ForegroundProperty, "MentionTextBrush"); link.SetResourceReference(TextElement.BackgroundProperty, "MentionBackgroundBrush");
+            link.Click += (_, e) => { MentionClicked?.Invoke(this, new(token.Accounts.Count == 1 ? token.Accounts[0] : null, token.All)); e.Handled = true; }; inlines.Add(link); at = token.Start + token.Length;
+        }
+        Plain(text[at..]);
     }
 }
 

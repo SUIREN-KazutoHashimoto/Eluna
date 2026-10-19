@@ -1,0 +1,11 @@
+{
+  "success": true,
+  "release": "https://github.com/SUIREN-KazutoHashimoto/Eluna/releases/tag/v0.1.0-beta",
+  "prerelease": true,
+  "draft": false,
+  "commit": "05312a0ed34debe3b1bf80c3c69607f3cde88720",
+  "downloadSha256": "4fb21761d0e62ffa7720ae13615148ab8741ee9e147c1ced83d843eb4a8f8fd7",
+  "size": 145227275,
+  "version": "0.1.0-beta",
+  "train": "develop"
+}

@@ -1,5 +1,23 @@
 # 完成版に向けた実装・検証の台帳
 
+2026-10-17: 提示画像との比較から、主画面の左右欄・ヘッダー・発言と引用・入力・本人プロフィールを調整。標準本文16、ベクターの種別アイコン、最大化の作業領域補正、PlaceholderとIME状態の連動を追加した。Verify、単体exeの9系統の画面回帰、96 DPI・3440×1392の実最大化、4エンジンの展開起動を通過。最新の開発版は`artifacts/release-discord-reference/Eluna.exe`。[比較・結果・確認外の条件](discord-reference-ui.md)を参照。
+
+2026-10-17: `codex/discord-experience`で日常操作・表示・動きのD01〜D18を実装。移動、未読・受信、検索、ピン・リアクション、絵文字、書式、通知と取り消し、状態・右クリック、動きの軽減と後始末、フォーカス・配色を改善した。必須検証と、単体exeでの9種類のWPF回帰・キャラクターとチームの実モデル・4エンジンの展開起動を通過。最新の開発版は`artifacts/release-experience/Eluna.exe`。[操作・結果・確認外の条件](discord-experience.md)を参照。
+
+2026-10-17: `codex/social-chat-ux`でキャラクターの自動生成、本人のプロフィール、会話の対等な参加者表示、既存チャンネルへのUI／AI招待、入力候補・複数宛先・色付きメンション、プロフィールからDM、参加通知の表示密度を改善。今回のexeは`artifacts/release-social/Eluna.exe`。[仕様と確認範囲](social-chat-ux.md)を参照。
+
+2026-10-16: `codex/agent-permissions-autonomy`でチャンネルACL、性格・ロールプレイ、つながりと招待許可、AIによるサーバー・チャンネル作成と担当別の実行・報告、入力中表示を追加。開発版exeは`artifacts/release-agents/Eluna.exe`。[仕様と確認範囲](agent-permissions-autonomy.md)を参照。
+
+プロフィール編集、プロジェクト＝サーバー、ボイスチャンネル、ウィンドウ共有とComputer Useの入口、および重なり対策を追加しました。[現行の仕様・操作と検証範囲](voice-channels.md)を参照してください。
+
+2026-10-16: codex/discord-shell で主画面をDiscordを参考にした構成へ変更し、AI設定をユーザー設定へ集約した。モデル選択はアカウントで管理する。今回の配布確認用exeは artifacts/release-discord/Eluna.exe。[画面・設定の移動先と検証](discord-ui.md)を参照。
+
+2026-10-16: `codex/agent-channel-integration`でA01〜A16の統合改修を実装。アカウント、サーバー・チャンネル・DM・スレッド、参照許可付きメモリ、共通タイムライン、自由形ディベート、生成物の関連付け、schema 4と旧履歴保全を追加した。配布確認用exeは`artifacts/release-workspace/Eluna.exe`。使い方、確認結果、実機で未確認の範囲は[統合改修の記録](workspaces.md)を参照。以下のexeパスは各機能追加時点の記録。
+
+Computer Useを会話へ統合した開発版は`artifacts/release-computer-chat/Eluna.exe`。専用ウィンドウを廃止し、チャットからの依頼、アプリ許可、通常のマウス・キー操作の自動実行、重要な操作の確認、追加指示、一時停止・再開・引き継ぎ、会話切り替え、履歴保存と再許可を実装した。使用モデルに左右される操作精度をChatGPTと同等と断定しない。現在の使い方・確認済み／未確認の範囲は[Computer Use](computer-use.md)を参照。以下は機能追加時点の記録として保持する。
+
+Computer Useは`codex/computer-use`で追加した。開発版exeは`artifacts/release-computer-use/Eluna.exe`。対象の複数選択、ローカルモデルによる画面・UI要素の観察、各操作の確認と入力文字修正、入力・クリック・スクロール等、処理リスト、停止と補助プロセスの後始末を実装した。仕様と確認済み・未確認の範囲は[Computer Use](computer-use.md)に記録する。以下は各機能を追加した時点の記録として保持する。
+
 全体バックアップ・復元と安定性の仕上げは`codex/backup-stability-release`で実装した。最新の配布候補は`artifacts/release-backup-stability/Eluna.exe`。全体ZIP、復元前の退避・中断回復・再起動、モデル本体がない取得の再開、960件のキュー負荷検証を追加した。操作は[バックアップ](backup.md)、実モデル・配布・Git統合の記録は[今回の作業記録](backup-stability-release.md)を参照。追加の物理操作・別PCの検証はオーナー指定により今回の対象外。以下は各機能を追加した時点の記録。
 
 残機能R01〜R06・R08〜R10は`codex/remaining-features`で実装した。空きVRAM・予約の必要量予測、能力フィルター、画像モデルのギャラリー、スキル差分、メディア予約と読書位置の再起動復元、Markdownの背景・末尾解析、取得と画像／文書生成の並列化を追加した。配布先は`artifacts/release-remaining-features/Eluna.exe`。操作と検証・制約は[残機能の実装記録](remaining-features.md)。R07はその後`codex/multi-monitor-restore`で実装した。この時点の配布先は`artifacts/release-multi-monitor/Eluna.exe`。複数モニターの復元規則と確認範囲は[ウィンドウ復元](window-placement.md)を参照。
@@ -57,3 +75,7 @@ exeのみのコピーで.NET探索先を無効にし、独立した展開先を�
 確認結果は`artifacts/research-portable/preview/result.txt`、`artifacts/research-bundled-engine-*/verification.json`、`artifacts/research-bundled-work-*/verification.json`、`artifacts/split-model-verify.log`、`artifacts/split-model-real.log`に保存しています。利用者データと別の確認用ディレクトリで実行しています。
 
 開発環境がない別PC、実IME、高DPI・複数モニター、スクリーンリーダー、各社GPU、コード署名、実際のリリース公開・更新は未確認です。これらは正式リリース前の確認として残しています。
+
+2026-10-16: `codex/computer-use`で[Computer Useの画面効果](computer-use.md)を追加。対象枠、操作位置・入力先・ドラッグ経路、停止バーとチャットの状態連動を実装しています。自動チェック、描画、単体exeと同梱エンジンの起動確認は通過。実画面の前面化で停止しているため、効果と実入力の併用・取得画像への除外の実機検証は未完了です。最新の当該開発版は`artifacts/release-computer-effects/Eluna.exe`です。
+
+2026-10-16: [Edgeの複雑なブラウザ操作の検証](computer-browser-verification.md)を追加。検証用の独立したプロファイル・ローカルサイト・結果照合を用意しました。前面化失敗の原因はWindowsのロック画面と確認し、ロック中の開始・観察・入力を止める案内を追加しました。自動チェックは通過、実ブラウザの操作成功はロック解除待ちで未確認です。この後の修正と検証用CLIはソースの開発ビルドに含まれ、上記の配布exeにはまだ含みません。

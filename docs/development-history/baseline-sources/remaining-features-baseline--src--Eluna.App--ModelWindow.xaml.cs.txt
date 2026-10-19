@@ -1,0 +1,236 @@
+using System.Diagnostics;
+using System.Text.RegularExpressions;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Threading;
+using Eluna.App.Models;
+using Eluna.App.Services;
+using Eluna.App.ViewModels;
+using Microsoft.Win32;
+
+namespace Eluna.App;
+
+public partial class ModelWindow : Window
+{
+    private readonly ModelCatalog _catalog;
+    private readonly DownloadQueue _queue;
+    private readonly bool _ownsQueue;
+    private readonly ChatViewModel? _viewModel;
+    private MemoryCapacity _memory;
+    private readonly IEnumerable<ComputeDevice> _devices;
+    private readonly string _compute;
+    private readonly DispatcherTimer _refresh;
+    private long _lastHardware;
+    private List<ModelFile> _fileCandidates = [];
+    private List<ModelRepository> _repositories = [];
+    private readonly int _context;
+    private CancellationTokenSource? _search;
+    private CancellationTokenSource? _files;
+    private bool _busy;
+    private bool _closed;
+    private bool _searchComposing;
+    public LocalModel? DownloadedModel { get; private set; }
+
+    public ModelWindow(AppStore store, DownloadQueue? downloads = null, IEnumerable<ComputeDevice>? devices = null, string compute = "auto", int context = 4096, ChatViewModel? viewModel = null, ModelCatalog? catalog = null)
+    {
+        InitializeComponent();
+        Appearance.Attach(this);
+        _catalog = catalog ?? new(store);
+        _queue = downloads ?? new(store); _ownsQueue = downloads is null; _memory = HardwareAdvisor.Capture(devices ?? [], compute); _context = context; _devices = devices ?? []; _compute = compute;
+        QuantizationFilter.ItemsSource = new[] { "すべて（Q4を優先）", "Q4_K_M", "Q5", "Q8", "IQ", "F16", "BF16" }; QuantizationFilter.SelectedIndex = 0;
+        CapacityFilter.ItemsSource = new[] { "上限なし", "2 GB", "4 GB", "8 GB", "16 GB", "32 GB" }; CapacityFilter.SelectedIndex = 0;
+        _refresh = new DispatcherTimer(TimeSpan.FromMilliseconds(350), DispatcherPriority.Background, (_, _) => UpdateTransfer(), Dispatcher); _refresh.Stop();
+        _store = store;
+        _viewModel = viewModel;
+        TextCompositionManager.AddPreviewTextInputStartHandler(SearchBox, (_, _) => _searchComposing = true);
+        TextCompositionManager.AddPreviewTextInputHandler(SearchBox, (_, _) => _searchComposing = false);
+        RepositoryList.ItemsSource = new[]
+        {
+            new ModelRepository("bartowski/Qwen_Qwen3.5-0.8B-GGUF", "", 0),
+            new ModelRepository("bartowski/Qwen_Qwen3.5-2B-GGUF", "", 0),
+            new ModelRepository("bartowski/Qwen_Qwen3.5-4B-GGUF", "", 0)
+        };
+        Loaded += (_, _) => { _repositories = RepositoryList.Items.Cast<ModelRepository>().ToList(); RepositoryList.SelectedIndex = 0; _refresh.Start(); };
+        Closed += (_, _) =>
+        {
+            _closed = true; _refresh.Stop();
+            _search?.Cancel();
+            _files?.Cancel();
+            _catalog.Dispose();
+            if (_ownsQueue) { _queue.Dispose(); }
+        };
+    }
+
+    private async void Search_Click(object sender, RoutedEventArgs e)
+    {
+        _search?.Cancel();
+        _search?.Dispose();
+        _search = new();
+        CancellationToken token = _search.Token;
+        StatusText.Text = "モデルを検索しています…";
+        SearchButton.IsEnabled = false;
+        try
+        {
+            List<ModelRepository> results = Regex.IsMatch(SearchBox.Text.Trim(), @"^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$") ? [new(SearchBox.Text.Trim(), "配布元で確認", 0)] : await _catalog.SearchAsync(SearchBox.Text, token);
+            if (token.IsCancellationRequested || _closed)
+            {
+                return;
+            }
+            _repositories = results; ApplyRepositoryFilter();
+            ResultsHeading.Text = $"検索結果 · {RepositoryList.Items.Count}件（最大100件）";
+            StatusText.Text = results.Count == 0 ? "見つかりませんでした。モデル名を変えて検索してください。" : "使いたいモデルを選んでください。";
+            RepositoryList.SelectedIndex = results.Count > 0 ? 0 : -1;
+        }
+        catch (OperationCanceledException)
+        {
+            if (!token.IsCancellationRequested) { StatusText.Text = "検索がタイムアウトしました。再試行してください。"; }
+        }
+        catch (Exception ex) { StatusText.Text = "検索できませんでした。" + ex.Message; }
+        finally { if (!_busy) { SearchButton.IsEnabled = true; } }
+    }
+
+    private void Search_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && !_searchComposing && !_busy && SearchButton.IsEnabled)
+        {
+            e.Handled = true;
+            Search_Click(sender, e);
+        }
+    }
+
+    private async void Repository_Selected(object sender, SelectionChangedEventArgs e)
+    {
+        _files?.Cancel();
+        _files?.Dispose();
+        _files = new();
+        CancellationToken token = _files.Token;
+        FileList.ItemsSource = null;
+        DownloadButton.IsEnabled = false;
+        if (RepositoryList.SelectedItem is not ModelRepository repository)
+        {
+            return;
+        }
+        RepositoryTitle.Text = repository.Name;
+        StatusText.Text = "ファイルと容量を確認しています…";
+        try
+        {
+            List<ModelFile> files = await _catalog.GetFilesAsync(repository.Id, token);
+            if (token.IsCancellationRequested || _closed)
+            {
+                return;
+            }
+            _fileCandidates = files; ApplyFileFilter();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { StatusText.Text = "ファイルを取得できませんでした。" + ex.Message; }
+    }
+
+    private void File_Selected(object sender, SelectionChangedEventArgs e)
+    {
+        DownloadButton.IsEnabled = !_busy && FileList.SelectedItem is ModelFile;
+        if (FileList.SelectedItem is ModelFile file)
+        {
+            LicenseText.Text = $"利用条件: {file.License} · 配布元のモデルページで確認してください。";
+            RefreshHardware(file);
+        }
+        else { LicenseText.Text = ""; HardwareSummary.Text = ""; HardwareText.Text = ""; }
+    }
+
+    private void Download_Click(object sender, RoutedEventArgs e)
+    {
+        if (FileList.SelectedItem is not ModelFile file || _busy)
+        {
+            return;
+        }
+        DownloadItem? existing = SelectedDownload();
+        if (existing?.Status == "complete" && _viewModel is not null && _viewModel.Models.FirstOrDefault(m => m.Id == existing.ModelId) is { } model)
+        { if (!_viewModel.CanCompose) { StatusText.Text = "モデルの準備処理が終わってから選択できます。"; return; } _viewModel.SelectedModel = model; DownloadedModel = model; Application.Current.MainWindow?.Activate(); return; }
+        DownloadItem item = _queue.Enqueue(file); StatusText.Text = item.Status == "complete" ? "取得済みです。モデル一覧から選択できます。" : "取得キューに追加しました。この画面を閉じても続けます。";
+    }
+
+    private void Import_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new OpenFileDialog { Filter = "GGUFモデル (*.gguf)|*.gguf", Title = "モデルを追加" };
+        if (picker.ShowDialog(this) == true)
+        {
+            _queue.Import(picker.FileName); StatusText.Text = "追加処理をキューへ登録しました。分割モデルは全ファイルをまとめて追加します。";
+        }
+    }
+
+    internal void UpdateProgress(DownloadProgress progress)
+    {
+        DownloadProgress.Value = progress.Percent;
+        StatusText.Text = progress.Label;
+    }
+
+    internal void SetBusy(bool value)
+    {
+        _busy = value;
+        SearchBox.IsEnabled = SearchButton.IsEnabled = RepositoryList.IsEnabled = FileList.IsEnabled = ImportButton.IsEnabled = !value;
+        DownloadButton.IsEnabled = !value && FileList.SelectedItem is ModelFile;
+        DownloadProgress.Visibility = CancelButton.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void Cancel_Click(object sender, RoutedEventArgs e) { DownloadItem? item = SelectedDownload(); if (item?.CanPause == true) { _queue.Pause(item); } else if (item?.CanResume == true) { _queue.Resume(item); } }
+    private readonly AppStore _store;
+    private void Queue_Click(object sender, RoutedEventArgs e) => new DownloadsWindow(_queue, _viewModel) { Owner = this }.Show();
+    private void ModelInfo_Click(object sender, RoutedEventArgs e)
+    {
+        if (FileList.SelectedItem is ModelFile file) { new ModelInfoWindow(_store, file.Repository, file.Revision, file.Filename, file.Detail + "\n" + HardwareText.Text) { Owner = this }.Show(); }
+    }
+
+    private void OpenModelPage_Click(object sender, RoutedEventArgs e)
+    {
+        if (RepositoryList.SelectedItem is ModelRepository repository)
+        {
+            try { Process.Start(new ProcessStartInfo(PageUrl(repository)) { UseShellExecute = true }); } catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException) { StatusText.Text = "ブラウザーを開けませんでした。「URLをコピー」からブラウザーで開けます。"; }
+        }
+    }
+    private static string PageUrl(ModelRepository repository) => "https://huggingface.co/" + string.Join('/', repository.Id.Split('/').Select(Uri.EscapeDataString));
+    private void CopyPage_Click(object sender, RoutedEventArgs e)
+    {
+        if (RepositoryList.SelectedItem is not ModelRepository repository) { return; }
+        try { Clipboard.SetText(PageUrl(repository)); StatusText.Text = "URLをコピーしました。"; }
+        catch (System.Runtime.InteropServices.COMException) { StatusText.Text = "コピーできませんでした。もう一度試してください。"; }
+    }
+    private void Filter_Changed(object sender, SelectionChangedEventArgs e)
+    { if (FileList is not null && CapacityFilter is not null && QuantizationFilter is not null) { ApplyFileFilter(); } }
+    private void LanguageFilter_Click(object sender, RoutedEventArgs e) => ApplyRepositoryFilter();
+    private void ApplyRepositoryFilter()
+    {
+        RepositoryList.ItemsSource = JapaneseOnly.IsChecked == true ? _repositories.Where(r => r.Languages?.Contains("ja", StringComparer.OrdinalIgnoreCase) == true).ToArray() : _repositories.ToArray();
+        RepositoryList.SelectedIndex = RepositoryList.Items.Count > 0 ? 0 : -1;
+        ResultsHeading.Text = $"モデル · {RepositoryList.Items.Count}件";
+        if (RepositoryList.Items.Count == 0) { StatusText.Text = "この条件に一致する配布情報がありません。条件を解除するか配布元/モデル名を直接入力してください。"; }
+    }
+    private void ApplyFileFilter()
+    {
+        string quantization = QuantizationFilter.SelectedIndex <= 0 ? "" : QuantizationFilter.SelectedItem as string ?? "";
+        long[] limits = [long.MaxValue, 2L << 30, 4L << 30, 8L << 30, 16L << 30, 32L << 30];
+        long maximum = limits[Math.Max(0, CapacityFilter.SelectedIndex)];
+        FileList.ItemsSource = _fileCandidates.Where(f => f.Size <= maximum && (quantization.Length == 0 || f.Filename.Contains(quantization, StringComparison.OrdinalIgnoreCase))).ToArray();
+        FileList.SelectedIndex = FileList.Items.Count > 0 ? 0 : -1;
+        StatusText.Text = FileList.Items.Count > 0 ? "容量と利用条件を確認して、ファイルを選んでください。分割モデルは全ファイルを取得します。" : _fileCandidates.Count > 0 ? "この容量・量子化の条件に一致するファイルはありません。条件を変更してください。" : "対応するGGUFがありません。画像用の補助ファイルや、一部が欠けた分割モデルは対象外です。";
+    }
+    private DownloadItem? SelectedDownload() => FileList.SelectedItem is ModelFile file ? _queue.Items.FirstOrDefault(i => i.File?.Repository == file.Repository && i.File.Revision == file.Revision && i.File.Filename == file.Filename) : null;
+    private void RefreshHardware(ModelFile file)
+    {
+        _memory = HardwareAdvisor.Capture(_devices, _viewModel?.Settings.Compute ?? _compute);
+        HardwareSummary.Text = $"モデル {file.SizeLabel} · 空きRAM {FileSize.Format(_memory.AvailableRam)}" + (file.Size > _memory.AvailableRam ? " · 容量が不足する見込みです" : "");
+        HardwareText.Text = HardwareAdvisor.Describe(file.Size, null, _viewModel?.EffectiveContext ?? _context, _memory) +
+            (_viewModel is not null && _viewModel.Inferences.ActiveCount > 0 ? $"\n推論{_viewModel.Inferences.ActiveCount}件を実行中。GPU表示は総容量で、空き容量ではありません。複数モデルの使用分は別途必要です。" : "");
+    }
+    private void UpdateTransfer()
+    {
+        if (_closed || _busy) { return; }
+        if (FileList.SelectedItem is ModelFile file && Environment.TickCount64 - _lastHardware > 5000) { RefreshHardware(file); _lastHardware = Environment.TickCount64; }
+        DownloadItem? item = SelectedDownload();
+        DownloadProgress.Visibility = item?.Status == "active" ? Visibility.Visible : Visibility.Collapsed;
+        CancelButton.Visibility = item is { CanPause: true } or { CanResume: true } ? Visibility.Visible : Visibility.Collapsed;
+        CancelButton.Content = item?.CanResume == true ? "再開" : "一時停止";
+        DownloadButton.Content = item?.Status == "complete" ? "このモデルを使う" : item?.Status is "active" or "queued" ? "取得中・予約済み" : "取得キューへ追加";
+        DownloadButton.IsEnabled = FileList.SelectedItem is ModelFile && item?.Status is not ("active" or "queued");
+        if (item is not null) { DownloadProgress.Value = item.Percent; StatusText.Text = item.Label + " · " + item.Detail; }
+    }
+}

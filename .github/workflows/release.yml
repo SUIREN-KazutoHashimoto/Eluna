@@ -1,0 +1,85 @@
+name: Release trains
+
+on:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    runs-on: windows-2025
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact train commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Choose immutable release version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [xml]$props = Get-Content Directory.Build.props
+          $baseVersion = ([string]$props.Project.PropertyGroup[0].Version) -replace '-.*$', ''
+          if ($baseVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Set a three-part base version in Directory.Build.props.' }
+          $train = if ($env:GITHUB_REF_NAME -eq 'main') { 'stable' } else { 'develop' }
+          $version = if ($train -eq 'stable') { $baseVersion } else { "$baseVersion-develop.$env:GITHUB_RUN_NUMBER.$env:GITHUB_RUN_ATTEMPT" }
+          $tag = "v$version"
+          gh release view $tag --repo $env:GITHUB_REPOSITORY 1>$null 2>$null
+          if ($LASTEXITCODE -eq 0) { throw 'This release already exists. Bump the base version before the next public release; published assets are never overwritten.' }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "train=$train" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          exit 0
+      - name: Verify managed code
+        run: ./scripts/Verify.ps1
+      - name: Set up pinned Vulkan SDK
+        run: ./scripts/Setup-VulkanSdk.ps1
+      - name: Build portable app and installer
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_TRAIN: ${{ steps.version.outputs.train }}
+        run: ./scripts/Publish.ps1 -Version $env:RELEASE_VERSION -Train $env:RELEASE_TRAIN
+      - name: Validate local release payload
+        run: ./scripts/Test-ReleasePackage.ps1 -Directory artifacts/release
+      - name: Upload draft, verify digests, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_TRAIN: ${{ steps.version.outputs.train }}
+        run: |
+          $assets = @('artifacts/release/Eluna.exe','artifacts/release/Eluna-Setup.exe','artifacts/release/update-manifest.json','artifacts/release/SHA256SUMS.txt')
+          $arguments = @('release','create',$env:RELEASE_TAG,'--repo',$env:GITHUB_REPOSITORY,'--target',$env:GITHUB_SHA,'--draft','--title',"Eluna $env:RELEASE_TAG",'--generate-notes') + $assets
+          if ($env:RELEASE_TRAIN -eq 'develop') { $arguments += '--prerelease' }
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) { throw 'Draft upload failed. No release was published.' }
+          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Release metadata verification failed.' }
+          foreach ($path in $assets) {
+            $name = Split-Path -Leaf $path
+            $asset = @($release.assets | Where-Object name -eq $name)
+            $expected = 'sha256:' + (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($asset.Count -ne 1 -or $asset[0].digest -ne $expected -or $asset[0].size -ne (Get-Item -LiteralPath $path).Length) { throw "GitHub digest mismatch: $name. The release stays in draft." }
+          }
+          $latest = if ($env:RELEASE_TRAIN -eq 'stable') { 'true' } else { 'false' }
+          gh release edit $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --draft=false "--latest=$latest"
+          if ($LASTEXITCODE -ne 0) { throw 'Publishing failed; inspect the draft release.' }

@@ -132,6 +132,7 @@ public sealed class DownloadQueue : ObservableObject, IDisposable
     }
     private async Task RunAsync(DownloadItem item, CancellationTokenSource cancellation)
     {
+        using var diagnostic = DiagnosticScope.Start(_store.Trace, item.Id); DiagnosticScope.Current!.Write("info", "download", "started", "kind=" + item.AssetKind);
         await Task.Yield();
         var clock = Stopwatch.StartNew(); long lastBytes = item.Received, lastTime = 0, lastSave = 0; string previousStage = "";
         var progress = new QueueProgress(p =>
@@ -142,6 +143,7 @@ public sealed class DownloadQueue : ObservableObject, IDisposable
             else { item.Speed = 0; }
             item.Received = p.Received; item.Total = p.Total; item.Stage = p.Stage; lastBytes = p.Received; lastTime = now; previousStage = p.Stage;
             if (now - lastSave > 2000) { lastSave = now; _ = PersistAsync(); }
+            DiagnosticScope.Current?.Write("debug", "download", "progress", "received=" + item.Received + "; total=" + item.Total + "; stage=" + item.Stage);
             Notify(nameof(Label));
         });
         try
@@ -158,9 +160,9 @@ public sealed class DownloadQueue : ObservableObject, IDisposable
                 item.ModelId = model.Id; item.Total = item.Received = model.Size; item.Status = "complete"; item.Stage = "完了"; Completed?.Invoke(model);
             }
         }
-        catch (OperationCanceledException) { item.Status = "paused"; item.Stage = "一時停止"; }
-        catch (Exception ex) { item.Status = "failed"; item.Error = DiagnosticsService.Explain(ex); item.Stage = "取得できませんでした"; }
-        finally { item.Speed = 0; cancellation.Dispose(); _workers.Remove(item); Notify(nameof(IsActive)); Notify(nameof(Label)); await PersistAsync(); Start(); }
+        catch (OperationCanceledException) { DiagnosticScope.Current!.Write("info", "download", "paused"); item.Status = "paused"; item.Stage = "一時停止"; }
+        catch (Exception ex) { DiagnosticScope.Current!.Failure("download", "failed", ex); item.Status = "failed"; item.Error = DiagnosticsService.Explain(ex); item.Stage = "取得できませんでした"; }
+        finally { DiagnosticScope.Current!.Write("info", "download", "finished", "state=" + item.Status + "; received=" + item.Received); item.Speed = 0; cancellation.Dispose(); _workers.Remove(item); Notify(nameof(IsActive)); Notify(nameof(Label)); await PersistAsync(); Start(); }
     }
     private sealed class QueueProgress(Action<DownloadProgress> callback) : IProgress<DownloadProgress> { public void Report(DownloadProgress value) => callback(value); }
     private async Task PersistAsync()

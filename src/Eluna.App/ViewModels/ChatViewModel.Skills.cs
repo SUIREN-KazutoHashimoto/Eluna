@@ -72,8 +72,10 @@ public sealed partial class ChatViewModel
             await foreach (GenerationUpdate piece in engine.GenerateAsync([new("user", input)], InferenceModes.Find("fast"), cancellation, instruction, 512, structured.RootElement)) { text.Append(piece.Content); }
             return text.ToString();
         }
-        answer.Skills = await new SkillRunner(_store, s => Skills.FirstOrDefault(current => current.Id == s.Id && current.Enabled)?.ExecutionPolicy ?? "never", SkillTrace).PrepareAsync(job.Request.Skills, question, Infer, SkillExecutionReviewRequested is null ? null : (request, ct) => SkillExecutionReviewRequested(request with { JobId = job.Request.Id.ToString("N")[..8], ConversationTitle = job.Request.Title, ProjectLabel = Projects.FirstOrDefault(p => p.Id == job.Request.Settings.SelectedProjectId)?.Name ?? "通常チャット", ModelLabel = job.Request.Model.DisplayName, Revision = job.Request.Skills.Catalog.FirstOrDefault(s => s.Name == request.SkillName)?.Revision ?? "" }, ct),
+        DiagnosticScope.Current?.Write("debug", "skills", "prepare.started", "mode=" + job.Request.Skills.Mode + "; catalog=" + job.Request.Skills.Catalog.Count);
+        answer.Skills = await new SkillRunner(_store, s => Skills.FirstOrDefault(current => current.Id == s.Id && current.Enabled)?.ExecutionPolicy ?? "never", text => { SkillTrace?.Invoke(text); DiagnosticScope.Current?.Content("skills", "protocol", text); }).PrepareAsync(job.Request.Skills, question, Infer, SkillExecutionReviewRequested is null ? null : (request, ct) => SkillExecutionReviewRequested(request with { JobId = job.Request.Id.ToString("N")[..8], ConversationTitle = job.Request.Title, ProjectLabel = Projects.FirstOrDefault(p => p.Id == job.Request.Settings.SelectedProjectId)?.Name ?? "通常チャット", ModelLabel = job.Request.Model.DisplayName, Revision = job.Request.Skills.Catalog.FirstOrDefault(s => s.Name == request.SkillName)?.Revision ?? "" }, ct),
             job.Request.Settings.WorkMode == "offline", message => job.Detail = message, uses => answer.Skills = uses, token);
+        DiagnosticScope.Current?.Write("debug", "skills", "prepare.completed", "applied=" + answer.Skills.Count);
         await PersistSafelyAsync();
     }
 }

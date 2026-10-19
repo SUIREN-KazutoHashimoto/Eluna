@@ -1,0 +1,28 @@
+$ErrorActionPreference = 'Stop'
+$taskFile = Join-Path (Split-Path -Parent $PSScriptRoot) 'src/Eluna.App/MainWindow.xaml'
+$taskText = [IO.File]::ReadAllText($taskFile).Replace("`r`n", "`n")
+$taskStart = $taskText.IndexOf('                      <StackPanel x:Name="MessageActions"', [StringComparison]::Ordinal)
+if ($taskStart -lt 0) { throw 'Message actions not found' }
+$taskEnd = $taskText.IndexOf("                      </StackPanel>`n", $taskStart, [StringComparison]::Ordinal)
+if ($taskEnd -lt 0) { throw 'Message action end not found' }
+$taskEnd += "                      </StackPanel>`n".Length
+$taskActions = $taskText.Substring($taskStart, $taskEnd-$taskStart)
+$taskChildren = $taskActions.Substring($taskActions.IndexOf("`n")+1)
+$taskChildren = $taskChildren.Substring(0, $taskChildren.LastIndexOf('                      </StackPanel>', [StringComparison]::Ordinal))
+$taskText = $taskText.Remove($taskStart, $taskEnd-$taskStart)
+$taskTarget = "                  </StackPanel>`n                  </Grid>`n                </Border>"
+if (-not $taskText.Contains($taskTarget)) { throw 'Message row end not found' }
+$taskFloating = '<Border x:Name="MessageActions" services:UiMotion.Feedback="toolbar" Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Top" Panel.ZIndex="3" Opacity="0" Margin="0,-4,0,0" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1" CornerRadius="4" Padding="1"><StackPanel Orientation="Horizontal">' + "`n" + $taskChildren + '</StackPanel></Border>'
+$taskText = $taskText.Replace($taskTarget, "                  </StackPanel>`n"+$taskFloating+"`n                  </Grid>`n                </Border>`n                </StackPanel>")
+$taskEdits = @(
+    @('<Border x:Name="MessageBorder" Background="Transparent" Padding="16,5" Margin="0,0,0,0" HorizontalAlignment="Stretch">', '<StackPanel><Grid Visibility="{Binding HasDateSeparator, Converter={StaticResource BoolVisibility}}" Margin="16,12,16,4"><Border BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="0,1,0,0" VerticalAlignment="Center" /><TextBlock Text="{Binding DateSeparator}" Foreground="{DynamicResource MutedBrush}" Background="{DynamicResource ChatBackgroundBrush}" Padding="8,0" FontSize="11" HorizontalAlignment="Center" /></Grid><Border x:Name="MessageBorder" ToolTip="{Binding TimeHint}" Background="Transparent" Padding="16,5" Margin="0,6,0,0" HorizontalAlignment="Stretch">'),
+    @('<Button Click="Speaker_Click" Padding="0" Background="Transparent" HorizontalAlignment="Left" VerticalAlignment="Top" ToolTip="プロフィールを表示">', '<TextBlock x:Name="CompactTime" Text="{Binding DisplayTime}" Foreground="{DynamicResource MutedBrush}" FontSize="9" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="0,5,0,0" Visibility="Collapsed" Opacity="0" /><Button x:Name="AvatarButton" Click="Speaker_Click" Padding="0" Background="Transparent" HorizontalAlignment="Left" VerticalAlignment="Top" ToolTip="プロフィールを表示">'),
+    @('<Grid Margin="0,0,0,4">', '<Grid x:Name="MessageHeader" Margin="0,0,0,4">'),
+    @('<Grid x:Name="Speaker" VerticalAlignment="Center" Margin="0,0,6,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>', '<Grid x:Name="Speaker" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,6,0"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>'),
+    @('<TextBlock Text="{Binding Speaker}" TextTrimming="CharacterEllipsis" FontSize="13" FontWeight="SemiBold" />', '<TextBlock Text="{Binding Speaker}" ToolTip="{Binding Speaker}" MaxWidth="250" TextTrimming="CharacterEllipsis" FontSize="13" FontWeight="SemiBold" />'),
+    @('<ItemsControl ItemsSource="{Binding Attachments}" Margin="0,8,0,0">', '<ItemsControl ItemsSource="{Binding Attachments}" Visibility="{Binding HasAttachments, Converter={StaticResource BoolVisibility}}" Margin="0,8,0,0">'),
+    @('<Trigger SourceName="MessageBorder" Property="IsMouseOver" Value="True"><Setter TargetName="MessageBorder" Property="Background" Value="{DynamicResource ChatHoverBrush}" /></Trigger>', '<Trigger SourceName="MessageBorder" Property="IsMouseOver" Value="True"><Setter TargetName="MessageBorder" Property="Background" Value="{DynamicResource ChatHoverBrush}" /><Setter TargetName="CompactTime" Property="Opacity" Value="1" /></Trigger><Trigger SourceName="MessageBorder" Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="CompactTime" Property="Opacity" Value="1" /></Trigger><DataTrigger Binding="{Binding Compact}" Value="True"><Setter TargetName="AvatarButton" Property="Visibility" Value="Collapsed" /><Setter TargetName="MessageHeader" Property="Visibility" Value="Collapsed" /><Setter TargetName="CompactTime" Property="Visibility" Value="Visible" /><Setter TargetName="MessageBorder" Property="Padding" Value="16,1" /><Setter TargetName="MessageBorder" Property="Margin" Value="0" /></DataTrigger>'),
+    @('<DataTrigger Binding="{Binding Identity.Detail}" Value="member-joined">', '<DataTrigger Binding="{Binding Identity.Detail}" Value="member-joined"><Setter TargetName="AvatarButton" Property="Visibility" Value="Collapsed" /><Setter TargetName="MessageHeader" Property="Visibility" Value="Collapsed" /><Setter TargetName="MessageBorder" Property="Margin" Value="0,2,0,0" />')
+)
+foreach ($taskEdit in $taskEdits) { if (-not $taskText.Contains($taskEdit[0])) { throw ('Missing replacement: '+$taskEdit[0]) }; $taskText = $taskText.Replace($taskEdit[0], $taskEdit[1]) }
+[IO.File]::WriteAllText($taskFile, $taskText.Replace("`n", "`r`n"), [Text.UTF8Encoding]::new($false))

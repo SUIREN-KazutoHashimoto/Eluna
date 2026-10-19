@@ -1,0 +1,45 @@
+from pathlib import Path
+exec(Path('artifacts/remaining-edits.py').read_text(encoding='utf-8').split("edit('src/Eluna.App/ModelWindow.xaml'")[0])
+edit('src/Eluna.App/ViewModels/ChatViewModel.cs','Inferences.Suspended = value || MediaJobs.Any(j => j.State == "queued");','Inferences.Suspended = value;')
+edit('src/Eluna.App/ViewModels/ChatViewModel.cs','_isBusy || _submitting || Inferences.ActiveCount > 0','_isBusy || _submitting || Inferences.ActiveCount > 0 || MediaJobs.Any(j => j.State == "active")')
+edit('src/Eluna.App/ViewModels/ChatViewModel.cs','await RefreshModelsAsync(); await _llama.InitializeAsync();','await RefreshModelsAsync(); await _llama.InitializeAsync(); await LoadMediaJobsAsync(); Downloads.Limit = _settings.MaxConcurrentDownloads;')
+edit('src/Eluna.App/ViewModels/ChatViewModel.cs','_settings = settings; Inferences.Limit = settings.MaxConcurrentInferences;','_settings = settings; Inferences.Limit = settings.MaxConcurrentInferences; Downloads.Limit = settings.MaxConcurrentDownloads; PumpMedia();')
+edit('src/Eluna.App/ViewModels/ChatViewModel.cs','Inferences.Limit = previousSettings.MaxConcurrentInferences; throw;','Inferences.Limit = previousSettings.MaxConcurrentInferences; Downloads.Limit = previousSettings.MaxConcurrentDownloads; throw;')
+edit('src/Eluna.App/ViewModels/ChatViewModel.cs','if (!CanChange || Inferences.HasPending) { return Task.FromException','if (!CanChange || Inferences.HasPending || HasMediaReservations) { return Task.FromException')
+edit('src/Eluna.App/ViewModels/ChatViewModel.cs','if (IsBusy || Inferences.HasPending) { throw new InvalidOperationException("実行中の処理と予約を終えてから復元してください。"); }','if (IsBusy || Inferences.HasPending || HasMediaReservations) { throw new InvalidOperationException("実行中の処理と予約を終えてから復元してください。"); }')
+edit('src/Eluna.App/ViewModels/ChatViewModel.cs','        ArtifactContext context = captured ?? CaptureArtifactContext(prompt);','        LlamaService artifactEngine = _mediaContext.Value?.Engine ?? _llama;\n        ArtifactContext context = captured ?? CaptureArtifactContext(prompt);')
+edit('src/Eluna.App/ViewModels/ChatViewModel.cs','await PrepareSkillsAsync(artifactAnswer, skillJob, _llama, prompt, token); LastArtifactSkills = artifactAnswer.Skills;','await PrepareSkillsAsync(artifactAnswer, skillJob, artifactEngine, prompt, token); if (_mediaContext.Value is { } media) { media.Job.Skills = artifactAnswer.Skills; } else { LastArtifactSkills = artifactAnswer.Skills; }')
+edit('src/Eluna.App/ViewModels/ChatViewModel.cs','await _llama.EnsureModelAsync(model, settings, message => { Status = message; ReportMediaProgress(message); }, token);','await artifactEngine.EnsureModelAsync(model, settings, ReportMediaProgress, token);')
+edit('src/Eluna.App/ViewModels/ChatViewModel.cs','LastArtifactKnowledge = knowledge.References;','if (_mediaContext.Value is { } contextJob) { contextJob.Job.Knowledge = knowledge.References; } else { LastArtifactKnowledge = knowledge.References; }')
+edit('src/Eluna.App/ViewModels/ChatViewModel.cs','await foreach (GenerationUpdate piece in _llama.GenerateAsync(knowledge.Prepend','await foreach (GenerationUpdate piece in artifactEngine.GenerateAsync(knowledge.Prepend')
+edit('src/Eluna.App/ViewModels/ChatViewModel.cs','_shuttingDown = true; foreach (MediaJob job in MediaJobs.Where(j => j.IsPending).ToArray()) { job.Cancel(); }','_shuttingDown = true; foreach (MediaJob job in MediaJobs.Where(j => j.IsPending).ToArray()) { job.Cancel(); if (job.State == "queued") { job.State = job.Request is null ? "canceled" : "paused"; job.Completion.TrySetCanceled(); } }')
+edit('src/Eluna.App/ViewModels/ChatViewModel.cs','if (_mediaExecution is not null) { try { await _mediaExecution; } catch (Exception ex) { _lastError = ex; } }','try { await Task.WhenAll(_mediaWorkers.Values.ToArray()); } catch (Exception ex) { _lastError = ex; } await SaveMediaJobsAsync();')
+edit('src/Eluna.App/ViewModels/ChatViewModel.Artifacts.cs','{ MediaJob? job = MediaJobs.FirstOrDefault(j => j.State == "active"); if (job is not null) { job.Detail = text; } }','{ if (_mediaContext.Value is { } media) { media.Job.Detail = text; } else { Status = text; } }')
+edit('src/Eluna.App/MediaWindow.cs','cancel.Click += (_, _) => _operationCancellation?.Cancel();','cancel.Click += (_, _) => { if (_trackedMedia is { IsPending: true }) { _trackedMedia.Cancel(); } else { _operationCancellation?.Cancel(); } };')
+old='''            await Run(async token => await chat.GenerateArtifactTextAsync(prompt, "依頼に合う文書の本文を日本語のMarkdownで作成してください。見出し・段落・必要な表を使い、架空の出典・固有情報を捏造しないでください。挨拶やコードフェンスを付けず、文書本文だけを書いてください。", text => { _document.Text = text; _documentKnowledge = [.. chat.LastArtifactKnowledge]; _documentSkills = [.. chat.LastArtifactSkills]; }, token, captured));'''
+new='''            MediaJob job = await chat.EnqueueMediaAsync("文書生成 · " + prompt[..Math.Min(40, prompt.Length)], new("document", prompt, "依頼に合う文書の本文を日本語のMarkdownで作成してください。見出し・段落・必要な表を使い、架空の出典・固有情報を捏造しないでください。挨拶やコードフェンスを付けず、文書本文だけを書いてください。", _projectId, chat.NewMediaOutput(".md"), captured));
+            TrackMedia(job, value => { _document.Text = value.Text; _documentKnowledge = [.. value.Knowledge]; _documentSkills = [.. value.Skills]; });'''
+edit('src/Eluna.App/MediaWindow.cs',old,new)
+old='''Button(Row(imagePanel), "英語に変換・予約", async () => { if (!CheckScope()) { return; } string prompt = _imagePrompt.Text; ArtifactContext captured = chat.CaptureArtifactContext(prompt); await Run(async token => await chat.GenerateArtifactTextAsync(prompt, "Translate this image description into concise English for a text-to-image model. Preserve the user's meaning. Output only the English description, no quotes, no explanation.", text => _imagePrompt.Text = text, token, captured)); });'''
+new='''Button(Row(imagePanel), "英語に変換・予約", async () => { if (!CheckScope()) { return; } string prompt = _imagePrompt.Text; ArtifactContext captured = chat.CaptureArtifactContext(prompt); MediaJob job = await chat.EnqueueMediaAsync("画像説明を英語に変換", new("translation", prompt, "Translate this image description into concise English for a text-to-image model. Preserve the user's meaning. Output only the English description, no quotes, no explanation.", _projectId, chat.NewMediaOutput(".txt"), captured)); TrackMedia(job, value => _imagePrompt.Text = value.Text); });'''
+edit('src/Eluna.App/MediaWindow.cs',old,new)
+start='''        Button(Row(imagePanel), "画像を生成", async () => await Run(async token =>'''
+edit('src/Eluna.App/MediaWindow.cs',start,'''        Button(Row(imagePanel), "画像を生成", async () =>''')
+start='''            string output = Path.Combine(store.Root, "Generated", "image-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..6] + ".png");'''
+p=root/'src/Eluna.App/MediaWindow.cs';s=p.read_text(encoding='utf-8');a=s.index(start);b=s.index('        })).SetResourceReference(StyleProperty, "PrimaryButton");',a)
+s=s[:a]+'''            if (!CheckScope()) { return; }
+            var options = new ImageGenerationOptions(model.Text, _imagePrompt.Text.Trim(), negative.Text, int.Parse(dimensions[0]), int.Parse(dimensions[1]), (int)steps.SelectedItem, value, Compute: compute.SelectedIndex == 1 ? "cpu" : "auto");
+            string output = chat.NewMediaOutput(".png");
+            MediaJob queued = await chat.EnqueueMediaAsync("画像生成 · " + options.Prompt[..Math.Min(40, options.Prompt.Length)], new("image", options.Prompt, "", _projectId, output, Image: options));
+            TrackMedia(queued, job => { if (job.State != "complete" || !File.Exists(output)) { return; } _imageOutput = output; preview.Source = LoadImage(output); if (_saveImageButton is not null) { _saveImageButton.IsEnabled = true; } if (_attachImageButton is not null) { _attachImageButton.IsEnabled = true; } });
+            SaveImageModel(model.Text);
+        }).SetResourceReference(StyleProperty, "PrimaryButton");'''+s[b+len('        })).SetResourceReference(StyleProperty, "PrimaryButton");'):];p.write_text(s,encoding='utf-8',newline='\n')
+edit('src/Eluna.App/MediaWindow.cs','    private string _operationTitle = "作成・準備";','''    private MediaJob? _trackedMedia;
+    private void TrackMedia(MediaJob job, Action<MediaJob> update)
+    {
+        _trackedMedia = job;
+        void Changed(object? sender, PropertyChangedEventArgs e) { if (_trackedMedia != job) { return; } if (e.PropertyName is nameof(MediaJob.Text) or nameof(MediaJob.State)) { update(job); } Status = job.Detail; if (_stopButton is not null) { _stopButton.IsEnabled = job.IsPending; } }
+        job.PropertyChanged += Changed; Closed += (_, _) => job.PropertyChanged -= Changed;
+        update(job); Status = "処理リストに追加しました。画面を閉じても続行します。"; if (_stopButton is not null) { _stopButton.IsEnabled = job.IsPending; }
+    }
+    private string _operationTitle = "作成・準備";''')

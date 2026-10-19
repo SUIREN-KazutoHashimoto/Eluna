@@ -1,0 +1,33 @@
+{
+  "sourceCommit": "05312a0ed34debe3b1bf80c3c69607f3cde88720",
+  "verify": {
+    "command": "./scripts/Verify.ps1",
+    "success": true,
+    "logSource": "artifacts/beta-verify.log",
+    "logSha256": "057c90ed642e594a0a6b460f3285ee2a36f892a01aa9ccdd8001d6e255baf4fc",
+    "scope": [
+      "Release build",
+      "format --verify-no-changes",
+      "all console regression checks",
+      "git diff --check"
+    ]
+  },
+  "gpu": {
+    "device": "AMD Radeon RX 9070 XT",
+    "source": "artifacts/phase2-gpu-check.log",
+    "sourceSha256": "6fee93ceb4592c5d18a5612fa9079106d6aa6dc212fb46ae83f02469ecebb6f9",
+    "matchesCpu": {
+      "MUL_MAT": 16,
+      "MUL": 2,
+      "ADD": 2
+    },
+    "scope": "Native engines reused unchanged by the beta package."
+  },
+  "limits": [
+    "Not rerun on the destination PC",
+    "No physical IME or DPI switching",
+    "No real installed-app registration/uninstall changes",
+    "No live automatic update from a previous public version",
+    "No automatic release-train workflow execution"
+  ]
+}

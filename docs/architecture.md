@@ -1,4 +1,6 @@
-﻿# アーキテクチャ
+# アーキテクチャ
+
+チャンネル統合も既存のConversation / KnowledgeProject / キューを使う。WorkspaceServiceは移行・参照許可・ID再割り当て、KnowledgeServiceは許可した抜粋、ResearchRunner / DebateDirectorは議論、Timelineは発言を重複させず表示する責務を持つ。名前・モデルは発言時のスナップショット。[保存形式と境界](workspaces.md)を参照。
 
 ## 現在の構成
 
@@ -47,3 +49,13 @@
 `SkillStore`はSKILL.md・ZIPの取り込みと不変の版、同梱ファイルの検証を扱う。`SkillRunner`はスコープを限定したメタデータから適用を選び、本文・参考資料・補助コードを段階的に読み込む。`SkillScriptRunner`はWindows標準PowerShellの確認・専用作業フォルダー・出力制限・キャンセルを扱う。OSによるコード隔離ではない。
 
 予約には候補のメタデータと版IDを保持し、実行時の画面選択に依存させない。使用した本文・抜粋・実行結果は回答へ保存する。プロジェクト外のスキルは初期状態で候補から除外する。形式3の`state-skills.json`は登録情報・会話ごとの選択・使用記録を保存し、従来の状態ファイルを残す。版の実ファイルと生成ファイルは別管理。詳細は[スキルガイド](skills.md)。
+
+## Computer Use
+
+`ChatMessage.Computer`の`ComputerSession`に作業状態を持たせ、会話内の`ComputerTaskPanel`が対象許可・計画・画面・確認・停止・再開・履歴を表示する。専用ウィンドウは使わない。`ChatViewModel.Computer`がチャットの明示的な依頼を振り分け、会話・分岐・プロジェクトと使用モデルを固定する。通常のナレッジ規則で参照を限定し、追加指示はその作業へ渡す。
+
+`ComputerChatController`は一時停止・引き継ぎ・追加指示で進行中の案をキャンセルし、モデルと操作枠を解放する。再開時は完了済みの履歴をモデルへ伝え、再実行せず最新画面から判断する。デスクトップの実行枠は1件で、別の依頼は待機する。`ComputerUseRunner`が観察→提案→必要な確認→実行の回数・時間・許可範囲を管理する。`ComputerPlanner`は独立した`LlamaService`へ画面とUI要素を渡し、JSON schemaで単一操作を生成する。`ComputerActionPolicy`は通常操作の自動実行と重要な操作の確認を判定し、キーの別名を正規化して検査する。
+
+`ComputerDesktop`は同じexeの`--computer-worker`を要求ごとに起動し、標準入出力のJSONで通信する。補助プロセスのMTAスレッドがUI Automation / Win32 / GDIを扱い、12秒の要求期限とWindows Job Objectで終了させる。UIAプロバイダーが応答を止めてもWPFを止めない。前面化の前後で観察を比較し、入力先のフォーカス・マウス位置を検査する。OSの入力制約を回避しない。
+
+デスクトップの同時制御を名前付きmutexでも1件に限定し、実行中だけCtrl+Alt+Escを登録する。複数の`ComputerActivity`を処理リストへ表示する。会話を切り替えても作業を維持し、停止・アプリ終了で推論と補助プロセスを後始末する。依頼と操作履歴は`SavedMessage`の任意フィールドへ保存し、旧形式を読み込める状態を保つ。画像とハンドルと操作許可は保存しない。再起動後の再開には再許可が必要で、プロジェクト変更後は古い参照を使わない。`ComputerApplications`はスタートメニューの登録だけを列挙し、利用者のボタン操作で内容のハッシュを再確認して起動する。詳細は[Computer Use](computer-use.md)。

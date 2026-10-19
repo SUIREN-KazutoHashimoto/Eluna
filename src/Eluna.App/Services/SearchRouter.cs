@@ -9,6 +9,8 @@ internal sealed record SearchDecision(bool Search, string Question, string Reaso
 // Routing is local. Only the resulting search terms are sent to search providers.
 internal static class SearchRouter
 {
+    internal static bool ForbidsSearch(string text) => Match(RequestOnly(text), @"(?:検索|ネット|ウェブ|web).{0,8}(?:しない|しなくて|使わない|使わず|使わなくて|せず|不要|禁止)|(?:do not|don't|without|no|no need to)\s+(?:web\s+|internet\s+)?(?:search|browsing|browse)");
+    internal static bool RequestsSearch(string text) => Match(RequestOnly(text), @"(?:検索|調べ)(?:して|をして|て|てきて|てください|てほしい)|検索(?:を使って|を用いて|すること|必須)|検索を?(?:お願い|頼む|希望|実行)|検索で.{0,8}(?:お願い|調べ|確認)|(?:検索|調査)(?:してください|してほしい|してくれ|して下さい)|(?:ネット|ウェブ|web).{0,12}(?:確認|探して)|(?:^|[.!?\n])\s*(?:please\s+)?(?:search|look\s+up|browse)\b|\b(?:please|can you|could you|want you to).{0,12}(?:search|look\s+up|browse)\b");
     internal static readonly object Schema = new { type = "object", properties = new { search = new { type = "boolean" } }, required = new[] { "search" }, additionalProperties = false };
     internal const string Instruction = "Decide whether answering the CURRENT request needs web retrieval. Return only JSON {\"search\":true} or {\"search\":false}. " +
         "Use true for changing/current facts, software versions or setup, recommendations of products/places, specific URLs, claims needing sources, specialized facts you cannot reliably verify, and medical/legal/financial advice. " +

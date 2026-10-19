@@ -11,7 +11,7 @@ public sealed partial class ChatViewModel
     private List<MemoryNote> _commonMemories = [];
     internal IReadOnlyList<KnowledgeReference> LastArtifactKnowledge { get; private set; } = [];
     public ObservableCollection<KnowledgeProject> Projects { get; } = [];
-    public ObservableCollection<ProjectChoice> ProjectChoices { get; } = [new(null, "プロジェクトなし")];
+    public ObservableCollection<ProjectChoice> ProjectChoices { get; } = [new(null, "DM・個人")];
     public IReadOnlyList<MemoryNote> CommonMemories => _commonMemories;
     public KnowledgeProject? SelectedProject => Projects.FirstOrDefault(p => p.Id == _settings.SelectedProjectId);
     public ProjectChoice? SelectedProjectChoice
@@ -19,32 +19,33 @@ public sealed partial class ChatViewModel
         get => ProjectChoices.FirstOrDefault(p => p.Id == _settings.SelectedProjectId);
         set { if (value is not null && CanNavigate && value.Id != _settings.SelectedProjectId) { SelectProject(value.Id); } }
     }
-    public string ProjectContextLabel => SelectedProject is KnowledgeProject project ? project.Name + " · " + project.ScopeLabel : "プロジェクトなし · 共通メモリ";
+    public string ProjectContextLabel => (SelectedProject is KnowledgeProject project ? project.Name + " · " + project.ScopeLabel : "DM・個人 · 共通メモリ") + (SelectedConversation?.Room?.AcceptAgentMemory == true && (SelectedProject is null || SelectedProject.AcceptAgentMemory) ? " · エージェントの持ち越し記憶を参照" : "");
     public string ProjectScopeHint => SelectedProject is KnowledgeProject project
-        ? project.MemoryMode == "project-only" ? "このプロジェクトの資料・保存メモリ・会話だけを参照します。共通メモリと共通指示は使いません。" : "このプロジェクトと共通の保存メモリ・共通指示を使います。別プロジェクトの情報は参照しません。"
-        : "共通指示・共通の保存メモリと、この会話を使います。プロジェクトの資料や他の通常チャットは参照しません。";
+        ? project.MemoryMode == "project-only" ? "このサーバーの資料・保存メモリを参照します。共通メモリと共通指示は使いません。" + (project.AcceptAgentMemory && SelectedConversation?.Room?.AcceptAgentMemory == true ? " 許可されたエージェントの持ち越し記憶も参照します。" : " エージェントの持ち越し記憶は参照しません。") : "このサーバーと共通の保存メモリ・共通指示を使います。エージェントの持ち越し記憶はチャンネルの設定に従います。"
+        : "共通指示・共通の保存メモリと、この会話を使います。サーバーの資料や他の通常チャットは参照しません。";
 
     private void RefreshProjectChoices()
     {
-        ProjectChoices.Clear(); ProjectChoices.Add(new(null, "プロジェクトなし"));
+        ProjectChoices.Clear(); ProjectChoices.Add(new(null, "DM・個人"));
         foreach (KnowledgeProject project in Projects.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)) { ProjectChoices.Add(new(project.Id, project.Name)); }
         NotifyProjectScope();
     }
     private void NotifyProjectScope()
     {
+        NotifyShell();
         Notify(nameof(SelectedProjectChoice)); Notify(nameof(SelectedProject)); Notify(nameof(ProjectContextLabel)); Notify(nameof(ProjectScopeHint)); Notify(nameof(CommonMemories)); Notify(nameof(NetworkNotice));
         HistoryView.Refresh(); NotifySkills();
     }
     private void SetProjectScope(Guid? id)
     {
-        if (id is Guid projectId && !Projects.Any(p => p.Id == projectId)) { throw new InvalidDataException("プロジェクトが見つかりません。"); }
+        if (id is Guid projectId && !Projects.Any(p => p.Id == projectId)) { throw new InvalidDataException("サーバーが見つかりません。"); }
         _settings = _settings with { SelectedProjectId = id };
         ShowArchived = false; HistorySearch = ""; NotifyProjectScope();
     }
     public void SelectProject(Guid? id)
     {
         if (!CanNavigate) { return; }
-        if (_selectedConversation is not null) { _selectedConversation.Draft = Input; }
+        if (_selectedConversation is not null) { _selectedConversation.Draft = Input; RememberRoomMode(); }
         SetProjectScope(id); _selectedConversation = null;
         SelectedConversation = Conversations.FirstOrDefault(c => c.ProjectId == id && !c.IsArchived);
         if (SelectedConversation is null) { NewChat(); }
@@ -55,8 +56,9 @@ public sealed partial class ChatViewModel
         if (IsBusy) { throw new InvalidOperationException("実行中の処理を停止してから変更してください。"); }
         KnowledgeService.Validate([project], []);
         int index = Projects.ToList().FindIndex(p => p.Id == project.Id);
-        if (index >= 0 && Projects[index].MemoryMode != project.MemoryMode) { throw new InvalidDataException("メモリの範囲は作成時に固定されます。新しいプロジェクトを作成してください。"); }
-        if (index < 0 && Projects.Count >= 100) { throw new InvalidDataException("プロジェクトは100件までです。"); }
+        if (index >= 0 && Projects[index].MemoryMode != project.MemoryMode) { throw new InvalidDataException("メモリの範囲は作成時に固定されます。新しいサーバーを作成してください。"); }
+        if (index < 0 && Projects.Count >= 100) { throw new InvalidDataException("サーバーは100件までです。"); }
+        if (index >= 0 && (Projects[index].AcceptAgentMemory != project.AcceptAgentMemory || Projects[index].ReferenceChats != project.ReferenceChats)) { CancelWorkspaceRequests(project: project.Id); }
         if (index >= 0) { Projects[index] = project; } else { Projects.Add(project); }
         RefreshProjectChoices();
         if (index < 0) { SelectProject(project.Id); }
@@ -64,9 +66,12 @@ public sealed partial class ChatViewModel
     }
     public async Task DeleteProjectAsync(Guid id)
     {
-        if (IsBusy || MediaJobs.Any(j => j.Request?.ProjectId == id && (j.IsPending || j.CanResume)) || Conversations.Any(c => c.ProjectId == id && Inferences.Contains(c.Id))) { throw new InvalidOperationException("このプロジェクトの実行中の処理と予約を終えてから削除してください。"); }
+        if (IsBusy || MediaJobs.Any(j => j.Request?.ProjectId == id && (j.IsPending || j.CanResume)) || Conversations.Any(c => c.ProjectId == id && Inferences.Contains(c.Id))) { throw new InvalidOperationException("このサーバーの実行中の処理と予約を終えてから削除してください。"); }
         KnowledgeProject? project = Projects.FirstOrDefault(p => p.Id == id);
         if (project is null) { return; }
+        await StopWorkspaceRequestsAsync(Conversations.Where(c => c.ProjectId == id).Select(c => c.Id).ToHashSet(), id);
+        RemoveRoomMemories(Conversations.Where(c => c.ProjectId == id).Select(c => c.Id).ToHashSet());
+        foreach (AgentMemory memory in AgentMemories.Where(m => m.ProjectId == id).ToArray()) { AgentMemories.Remove(memory); }
         foreach (Conversation conversation in Conversations.Where(c => c.ProjectId == id).ToArray()) { Conversations.Remove(conversation); }
         Projects.Remove(project);
         foreach (SkillRegistration skill in Skills.Where(s => s.ProjectId == id).ToArray()) { Skills.Remove(skill); }
@@ -79,7 +84,15 @@ public sealed partial class ChatViewModel
     {
         if (_isBusy || _submitting || !Conversations.Contains(conversation) || conversation.ProjectId == projectId) { return; }
         if (Inferences.Contains(conversation.Id)) { throw new InvalidOperationException("この会話の予約をキャンセルしてから移動してください。"); }
-        if (projectId is Guid id && !Projects.Any(p => p.Id == id)) { throw new InvalidDataException("移動先のプロジェクトが見つかりません。"); }
+        if (projectId is Guid id && !Projects.Any(p => p.Id == id)) { throw new InvalidDataException("移動先のサーバーが見つかりません。"); }
+        if (conversation.Room?.Kind == "thread") { throw new InvalidOperationException("スレッドは親チャンネルと一緒に移動してください。"); }
+        await StopWorkspaceRequestsAsync(Conversations.Where(c => c.Id == conversation.Id || c.Room?.ParentId == conversation.Id).Select(c => c.Id).ToHashSet());
+        foreach (Conversation child in Conversations.Where(c => c.Room?.ParentId == conversation.Id).ToArray())
+        { child.ProjectId = projectId; child.Summary = ""; foreach (ConversationBranch branch in child.Branches) { branch.Summary = ""; branch.SummaryThrough = 0; } }
+        HashSet<Guid> moved = Conversations.Where(c => c.Id == conversation.Id || c.Room?.ParentId == conversation.Id).Select(c => c.Id).ToHashSet();
+        for (int index = 0; index < AgentMemories.Count; index++)
+        { if (AgentMemories[index].SourceConversationId is Guid origin && moved.Contains(origin)) { AgentMemories[index] = AgentMemories[index] with { ProjectId = projectId, Scope = "room", Enabled = false }; } }
+        if (conversation.Room is { } profile) { conversation.Room = profile with { Kind = profile.Kind is "dm" or "group" ? "channel" : profile.Kind, ShareHistory = false, AcceptAgentMemory = false, ReferenceSiblingChats = false }; }
         conversation.ProjectId = projectId; conversation.SkillIds = [];
         foreach (ConversationBranch branch in conversation.Branches)
         {
@@ -104,7 +117,7 @@ public sealed partial class ChatViewModel
     internal Task<KnowledgeContext> BuildKnowledgeAsync(Conversation conversation, string question, int contextSize, CancellationToken token, string? taskInstruction = null)
     {
         AppState snapshot = CaptureState();
-        return Task.Run(() => KnowledgeService.Build(snapshot, conversation, question, contextSize, token, taskInstruction), token);
+        return Task.Run(() => KnowledgeService.Build(snapshot, conversation, question, contextSize, token, taskInstruction, conversation.Room?.DefaultAgentId), token);
     }
 
     internal async Task<List<KnowledgeDocument>> ImportKnowledgeDocumentsAsync(IEnumerable<string> paths, CancellationToken token)

@@ -28,7 +28,7 @@ internal static class BackupVerification
             main = new MainWindow(store) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -20000, Top = -20000 }; main.Show(); ChatViewModel chat = main.ViewModel;
             await Until(() => chat.IsReady || chat.HasError); Check(chat.IsReady, chat.Error);
             await chat.PersistSafelyAsync();
-            string stateFile = new[] { "state-skills.json", "state-knowledge.json", "state.json" }.Select(n => Path.Combine(store.Root, n)).First(File.Exists);
+            string stateFile = new[] { "state-social.json", "state-workspace.json", "state-skills.json", "state-knowledge.json", "state.json" }.Select(n => Path.Combine(store.Root, n)).First(File.Exists);
             var saves = new List<Task>();
             using (var locked = new FileStream(stateFile, FileMode.Open, FileAccess.Read, FileShare.Read))
             { for (int i = 0; i < 300; i++) { chat.SelectedConversation!.Title = "連続保存 " + i; saves.Add(chat.PersistSafelyAsync()); } }

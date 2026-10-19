@@ -45,10 +45,10 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         set
         {
             if (value is not null && CanCompose && value.Id != _settings.WorkMode)
-            { _settings = _settings with { WorkMode = value.Id }; Notify(); Notify(nameof(NetworkNotice)); if (_ready) { _ = PersistSafelyAsync(); } }
+            { _settings = _settings with { WorkMode = value.Id }; RememberRoomMode(); Notify(); Notify(nameof(NetworkNotice)); Notify(nameof(ConnectionNotice)); if (_ready) { _ = PersistSafelyAsync(); } }
         }
     }
-    public string NetworkNotice => SelectedWorkMode.Id != "offline" && SkillMode != "off" && AvailableSkills.Count > 0 ?
+    public string NetworkNotice => SelectedWorkMode.Id == "computer" ? "画面の読み取り・判断はPC内で行います。操作するアプリ自体は外部通信する場合があります。重要な操作は確認します。" : SelectedWorkMode.Id == "debate" && _settings.WorkOptions is { DebateStyle: "free", DebateSearch: "off" } ? "この議論はWeb検索せず、PC内で生成します。" : SelectedWorkMode.Id != "offline" && SkillMode != "off" && AvailableSkills.Count > 0 ?
         "Web検索では、質問・スキルの資料や実行結果・プロジェクト資料に由来する検索語を外部へ送信する場合があります。補助コードの実行は別に確認します。" : SelectedWorkMode.Id != "offline" && SelectedProject is not null ?
         "Web検索では、質問やプロジェクト資料・メモリに由来する検索語を外部へ送信する場合があります。「検索しない」でローカルのみ利用できます。" : SelectedWorkMode.Id != "offline" && _commonMemories.Count > 0 ?
         "Web検索では、質問・添付・共通の保存メモリに由来する検索語を外部へ送信する場合があります。「検索しない」でローカルのみ利用できます。" : SelectedWorkMode.Id != "offline" && (PendingAttachments.Count > 0 || SelectedConversation?.Messages.Any(m => m.Attachments.Count > 0) == true) ?
@@ -68,28 +68,29 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     public event Action? NavigationStarting;
     public event Action? AppearanceChanged;
     public AppSettings Settings => _settings;
+    internal AppTrace Trace => _store.Trace;
     public string DataDirectory => _store.Root;
     public string ComputeLabel => _busyEngines.FirstOrDefault()?.ComputeLabel ?? _idleEngines.FirstOrDefault()?.ComputeLabel ?? _llama.ComputeLabel;
     public double ChatFontSize => _settings.ChatFontSize * _settings.UiScale;
     public double ChatLineHeight => _settings.LineHeight * _settings.UiScale;
     public bool SidebarVisible => _settings.SidebarVisible;
-    public string ConnectionNotice => SelectedWorkMode.Id == "offline" ? "検索オフ · PC内で応答" : SelectedWorkMode.Id == "chat" ? "自動Web検索 · 外部通信あり" : "Web検索を使用 · 外部通信あり";
+    public string ConnectionNotice => SelectedWorkMode.Id == "computer" ? "PC内で判断 · アプリを自動操作" : SelectedWorkMode.Id == "offline" || SelectedWorkMode.Id == "debate" && _settings.WorkOptions is { DebateStyle: "free", DebateSearch: "off" } ? "検索オフ · PC内で応答" : SelectedWorkMode.Id == "chat" ? "自動Web検索 · 外部通信あり" : "Web検索を使用 · 外部通信あり";
     public bool ShowStatus => IsBusy || HasError || _status.Contains("読み込み済み", StringComparison.Ordinal) || _status.Contains("停止", StringComparison.Ordinal);
-    public string HistoryEmptyHint => HistorySearch.Length > 0 ? "この範囲に一致する会話はありません。検索語を変えてください。" : "会話はまだありません。新しいチャットから始めましょう。";
+    public string HistoryEmptyHint => HistorySearch.Length > 0 ? "この範囲に一致する会話はありません。検索語を変えてください。" : "会話はまだありません。チャンネルやDMを作成しましょう。";
     public string SendTip => _settings.ControlEnterToSend ? "送信（Ctrl+Enter）" : "送信（Enter、Shift+Enterで改行）";
     public bool IsReady => _ready;
     public bool CanChange => !IsBusy && !_submitting && !_dataMaintenance;
     public bool HasModel => SelectedModel is not null;
     public string EditConversationHint => CanEditConversation ? "別の回答として保存します" : "この会話の推論と予約が終わると編集・再生成できます。別のチャットは利用できます。";
     public bool CanGenerate => CanCompose && !_submitting && HasModel && Inferences.Items.Count(j => j.IsPending) < 100;
-    public bool IsEmpty => SelectedConversation?.Messages.Count is not > 0;
+    public bool IsEmpty => Timeline.Count == 0;
     public ObservableCollection<ChatAttachment> PendingAttachments => SelectedConversation?.DraftAttachments ?? [];
-    public bool IsBusy { get => _isBusy || _submitting || Inferences.ActiveCount > 0 || MediaJobs.Any(j => j.State == "active"); private set { Set(ref _isBusy, value); Inferences.Suspended = value; RefreshCommands(); if (!value) { PumpMedia(); } } }
-    public string Status { get => !_isBusy && SelectedJob is { IsPending: true } job && job.Request.Model.Id == SelectedModel?.Id ? job.Detail : _status; private set { Set(ref _status, value); Notify(nameof(ShowStatus)); } }
-    public string Metrics { get => !_isBusy && SelectedJob is { } job && job.Request.Model.Id == SelectedModel?.Id ? (job.Metrics.Length > 0 && !job.IsPending ? "直前の回答 · " : "") + job.Metrics : _metrics; private set => Set(ref _metrics, value); }
+    public bool IsBusy { get => _isBusy || _submitting || Inferences.ActiveCount > 0 || MediaJobs.Any(j => j.State == "active") || _computerControllers.Count > 0; private set { Set(ref _isBusy, value); Inferences.Suspended = value; RefreshCommands(); if (!value) { PumpMedia(); } } }
+    public string Status { get => SelectedComputer is { } computer ? computer.Detail : !_isBusy && SelectedJob is { IsPending: true } job && job.Request.Model.Id == SelectedModel?.Id ? job.Detail : _status; private set { Set(ref _status, value); Notify(nameof(ShowStatus)); } }
+    public string Metrics { get => SelectedComputer is { } computer ? $"PC操作 {computer.Steps.Count} / {computer.MaxSteps}" : !_isBusy && SelectedJob is { } job && job.Request.Model.Id == SelectedModel?.Id ? (job.Metrics.Length > 0 && !job.IsPending ? "直前の回答 · " : "") + job.Metrics : _metrics; private set => Set(ref _metrics, value); }
     public string Error { get => _error; set { _retryAction = null; Set(ref _error, value); Notify(nameof(HasError)); Notify(nameof(ShowStatus)); Notify(nameof(CanRetry)); RetryCommand?.Refresh(); } }
     public bool HasError => Error.Length > 0;
-    public string HistorySearch { get => _search; set { if (Set(ref _search, value)) { RefreshHistorySearch(); } } }
+    public string HistorySearch { get => _search; set { if (Set(ref _search, value)) { Notify(nameof(HasHistorySearch)); RefreshHistorySearch(); } } }
     public bool ShowArchived { get => _showArchived; set { if (Set(ref _showArchived, value)) { HistoryView.Refresh(); } } }
     public string Input
     {
@@ -100,6 +101,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
             {
                 if (SelectedConversation is not null) { SelectedConversation.Draft = value; }
                 SendCommand.Refresh();
+                Notify(nameof(ComposerHint));
                 if (_ready) { ScheduleSave(); }
             }
         }
@@ -112,6 +114,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
             if (value is not null && CanCompose && value.Id != _settings.InferenceMode && (SelectedModel?.Profile?.SupportsThinking != false || value.Id == "fast"))
             {
                 _settings = _settings with { InferenceMode = value.Id };
+                RememberRoomMode();
                 Notify();
                 if (_ready) { _ = PersistSafelyAsync(); }
             }
@@ -125,7 +128,11 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
             if (value is null || !CanNavigate || value == _selectedConversation) { return; }
             NavigationStarting?.Invoke();
             if (value.ProjectId != _settings.SelectedProjectId) { SetProjectScope(value.ProjectId); }
-            if (_selectedConversation is not null) { _selectedConversation.Draft = Input; }
+            if (_selectedConversation is not null)
+            {
+                _selectedConversation.Draft = Input;
+                if (_selectedConversation.Room is { } oldRoom && _ready) { _selectedConversation.Room = oldRoom with { WorkMode = _settings.WorkMode, InferenceMode = _settings.InferenceMode }; }
+            }
             if (HistorySearch.Length > 0 && !value.Messages.Any(m => m.Content.Contains(HistorySearch, StringComparison.OrdinalIgnoreCase)))
             {
                 ConversationBranch? matched = value.Branches.FirstOrDefault(b => b.Messages.Any(m => m.Content.Contains(HistorySearch, StringComparison.OrdinalIgnoreCase)));
@@ -133,10 +140,13 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
             }
             if (Set(ref _selectedConversation, value))
             {
+                _settings = _settings with { WorkMode = value.Room?.WorkMode ?? _settings.WorkMode, InferenceMode = value.Room?.InferenceMode ?? _settings.InferenceMode };
+                Notify(nameof(SelectedWorkMode)); Notify(nameof(SelectedMode));
                 Input = value.Draft; Error = ""; HighlightCurrentSearch(); QueueChanged(); NotifySkills();
                 Notify(nameof(PendingAttachments));
                 Notify(nameof(NetworkNotice));
                 Notify(nameof(IsEmpty)); Notify(nameof(SelectedBranch));
+                _recipient = value.Room?.DefaultAgentId; _replyTo = null; RefreshRoom(); Notify(nameof(HasReplyTarget));
                 ScrollRequested?.Invoke(true);
             }
         }
@@ -149,7 +159,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
             if (value is not null && CanNavigate && SelectedConversation is not null && SelectedConversation.Branches.Contains(value) && value != SelectedConversation.ActiveBranch)
             {
                 NavigationStarting?.Invoke(); SelectedConversation.ActiveBranch = value;
-                Notify(); Notify(nameof(IsEmpty)); HighlightCurrentSearch(); QueueChanged();
+                Notify(); Notify(nameof(IsEmpty)); HighlightCurrentSearch(); QueueChanged(); BindTimeline();
                 ScrollRequested?.Invoke(true); _ = PersistSafelyAsync();
             }
         }
@@ -168,7 +178,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
                 if (_ready)
                 {
                     if (previous?.Id != value?.Id || previous?.FilePath != value?.FilePath || previous?.Options != value?.Options) { if (!_isBusy) { _llama.Stop(); } Status = value is null ? "モデルを追加して始めましょう" : "送信するとモデルを読み込みます"; }
-                    if (value is not null && previous?.Id != value.Id) { _settings = _settings with { InferenceMode = value.Profile?.SupportsThinking == false ? "fast" : value.Options.DefaultMode }; Notify(nameof(SelectedMode)); }
+                    if (!_selectingRoomAgent && value is not null && previous?.Id != value.Id) { _settings = _settings with { InferenceMode = value.Profile?.SupportsThinking == false ? "fast" : value.Options.DefaultMode }; Notify(nameof(SelectedMode)); RememberRoomMode(); }
                     _ = PersistSafelyAsync();
                 }
                 RefreshCommands();
@@ -178,7 +188,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
 
     public ChatViewModel(AppStore store, DownloadQueue? downloads = null)
     {
-        _store = store; _llama = new(store); Downloads = downloads ?? new(store); Inferences = new(ExecuteInferenceAsync); Inferences.Changed += QueueChanged;
+        _store = store; _llama = new(store); Downloads = downloads ?? new(store); Inferences = new(ExecuteInferenceAsync) { Trace = store.Trace }; Inferences.Changed += QueueChanged;
         Downloads.PropertyChanged += (_, _) => Notify(nameof(ProcessSummary));
         Downloads.Completed += async model => await RefreshModelsAsync(SelectedModel is null ? model : null);
         HistoryView = CollectionViewSource.GetDefaultView(Conversations);
@@ -197,6 +207,8 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     private void ConversationsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        ExperienceChanged();
+        if (VoiceJoined && !VoiceValid) { _ = LeaveVoiceAsync(); }
         if (e.Action == NotifyCollectionChangedAction.Reset)
         {
             HashSet<Conversation> next = Conversations.ToHashSet();
@@ -211,7 +223,11 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     private void ConversationChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (ReferenceEquals(sender, SelectedConversation) && e.PropertyName == nameof(Conversation.ActiveBranch)) { Notify(nameof(SelectedBranch)); Notify(nameof(IsEmpty)); }
+        if (e.PropertyName is nameof(Conversation.Draft) or nameof(Conversation.HasDraft) or nameof(Conversation.NavigationStatus) or nameof(Conversation.HasNavigationStatus) or nameof(Conversation.NavigationHint) or nameof(Conversation.ActivityState)) { return; }
+        if (e.PropertyName is nameof(Conversation.Title) or nameof(Conversation.ProjectId) or nameof(Conversation.IsArchived)) { ExperienceChanged(); }
+        if (VoiceJoined && !VoiceValid) { _ = LeaveVoiceAsync(); }
+        if (ReferenceEquals(sender, SelectedConversation) && e.PropertyName is nameof(Conversation.Title) or nameof(Conversation.Room)) { NotifyShell(); }
+        if (ReferenceEquals(sender, SelectedConversation) && e.PropertyName == nameof(Conversation.ActiveBranch)) { BindTimeline(); Notify(nameof(SelectedBranch)); Notify(nameof(IsEmpty)); }
         if (e.PropertyName is nameof(Conversation.Title) or nameof(Conversation.IsPinned) or nameof(Conversation.IsArchived) or nameof(Conversation.UpdatedAt) or nameof(Conversation.ProjectId)) { if (HistorySearch.Length > 0) { RefreshHistorySearch(); } else { HistoryView.Refresh(); } }
     }
     public async Task InitializeAsync()
@@ -219,27 +235,36 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         try
         {
             _ready = false; LoadState(await _store.LoadAsync()); if (Downloads.Items.Count == 0) { await Downloads.LoadAsync(); }
-            await RefreshModelsAsync(); await _llama.InitializeAsync(); await LoadMediaJobsAsync(); Downloads.Limit = _settings.MaxConcurrentDownloads;
+            await RefreshModelsAsync(); await _llama.InitializeAsync(); await EmojiRasterizer.InitializeAsync(_store); await LoadMediaJobsAsync(); Downloads.Limit = _settings.MaxConcurrentDownloads;
             ComputeChoices.Clear();
             ComputeChoices.Add(new("auto", _llama.Devices.Count > 0 ? "自動（GPUを優先）" : "自動（CPU）"));
             ComputeChoices.Add(new("cpu", "CPU"));
             foreach (ComputeDevice device in _llama.Devices) { ComputeChoices.Add(device); }
             _ready = true; Status = HasModel ? "送信するとモデルを読み込みます" : "モデルを追加して始めましょう";
+            StartSocialClock();
             Error = _store.RecoveryNotice ?? _mediaRecoveryNotice ?? "";
         }
         catch (Exception ex) { _lastError = ex; SetError(DiagnosticsService.Explain(ex), InitializeAsync); Status = "準備できませんでした。再試行できます"; }
+        _store.Trace.Write("info", "app", "initialized", "ready=" + _ready + "; models=" + Models.Count);
         Notify(nameof(IsReady)); RefreshCommands();
     }
     private void LoadState(AppState state)
     {
+        StopSocialClock(); _socialStopped.Clear(); _socialLastStart.Clear();
+        _incoming?.Dispose(); _incoming = null; _manualUnread.Clear(); _readingMessages = false;
+        state = WorkspaceService.Upgrade(state);
         foreach (Conversation old in Conversations) { old.PropertyChanged -= ConversationChanged; }
         Inferences.Items.Clear(); ReleaseIdleEngines();
-        Conversations.Clear(); _selectedConversation = null; _selectedModel = null; _settings = state.Settings;
+        Conversations.Clear(); _selectedConversation = null; _selectedModel = null; _settings = state.Settings; _store.Trace.Configure(_settings.Logs ?? new()); _self = state.Self ?? new(); Notify(nameof(Self));
+        Agents.Clear(); foreach (AgentAccount agent in state.Agents ?? []) { Agents.Add(agent); }
+        AgentMemories.Clear(); foreach (AgentMemory memory in state.AgentMemories ?? []) { AgentMemories.Add(memory); }
         Skills.Clear(); foreach (SkillRegistration skill in state.Skills ?? []) { Skills.Add(skill); }
         Projects.Clear(); foreach (KnowledgeProject project in state.Projects ?? []) { Projects.Add(project); }
         _commonMemories = [.. state.CommonMemories ?? []]; RefreshProjectChoices();
         _llama.Stop();
         Conversations.AddRange(state.Conversations.Select(Conversation.Restore));
+        BindComputerSessions();
+        _incoming = new(Conversations, Incoming);
         SelectedConversation = Conversations.FirstOrDefault(c => c.ProjectId == _settings.SelectedProjectId && !c.IsArchived);
         if (SelectedConversation is null) { NewChat(); }
         RestoreInferences(state.InferenceJobs ?? []);
@@ -262,14 +287,19 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     {
         if (!CanNavigate) { return; }
         ShowArchived = false; HistorySearch = "";
-        Conversation conversation = Conversations.FirstOrDefault(c => c.ProjectId == _settings.SelectedProjectId && !c.IsArchived && c.Messages.Count == 0 && c.Draft.Length == 0 && c.DraftAttachments.Count == 0) ?? new() { ProjectId = _settings.SelectedProjectId };
+        Guid agent = Agents.FirstOrDefault(a => a.Enabled)?.Id ?? WorkspaceService.DefaultAgent;
+        string kind = _settings.SelectedProjectId is null ? "dm" : "channel";
+        Conversation conversation = Conversations.FirstOrDefault(c => c.ProjectId == _settings.SelectedProjectId && c.Room?.Kind == kind && !c.IsArchived && c.Messages.Count == 0 && c.Draft.Length == 0 && c.DraftAttachments.Count == 0) ?? new() { Title = _settings.SelectedProjectId is null ? (Agents.FirstOrDefault(a => a.Id == agent)?.Name ?? "Eluna") + "とのDM" : "一般", ProjectId = _settings.SelectedProjectId, Room = new(kind, [agent], agent, WorkMode: _settings.WorkMode, InferenceMode: _settings.InferenceMode) };
         if (!Conversations.Contains(conversation)) { Conversations.Insert(0, conversation); }
         SelectedConversation = conversation; Error = "";
         if (_ready) { _ = PersistSafelyAsync(); }
     }
     public async Task DeleteConversationAsync(Conversation conversation)
     {
-        if (_isBusy || _submitting || Inferences.Contains(conversation.Id)) { Error = "この会話の予約をキャンセルしてから削除してください。"; return; }
+        if (_isBusy || _submitting || Inferences.Contains(conversation.Id) || HasComputerPending(conversation.Id)) { Error = "この会話の処理を停止・キャンセルしてから削除してください。"; return; }
+        HashSet<Guid> rooms = Conversations.Where(c => c.Id == conversation.Id || c.Room?.ParentId == conversation.Id).Select(c => c.Id).ToHashSet();
+        await StopWorkspaceRequestsAsync(rooms); RemoveRoomMemories(rooms);
+        foreach (Conversation child in Conversations.Where(c => c.Room?.ParentId == conversation.Id).ToArray()) { Conversations.Remove(child); }
         Conversations.Remove(conversation);
         if (SelectedConversation == conversation)
         {
@@ -287,30 +317,47 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         AppStore.Validate(CaptureState() with { Settings = settings, CommonMemories = commonMemories?.ToList() ?? _commonMemories });
         if (settings.Compute != _settings.Compute || settings.ContextSize != _settings.ContextSize) { if (!_isBusy) { _llama.Stop(); } ReleaseIdleEngines(); }
         AppSettings previousSettings = _settings; List<MemoryNote> previousMemories = _commonMemories;
-        _settings = settings; Inferences.Limit = settings.MaxConcurrentInferences; Downloads.Limit = settings.MaxConcurrentDownloads; PumpMedia();
+        _settings = settings; _store.Trace.Configure(settings.Logs ?? new()); Inferences.Limit = settings.MaxConcurrentInferences; Downloads.Limit = settings.MaxConcurrentDownloads; PumpMedia();
         while (_idleEngines.Count > 0 && _idleEngines.Count + _busyEngines.Count > Inferences.Limit) { _idleEngines.Pop().Dispose(); }
         if (commonMemories is not null) { _commonMemories = [.. commonMemories]; }
+        RoomProfile? previousRoom = SelectedConversation?.Room; RememberRoomMode();
         try { await _store.SaveAsync(CaptureState()); }
-        catch { _settings = previousSettings; _commonMemories = previousMemories; Inferences.Limit = previousSettings.MaxConcurrentInferences; Downloads.Limit = previousSettings.MaxConcurrentDownloads; throw; }
+        catch { _settings = previousSettings; _store.Trace.Configure(previousSettings.Logs ?? new()); _commonMemories = previousMemories; if (SelectedConversation is not null) { SelectedConversation.Room = previousRoom; } Inferences.Limit = previousSettings.MaxConcurrentInferences; Downloads.Limit = previousSettings.MaxConcurrentDownloads; throw; }
         Notify(nameof(SelectedMode)); Notify(nameof(SelectedWorkMode)); NotifyAppearance(); NotifyProjectScope();
     }
     public void ToggleSidebar() { _settings = _settings with { SidebarVisible = !_settings.SidebarVisible }; NotifyAppearance(); _ = PersistSafelyAsync(); }
     private void NotifyAppearance()
     {
+        Notify(nameof(ComposerHint));
         Notify(nameof(ChatFontSize)); Notify(nameof(ChatLineHeight)); Notify(nameof(SidebarVisible)); Notify(nameof(SendTip)); Notify(nameof(Settings)); AppearanceChanged?.Invoke();
     }
     private async Task SendAsync()
     {
         if (!SendCommand.CanExecute(null) || SelectedConversation is null) { return; }
+        bool invitation = ChannelInvitations.Requested(Input);
+        if (!invitation && await TrySendComputerAsync()) { return; }
+        if (!invitation && await TrySendDebateAsync()) { return; }
         Conversation conversation = SelectedConversation;
+        try { IReadOnlyList<AgentAccount> allowed = TargetAgents(conversation, Input.Trim()); if (allowed.Count == 0 || SelectedWorkMode.Id == "debate") { ChannelAccess.RequireSpeaker(CaptureState(), conversation.Save(), null); } }
+        catch (Exception ex) { Error = ex.Message; return; }
         try { SkillRunner.Capture(Skills, conversation.ProjectId, SelectedProject?.UseCommonSkills == true, SkillMode, conversation.SkillIds, Input); }
         catch (Exception ex) { Error = ex.Message; return; }
         if ((PendingAttachments.Any(a => a.ImageBase64 is not null) || SelectedConversation.Messages.Any(m => m.Attachments.Any(a => a.ImageBase64 is not null))) && SelectedModel?.Projector is null) { Error = "画像・PDFの認識には対応するprojectorが必要です。入力欄の添付メニューから「画像認識モデルの設定」を開いてください。"; return; }
         string prompt = Input.Trim(); if (prompt.Length == 0) { prompt = "添付した画像・文書の内容を説明してください。"; }
-        List<ChatAttachment> attachments = [.. PendingAttachments]; PendingAttachments.Clear(); Input = ""; Error = "";
-        if (conversation.Messages.Count == 0) { string title = prompt.Replace('\r', ' ').Replace('\n', ' '); conversation.Title = title.Length > 28 ? title[..28] + "…" : title; }
-        conversation.Messages.Add(new() { Role = "user", Content = prompt, Attachments = attachments });
-        await GenerateAnswerAsync(conversation);
+        List<ChatAttachment> attachments = [.. PendingAttachments, .. SharedAttachments(conversation)]; PendingAttachments.Clear(); Input = ""; Error = "";
+        if (conversation.Messages.Count == 0 && conversation.Title is "新しいチャット" or "新しいチャンネル") { string title = prompt.Replace('\r', ' ').Replace('\n', ' '); conversation.Title = title.Length > 28 ? title[..28] + "…" : title; }
+        conversation.Messages.Add(new() { Role = "user", Content = prompt, Attachments = attachments, Identity = SelfIdentity(_replyTo) });
+        ReplyTo(null);
+        try
+        {
+            IReadOnlyList<AgentAccount> targets = TargetAgents(conversation, prompt);
+            bool workspaceRequest = targets.Any(a => a.Autonomy?.Automatic == true) && System.Text.RegularExpressions.Regex.IsMatch(prompt, "(?:サーバー|チャンネル|チーム|担当).{0,40}(?:作|組|分|用意)", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(100));
+            if (targets.Count == 0 && conversation.Room?.Members.Count == 0) { await PersistSafelyAsync(); return; }
+            if (!invitation && !workspaceRequest && SelectedWorkMode.Id is "chat" or "offline" && conversation.Room?.Social?.Enabled == true && !SocialStopped) { await BeginSocialReplyAsync(conversation, targets); }
+            else if (SelectedWorkMode.Id == "debate" || targets.Count == 0) { await GenerateAnswerAsync(conversation); }
+            else { foreach (AgentAccount target in targets) { await QueueAnswerAsync(conversation, null, agent: target); } }
+        }
+        catch (Exception ex) { Error = ex.Message; }
     }
     public Task RegenerateAsync(ChatMessage message)
     {
@@ -326,7 +373,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         int index = SelectedConversation.Messages.IndexOf(message);
         if (index < 0 || message.Role != "user") { return Task.CompletedTask; }
         NavigationStarting?.Invoke(); SelectedConversation.Fork(index, $"編集 {SelectedConversation.Branches.Count}");
-        SelectedConversation.Messages.Add(new() { Role = "user", Content = content.Trim(), Attachments = [.. message.Attachments] }); Notify(nameof(SelectedBranch));
+        SelectedConversation.Messages.Add(new() { Role = "user", Content = content.Trim(), Attachments = [.. message.Attachments], Identity = SelfIdentity() }); Notify(nameof(SelectedBranch));
         return _generationTask = GenerateAnswerAsync(SelectedConversation);
     }
     public Task ContinueAsync(ChatMessage message)
@@ -338,19 +385,23 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         SelectedConversation.Messages.Add(new()
         {
             Role = "user",
+            Identity = SelfIdentity(),
             Content = message.Work is null ? "直前の回答の続きを、重複を避けて書いてください。" :
             message.Work.Question + "\nさらに詳しく調べ、未確認の点と別の観点について説明してください。"
         });
         return _generationTask = GenerateAnswerAsync(SelectedConversation, message.Work);
     }
-    private async Task GenerateAnswerCoreAsync(Conversation conversation, ChatMessage answer, InferenceJob job, LlamaService engine, CancellationToken token, WorkSession? previousWork = null)
+    private async Task GenerateAnswerCoreAsync(Conversation conversation, ChatMessage answer, InferenceJob job, LlamaService engine, CancellationToken token, WorkSession? previousWork = null, bool allowTeam = true)
     {
+        if (allowTeam && await TryArtistRequestAsync(conversation, answer, job, engine, token)) { return; }
+        if (allowTeam && await TryInviteFromChatAsync(conversation, answer, job, engine, token)) { return; }
+        if (allowTeam && await TryRunTeamAsync(conversation, answer, job, engine, token)) { return; }
         SavedMessage[] requests = conversation.Messages.Select(m => m.Save()).ToArray();
         AppSettings settings = job.Request.Settings;
         LocalModel model = job.Request.Model;
         InferenceMode mode = InferenceModes.Find(settings.InferenceMode);
         int effectiveContext = settings.ContextSize;
-        ScrollJob(job, true);
+        ScrollJob(job, false);
         var text = new StringBuilder(); Stopwatch? thinking = null;
         var elapsed = Stopwatch.StartNew(); double? firstOutput = null;
         long lastUpdate = 0, lastSave = 0;
@@ -414,9 +465,9 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
             }
             if (requests.Any(m => m.Attachments is { Count: > 0 } items && items.Any(a => a.Text.Length > Math.Max(800, 8000 / items.Count)))) { answer.Notice = "長い添付本文は質問に関連する箇所を抜粋して参照します。原文は添付から確認できます。"; }
             await engine.EnsureModelAsync(model, inferenceSettings, message => job.Detail = message, token);
-            SavedMessage[] context = await ContextCompressor.PrepareAsync(conversation, engine, inferenceSettings, message => job.Detail = message, token, knowledge);
+            SavedMessage[] context = await ContextCompressor.PrepareAsync(conversation, engine, inferenceSettings, message => job.Detail = message, token, knowledge, job.Request.Agent);
             job.Detail = "応答を生成しています…"; elapsed.Restart();
-            await foreach (GenerationUpdate piece in engine.GenerateAsync(context, mode, token, knowledge.Instruction))
+            await foreach (GenerationUpdate piece in engine.GenerateAsync(context, mode, token, knowledge.Instruction, allowTeam ? null : 512))
             {
                 if (piece.Content.Length > 0 || piece.Reasoning.Length > 0) { firstOutput ??= elapsed.Elapsed.TotalSeconds; }
                 if (piece.Reasoning.Length > 0 && thinking is null) { thinking = Stopwatch.StartNew(); answer.IsThinking = true; job.Detail = $"{mode.Name} · 考えています…"; }
@@ -490,21 +541,43 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         KnowledgeContext knowledge = SkillRunner.WithKnowledge(new(job.Request.Instruction, job.Request.References), answer.Skills);
         answer.Knowledge = knowledge.References;
         long lastSave = 0;
+        LocalModel? WorkModel(string id) => job.Request.Models.FirstOrDefault(m => m.Id == id) ?? (work.Options.DebateStyle == "free" ? Models.FirstOrDefault(m => m.Id == id) : null);
+        int ModelContext(string id) => Math.Min(job.Request.Settings.ContextSize, WorkModel(id)?.Options.ContextSize ?? job.Request.Settings.ContextSize);
+        var personalContexts = new Dictionary<(AgentAccount, int), KnowledgeContext>();
+        async Task<KnowledgeContext> PromptKnowledgeAsync(WorkPrompt prompt)
+        {
+            ChannelAccess.RequireSpeaker(CaptureState(), Conversations.First(c => c.Id == job.Request.ConversationId).Save(), prompt.AgentId ?? job.Request.Agent?.Id);
+            if (prompt.AgentId is not Guid agent) { return knowledge; }
+            AgentAccount account = Agents.First(a => a.Id == agent);
+            int capacity = ModelContext(prompt.ModelId);
+            if (!personalContexts.TryGetValue((account, capacity), out KnowledgeContext? personal))
+            {
+                Conversation actual = Conversation.Restore(Conversations.First(c => c.Id == job.Request.ConversationId).Save());
+                AppState state = CaptureState();
+                personal = await Task.Run(() => KnowledgeService.Build(state, actual, work.Question, capacity, token, agentId: agent), token);
+                personal = SkillRunner.WithKnowledge(personal, answer.Skills); personalContexts[(account, capacity)] = personal;
+            }
+            if (work.Turns.LastOrDefault() is { Incomplete: true } draft && draft.AgentId == agent)
+            { int index = work.Turns.Count - 1; work.Turns[index] = draft with { Knowledge = personal.References }; }
+            return personal;
+        }
         async Task EnsureWorkModel(WorkPrompt prompt, CancellationToken token)
         {
-            LocalModel model = job.Request.Models.FirstOrDefault(m => m.Id == prompt.ModelId) ?? throw new InvalidOperationException("調査で使うモデルが見つかりません。モデルを追加するか、作業設定を確認してください。");
-            int workContext = Math.Min(job.Request.Settings.ContextSize, work.Options.Participants.Select(r => job.Request.Models.FirstOrDefault(m => m.Id == r.ModelId)?.Options.ContextSize ?? job.Request.Settings.ContextSize).Min());
+            LocalModel model = AccountDefaults.ModelFor(Agents.FirstOrDefault(a => a.Id == (prompt.AgentId ?? job.Request.Agent?.Id)), WorkModel(prompt.ModelId) ?? throw new InvalidOperationException("調査で使うモデルが見つかりません。モデルを追加するか、作業設定を確認してください。"));
+            if (work.Turns.LastOrDefault() is { Incomplete: true } turn && turn.ModelId == model.Id)
+            { work.Turns[work.Turns.Count - 1] = turn with { ModelName = model.DisplayName }; }
+            int workContext = ModelContext(model.Id);
             await engine.EnsureModelAsync(model, job.Request.Settings with { ContextSize = workContext }, message => job.Detail = message, token);
         }
         async Task<int> Count(WorkPrompt prompt, CancellationToken token)
-        { await EnsureWorkModel(prompt, token); return await engine.CountInputTokensAsync(knowledge.Prepend([new("user", prompt.User)]), System(prompt), token); }
-        string System(WorkPrompt prompt) => knowledge.Instruction + "\n今回の調査工程:\n" + prompt.System;
+        { using var trace = DiagnosticScope.Start(_store.Trace, job.Request.Id, conversation.Id, prompt.AgentId ?? job.Request.Agent?.Id); await EnsureWorkModel(prompt, token); KnowledgeContext personal = await PromptKnowledgeAsync(prompt); return await engine.CountInputTokensAsync(personal.Prepend([new("user", prompt.User)]), personal.Instruction + "\n今回の調査工程:\n" + prompt.System, token); }
         async Task<WorkReply> Generate(WorkPrompt prompt, Action<string>? output, CancellationToken token)
         {
             await EnsureWorkModel(prompt, token);
+            KnowledgeContext personal = await PromptKnowledgeAsync(prompt);
             var text = new StringBuilder(); bool truncated = false;
-            InferenceMode mode = prompt.Final ? InferenceModes.Find(answer.Mode) : InferenceModes.Find("fast");
-            await foreach (GenerationUpdate piece in engine.GenerateAsync(knowledge.Prepend([new("user", prompt.User)]), mode, token, System(prompt), prompt.MaxTokens, prompt.JsonSchema))
+            InferenceMode mode = prompt.Final || work.Options.DebateStyle == "free" && prompt.AgentId is not null ? InferenceModes.Find(answer.Mode) : InferenceModes.Find("fast");
+            await foreach (GenerationUpdate piece in engine.GenerateAsync(personal.Prepend([new("user", prompt.User)]), mode, token, personal.Instruction + "\n今回の調査工程:\n" + prompt.System, prompt.MaxTokens, prompt.JsonSchema))
             {
                 text.Append(piece.Content); truncated |= piece.FinishReason == "length";
                 if (piece.Content.Length > 0) { output?.Invoke(text.ToString()); ScrollJob(job, false); }
@@ -515,9 +588,9 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         }
         conversation.UpdatedAt = DateTimeOffset.UtcNow;
         await PersistSafelyAsync();
-        int workContext = Math.Min(job.Request.Settings.ContextSize, work.Options.Participants.Select(r => job.Request.Models.FirstOrDefault(m => m.Id == r.ModelId)?.Options.ContextSize ?? job.Request.Settings.ContextSize).Min());
+        int workContext = job.Request.Settings.ContextSize;
         using var web = new WebSearchService();
-        var runner = new ResearchRunner(web, Generate, Count, workContext);
+        var runner = new ResearchRunner(web, Generate, Count, workContext, ModelContext);
         await runner.RunAsync(work, PlanReviewRequested ?? ((_, _) => Task.FromResult(false)), PersistSafelyAsync,
             message => job.Detail = message, text => answer.Content = text, token);
         answer.Notice = work.Stage switch { "paused" => "作業を停止しました。「調査の活動と資料」から再開できます。", "limited" => "設定した上限に達しました。途中結果と資料を保存しました。", _ => "" };
@@ -552,10 +625,11 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     private async void ScheduleSave()
     {
-        _historySearchCancellation?.Cancel(); _historySearchCancellation?.Dispose(); _draftSave?.Cancel(); _draftSave?.Dispose(); _draftSave = new(); CancellationToken token = _draftSave.Token;
+        if (!_ready || _shuttingDown) { return; }
+        _draftSave?.Cancel(); _draftSave?.Dispose(); _draftSave = new(); CancellationToken token = _draftSave.Token;
         try { await Task.Delay(400, token); await PersistSafelyAsync(); } catch (OperationCanceledException) { }
     }
-    public AppState CaptureState() => new(Skills.Count > 0 || Conversations.Any(c => c.SkillsMode is not null) || _store.UsesSkillsState ? 3 : Projects.Count > 0 || _commonMemories.Count > 0 || Inferences.Items.Any(j => j.IsPending) || _store.UsesKnowledgeState ? 2 : 1, _settings, Conversations.Select(c => c.Save()).ToList(), [.. Projects], [.. _commonMemories], Inferences.Items.Where(j => j.IsPending).Select(j => j.Request).ToList(), [.. Skills]);
+    public AppState CaptureState() => new(5, _settings, Conversations.Select(c => c.Save()).ToList(), [.. Projects], [.. _commonMemories], Inferences.Items.Where(j => j.IsPending).Select(j => j.Request).ToList(), [.. Skills], [.. Agents], [.. AgentMemories], Self);
     private TaskCompletionSource? _pendingPersistence;
     private bool _persisting;
     public Task PersistSafelyAsync()
@@ -585,18 +659,17 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     public async Task ImportHistoryAsync(string path, bool includeCommonMemories = false)
     {
         if (IsBusy || Inferences.HasPending) { throw new InvalidOperationException("実行中の処理と予約を終えてから取り込んでください。"); }
-        AppState imported = await _store.ReadExportAsync(path);
-        Dictionary<Guid, Guid> projectMap = (imported.Projects ?? []).ToDictionary(p => p.Id, _ => Guid.NewGuid());
-        List<KnowledgeProject> newProjects = (imported.Projects ?? []).Select(p => p with { Id = projectMap[p.Id], UseCommonSkills = false }).ToList();
+        AppState imported = WorkspaceService.ImportCopy(await _store.ReadExportAsync(path));
+        List<KnowledgeProject> newProjects = imported.Projects ?? [];
         List<MemoryNote> nextMemories = includeCommonMemories ? [.. _commonMemories, .. (imported.CommonMemories ?? []).Where(m => !_commonMemories.Any(n => n.Text == m.Text)).Select(m => m with { Id = Guid.NewGuid() })] : [.. _commonMemories];
-        AppStore.Validate(CaptureState() with { Projects = [.. Projects, .. newProjects], CommonMemories = nextMemories });
+        AppStore.Validate(CaptureState() with { Projects = [.. Projects, .. newProjects], CommonMemories = nextMemories, Agents = [.. Agents, .. imported.Agents ?? []], AgentMemories = [.. AgentMemories, .. imported.AgentMemories ?? []], Conversations = [.. Conversations.Select(c => c.Save()), .. imported.Conversations] });
         foreach (KnowledgeProject project in newProjects) { Projects.Add(project); }
         _commonMemories = nextMemories;
-        foreach (SavedConversation saved in imported.Conversations)
-        {
-            SavedConversation unique = saved with { Id = Conversations.Any(c => c.Id == saved.Id) ? Guid.NewGuid() : saved.Id, ProjectId = saved.ProjectId is Guid id ? projectMap[id] : null, SkillIds = [] };
-            Conversations.Add(Conversation.Restore(unique));
-        }
+        foreach (AgentAccount agent in imported.Agents ?? []) { Agents.Add(agent); }
+        foreach (AgentMemory memory in imported.AgentMemories ?? []) { AgentMemories.Add(memory); }
+        _incoming?.Dispose();
+        try { foreach (SavedConversation saved in imported.Conversations) { Conversations.Add(Conversation.Restore(saved)); } }
+        finally { _incoming = new(Conversations, Incoming); }
         RefreshProjectChoices(); await PersistSafelyAsync();
     }
     public IReadOnlyList<FileInfo> GetBackups() => _store.GetBackups();
@@ -639,7 +712,8 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         Conversation conversation = Conversation.Restore(context.Conversation); SkillRequest selectedSkills = context.Skills;
         var skillJob = new InferenceJob(new(Guid.NewGuid(), conversation.Id, conversation.ActiveBranch.Id, Guid.NewGuid(), "文書生成", DateTimeOffset.UtcNow,
             model, [model], settings, "", [], Skills: selectedSkills));
-        Task<KnowledgeContext> knowledgeTask = context.FrozenInstruction is not null && context.FrozenReferences is not null ? Task.FromResult(new KnowledgeContext(context.FrozenInstruction, context.FrozenReferences)) : Task.Run(() => KnowledgeService.Build(context.State, conversation, prompt, settings.ContextSize, token, instruction), token);
+        if (context.AccessStamp is not null && context.AccessStamp != WorkspaceService.AccessStamp(CaptureState(), context.Conversation.Id, context.AgentId, context.FrozenReferences ?? [])) { throw new InvalidOperationException("参照設定が変更されています。生成を新しく依頼してください。"); }
+        Task<KnowledgeContext> knowledgeTask = context.FrozenInstruction is not null && context.FrozenReferences is not null ? Task.FromResult(new KnowledgeContext(context.FrozenInstruction, context.FrozenReferences)) : Task.Run(() => KnowledgeService.Build(context.State, conversation, prompt, settings.ContextSize, token, instruction, context.AgentId), token);
         var artifactAnswer = new ChatMessage();
         await PrepareSkillsAsync(artifactAnswer, skillJob, artifactEngine, prompt, token); if (_mediaContext.Value is { } media) { media.Job.Skills = artifactAnswer.Skills; } else { LastArtifactSkills = artifactAnswer.Skills; }
         await artifactEngine.EnsureModelAsync(model, settings, ReportMediaProgress, token);
@@ -657,17 +731,25 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     }
     public async Task ShutdownAsync()
     {
-        _shuttingDown = true; _mediaShutdown.Cancel(); foreach (MediaJob job in MediaJobs.Where(j => j.IsPending).ToArray()) { job.Cancel(); if (job.State == "queued") { job.State = job.Request is null ? "canceled" : "paused"; job.Completion.TrySetCanceled(); } }
-        RefreshCommands(); _draftSave?.Cancel(); _generation?.Cancel();
+        StopSocialClock();
+        await LeaveVoiceAsync();
+        _shuttingDown = true; StopComputers(); try { await ComputerCompletion; } catch (OperationCanceledException) { }
+        _mediaShutdown.Cancel(); foreach (MediaJob job in MediaJobs.Where(j => j.IsPending).ToArray()) { job.Cancel(); if (job.State == "queued") { job.State = job.Request is null ? "canceled" : "paused"; job.Completion.TrySetCanceled(); } }
+        RefreshCommands(); _draftSave?.Cancel(); _historySearchCancellation?.Cancel(); _generation?.Cancel();
         await Inferences.ShutdownAsync();
         try { await Task.WhenAll(_mediaWorkers.Values.ToArray()); } catch (Exception ex) { _lastError = ex; }
         await SaveMediaJobsAsync();
         if (_generationTask is not null) { try { await _generationTask; } catch (Exception ex) { _lastError = ex; } }
         await Downloads.ShutdownAsync();
         await PersistSafelyAsync(); ReleaseIdleEngines(); _llama.Stop();
+        _store.Trace.Write("info", "app", "shutdown"); await _store.Trace.FlushAsync();
     }
     public void Dispose()
     {
+        StopSocialClock();
+        _incoming?.Dispose(); _incoming = null;
+        _historySearchCancellation?.Cancel(); _historySearchCancellation?.Dispose(); _historySearchCancellation = null;
+        StopComputers();
         _draftSave?.Cancel(); _draftSave?.Dispose(); _generation?.Cancel();
         foreach (Conversation c in Conversations) { c.PropertyChanged -= ConversationChanged; }
         ReleaseIdleEngines(); foreach (LlamaService engine in _busyEngines) { engine.Dispose(); }

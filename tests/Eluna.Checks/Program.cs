@@ -25,6 +25,16 @@ internal static class Program
         {
             await CheckStorageAsync(Path.Combine(root, "storage-" + Guid.NewGuid().ToString("N")));
             await CheckEventsAsync();
+            await ComputerUseChecks.RunAsync();
+            await WorkspaceChecks.RunAsync(Path.Combine(root, "workspace-" + Guid.NewGuid().ToString("N")));
+            await AgentFeaturesChecks.RunAsync(Path.Combine(root, "agents-" + Guid.NewGuid().ToString("N")));
+            await SocialChatChecks.RunAsync(Path.Combine(root, "social-" + Guid.NewGuid().ToString("N")));
+            await DiagnosticsChecks.RunAsync(Path.Combine(root, "diagnostics-" + Guid.NewGuid().ToString("N")));
+            await SocialAutonomyChecks.RunAsync(Path.Combine(root, "social-autonomy-" + Guid.NewGuid().ToString("N")));
+            await ExperienceChecks.RunAsync(Path.Combine(root, "experience-" + Guid.NewGuid().ToString("N")));
+            await MessageExperienceChecks.RunAsync(Path.Combine(root, "messages-" + Guid.NewGuid().ToString("N")));
+            await ComposerChecks.RunAsync(Path.Combine(root, "composer-" + Guid.NewGuid().ToString("N")));
+            await VoiceChannelChecks.RunAsync(Path.Combine(root, "voice-" + Guid.NewGuid().ToString("N")));
             await InferenceQueueChecks.RunAsync(Path.Combine(root, "inference-queue-" + Guid.NewGuid().ToString("N")));
             await SkillChecks.RunAsync(Path.Combine(root, "skills-" + Guid.NewGuid().ToString("N")));
             await LicenseChecks.RunAsync();
@@ -39,6 +49,7 @@ internal static class Program
             CheckWebParsers();
             await SearchRoutingChecks.RunAsync();
             await MediaChecks.RunAsync(Path.Combine(root, "media-" + Guid.NewGuid().ToString("N")));
+            await UpdateChecks.RunAsync(Path.Combine(root, "updates-" + Guid.NewGuid().ToString("N")));
             CheckUpdates();
             await CheckUpdateNetworkStatesAsync();
             await CheckWorkflowsAsync(Path.Combine(root, "workflows-" + Guid.NewGuid().ToString("N")));
@@ -246,7 +257,7 @@ internal static class Program
         var interrupted = new WorkSession { Mode = "debate", ModelId = "default", Question = "Elunaを検討", Options = new(3, 3, 2, 60, 5000, 2) };
         await runner.RunAsync(interrupted, (_, _) => Task.FromResult(true), () =>
         {
-            if (interrupted.Turns.Count == 1) { cancel.Cancel(); }
+            if (interrupted.Turns.Count(t => !t.Incomplete) == 1) { cancel.Cancel(); }
             return Task.CompletedTask;
         }, _ => { }, _ => { }, cancel.Token);
         Check(interrupted.Stage == "paused" && interrupted.Turns.Count == 1 && interrupted.Sources.Count == 1 && interrupted.CanResume, "Stopping debate discarded completed work.");
@@ -260,7 +271,7 @@ internal static class Program
         var noBody = new ResearchRunner(Search, (_, _) => throw new InvalidDataException("取得不可"), Generate, Count, 4096);
         var empty = new WorkSession { Mode = "search", ModelId = "default", Question = "根拠なし", Options = new(1, 1, 1, 30, 2000, 1) };
         await noBody.RunAsync(empty, (_, _) => Task.FromResult(true), () => Task.CompletedTask, _ => { }, _ => { }, CancellationToken.None);
-        Check(empty.Sources.Count == 0 && generated.Last().User.Contains("本文を取得できた資料はありません", StringComparison.Ordinal) && empty.Report.Contains("根拠の対応を確認できませんでした", StringComparison.Ordinal), "Search snippets were presented as retrieved evidence.");
+        Check(empty.Sources.Count == 0 && generated.Last().User.Contains("本文を取得できた資料はありません", StringComparison.Ordinal) && empty.Report.Contains("確かな答えを確認できませんでした", StringComparison.Ordinal), "Search snippets were presented as retrieved evidence.");
         WorkSource[] known = [new(1, "資料", "https://example.com", "本文には12文字以上の正しい引用だけが含まれます。", DateTimeOffset.UtcNow)];
         string forged = "{\"answer\":\"でたらめ [S1]\",\"evidence\":[{\"source\":1,\"quote\":\"実際の本文にはない引用です。\",\"claim\":\"でたらめ\"}]}";
         Check(!ResearchRunner.TryGroundReport(forged, known, out _, out _), "A fabricated quotation was accepted as source evidence.");

@@ -1,0 +1,34 @@
+using System.IO;
+using System.Text.Json;
+using System.Windows;
+
+namespace Eluna.App.Services;
+
+internal sealed record WindowPlacement(double Left, double Top, double Width, double Height, bool Maximized)
+{
+    internal static void Restore(Window window, string root)
+    {
+        if (window.WindowStartupLocation == WindowStartupLocation.Manual) { return; }
+        try
+        {
+            string path = Path.Combine(root, "window.json"); if (!File.Exists(path)) { return; }
+            WindowPlacement? saved = JsonSerializer.Deserialize<WindowPlacement>(File.ReadAllText(path));
+            if (saved is null || new[] { saved.Left, saved.Top, saved.Width, saved.Height }.Any(v => !double.IsFinite(v))) { return; }
+            Rect work = SystemParameters.WorkArea;
+            window.Width = Math.Clamp(saved.Width, window.MinWidth, Math.Max(window.MinWidth, work.Width));
+            window.Height = Math.Clamp(saved.Height, window.MinHeight, Math.Max(window.MinHeight, work.Height));
+            window.Left = Math.Clamp(saved.Left, work.Left, Math.Max(work.Left, work.Right - window.Width));
+            window.Top = Math.Clamp(saved.Top, work.Top, Math.Max(work.Top, work.Bottom - window.Height));
+            window.WindowStartupLocation = WindowStartupLocation.Manual;
+            if (saved.Maximized) { window.WindowState = WindowState.Maximized; }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
+    }
+    internal static async Task SaveAsync(Window window, string root)
+    {
+        Rect bounds = window.WindowState == WindowState.Normal ? new(window.Left, window.Top, window.Width, window.Height) : window.RestoreBounds;
+        if (bounds.IsEmpty || bounds.Left < -10000 || bounds.Top < -10000) { return; }
+        try { await File.WriteAllTextAsync(Path.Combine(root, "window.json"), JsonSerializer.Serialize(new WindowPlacement(bounds.Left, bounds.Top, bounds.Width, bounds.Height, window.WindowState == WindowState.Maximized))); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+}

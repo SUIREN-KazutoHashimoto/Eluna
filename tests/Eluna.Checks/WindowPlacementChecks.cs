@@ -28,6 +28,9 @@ internal static class WindowPlacementChecks
         WindowArea workspace = new(-2400, -180, 1350, 900);
         Check(WindowNative.ScreenBounds(workspace, left) == saved.Bounds && WindowNative.WorkspaceBounds(saved.Bounds, left) == workspace, "Top taskbar workspace coordinates drifted.");
         var sideTaskbar = left with { WorkArea = new(-2510, -300, 2510, 1440) };
+        Check(MaximizedWorkArea.RelativeArea(primary) == new WindowArea(0, 40, 1920, 1040) && MaximizedWorkArea.RelativeArea(left) == new WindowArea(0, 40, 2560, 1400), "Top-taskbar maximization mixed physical coordinates with DIPs.");
+        Check(MaximizedWorkArea.RelativeArea(sideTaskbar) == new WindowArea(50, 0, 2510, 1440), "A side taskbar or negative monitor origin changed the maximized work area.");
+        Check(MaximizedWorkArea.RelativeArea(moved with { WorkArea = new(2000, 0, 3840, 2112) }) == new WindowArea(0, 0, 3840, 2112), "Bottom-taskbar maximization used the monitor's full height.");
         Check(WindowNative.ScreenBounds(workspace, sideTaskbar) == workspace with { Left = -2350 }, "Side taskbar offset was lost.");
         Check(WindowNative.ScreenBounds(workspace, left, true) == workspace && WindowNative.WorkspaceBounds(workspace, left, true) == workspace, "Tool-window screen coordinates were shifted.");
         foreach (WindowPlacement invalid in new[] { saved with { Width = -1 }, saved with { Height = 0 }, saved with { Left = double.NaN }, saved with { Top = double.PositiveInfinity }, saved with { Dpi = 0 }, saved with { Version = 99 }, saved with { WorkArea = null }, saved with { Left = double.MaxValue } })

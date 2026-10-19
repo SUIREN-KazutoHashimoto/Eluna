@@ -1,0 +1,18 @@
+using Eluna.App.Models;
+using Eluna.App.Services;
+
+namespace Eluna.App.ViewModels;
+
+internal sealed record ArtifactContext(AppState State, SavedConversation Conversation, LocalModel Model, AppSettings Settings, SkillRequest Skills);
+
+public sealed partial class ChatViewModel
+{
+    internal ArtifactContext CaptureArtifactContext(string prompt)
+    {
+        LocalModel model = SelectedModel ?? throw new InvalidOperationException("左上から文章生成用のモデルを選んでください。");
+        Conversation conversation = SelectedConversation ?? throw new InvalidOperationException("会話を選択してください。");
+        return new(CaptureState(), conversation.Save(), model, EffectiveSettings, SkillRunner.Capture(Skills, conversation.ProjectId, SelectedProject?.UseCommonSkills == true, SkillMode, conversation.SkillIds, prompt));
+    }
+    internal void ReportMediaProgress(string text)
+    { MediaJob? job = MediaJobs.FirstOrDefault(j => j.State == "active"); if (job is not null) { job.Detail = text; } }
+}

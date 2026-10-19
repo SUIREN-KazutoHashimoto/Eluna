@@ -1,0 +1,30 @@
+[
+  {
+    "backend": "cpu",
+    "file": "llama-server.exe",
+    "exitCode": 0,
+    "sha256": "CD41035D2528CA53CA8742595638C99A8A70580D043D48B3D25604883472B4E7",
+    "version": "version: 0.6.0-dev (build 1, commit 6868a52)\r\nbuilt with MSVC 19.51.36257.0 for x64"
+  },
+  {
+    "backend": "cpu",
+    "file": "sd-cli.exe",
+    "exitCode": 0,
+    "sha256": "F903F20B757D2B7902EA877B76A90C8895A1ED40FA32426DAE99C52C0E24CD80",
+    "version": "stable-diffusion.cpp version master-964-1d0a58a-1-g120e3e8, commit 120e3e8"
+  },
+  {
+    "backend": "vulkan",
+    "file": "llama-server.exe",
+    "exitCode": 0,
+    "sha256": "C5E22BBD7F39561B4695EF78BEF2ECF2B7442EAE671302AB4DFD1B673346A652",
+    "version": "version: 0.6.0-dev (build 1, commit 6868a52)\r\nbuilt with MSVC 19.51.36257.0 for x64"
+  },
+  {
+    "backend": "vulkan",
+    "file": "sd-cli.exe",
+    "exitCode": 0,
+    "sha256": "191808266667B1C6E9526D8531D8C952F6D4AE8965374C97F8270BAD88A112B5",
+    "version": "stable-diffusion.cpp version master-964-1d0a58a-1-g120e3e8, commit 120e3e8"
+  }
+]

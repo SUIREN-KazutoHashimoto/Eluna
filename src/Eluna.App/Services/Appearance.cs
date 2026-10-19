@@ -25,24 +25,30 @@ public static class Appearance
         Application.Current.Resources["Theme"] = theme;
         bool light = theme == "light";
         string[] names = ["BackgroundBrush", "SidebarBrush", "SurfaceBrush", "HoverBrush", "StrokeBrush", "TextBrush", "MutedBrush", "AccentBrush", "OnAccentBrush", "CodeKeywordBrush", "CodeStringBrush", "CodeCommentBrush", "CodeNumberBrush"];
-        string[] colors = light ? ["#FAFAFA", "#F0F0F0", "#E8E8E8", "#DEDEDE", "#CBCBCB", "#202020", "#656565", "#286B48", "#FFFFFF", "#6843A0", "#79550E", "#36733A", "#23667C"]
-            : ["#212121", "#171717", "#303030", "#3B3B3B", "#424242", "#ECECEC", "#A5A5A5", "#B3EBCB", "#10291B", "#9E9BEF", "#C2A76F", "#86AA82", "#89BCD8"];
+        string[] colors = light ? ["#E3E5E8", "#F2F3F5", "#EBEDEF", "#DFE1E5", "#D9DCE1", "#313338", "#5C5E66", "#5865F2", "#FFFFFF", "#6843A0", "#79550E", "#36733A", "#23667C"]
+            : ["#1E1F22", "#2B2D31", "#232428", "#404249", "#26272D", "#F2F3F5", "#B5BAC1", "#5865F2", "#FFFFFF", "#B0ADF6", "#D1B47B", "#96BA92", "#99CCE8"];
         for (int i = 0; i < names.Length; i++) { Application.Current.Resources[names[i]] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(colors[i])); }
+        Application.Current.Resources["SelectionStrokeBrush"] = Brushes.Transparent;
         Application.Current.Resources["ChatBackgroundBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(light ? "#FFFFFF" : "#313338"));
         Application.Current.Resources["ChatHoverBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(light ? "#F2F3F5" : "#2E3035"));
         Application.Current.Resources["ChatInputBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(light ? "#EBEDEF" : "#383A40"));
         Application.Current.Resources["ErrorBackgroundBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(light ? "#FCE8E6" : "#3A2D2D"));
+        Application.Current.Resources["MentionTextBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(light ? "#4338A8" : "#DEE0FF"));
+        Application.Current.Resources["MentionBackgroundBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(light ? "#E8E7FF" : "#4B4B77"));
         if (highContrastForAudit ?? SystemParameters.HighContrast)
         {
+            Application.Current.Resources["MentionTextBrush"] = SystemColors.HighlightTextBrush; Application.Current.Resources["MentionBackgroundBrush"] = SystemColors.HighlightBrush;
             foreach (string key in new[] { "BackgroundBrush", "SidebarBrush", "SurfaceBrush", "ChatBackgroundBrush", "ChatInputBrush", "ErrorBackgroundBrush" }) { Application.Current.Resources[key] = SystemColors.WindowBrush; }
             foreach (string key in new[] { "TextBrush", "MutedBrush", "StrokeBrush", "CodeKeywordBrush", "CodeStringBrush", "CodeCommentBrush", "CodeNumberBrush" }) { Application.Current.Resources[key] = SystemColors.WindowTextBrush; }
-            foreach (string key in new[] { "AccentBrush", "HoverBrush", "ChatHoverBrush" }) { Application.Current.Resources[key] = SystemColors.HighlightBrush; }
+            Application.Current.Resources["HoverBrush"] = SystemColors.WindowBrush; Application.Current.Resources["ChatHoverBrush"] = SystemColors.WindowBrush;
+            Application.Current.Resources["AccentBrush"] = SystemColors.HighlightBrush; Application.Current.Resources["SelectionStrokeBrush"] = SystemColors.HighlightBrush;
             Application.Current.Resources["OnAccentBrush"] = SystemColors.HighlightTextBrush;
         }
         foreach (Window window in Application.Current.Windows) { SetTitle(window, !light); ScaleFonts(window); }
     }
     public static void Attach(Window window)
     {
+        window.Icon ??= System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/Assets/Eluna.ico"));
         if (window.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue) { window.SetResourceReference(FrameworkElement.StyleProperty, typeof(Window)); }
         window.SourceInitialized += (_, _) => SetTitle(window, !Equals(Application.Current.Resources["Theme"], "light"));
         window.Loaded += (_, _) => ScaleFonts(window);

@@ -1,0 +1,4 @@
+# Preserve archived originals byte-for-byte for manifest SHA-256 checks.
+*.txt -text whitespace=cr-at-eol
+# This historical original contains one whitespace-only line; preserve its hash.
+baseline-sources/remaining-features-baseline--src--Eluna.App--Resources--Styles.xaml.txt -whitespace

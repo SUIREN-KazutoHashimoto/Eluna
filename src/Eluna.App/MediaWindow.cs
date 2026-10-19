@@ -35,20 +35,22 @@ public sealed class MediaWindow : Window
     private List<KnowledgeReference> _documentKnowledge = [];
     private List<AppliedSkill> _documentSkills = [];
     private readonly Guid? _projectId;
+    private readonly Guid? _conversationId, _branchId;
     private readonly string _draftPath;
     internal Guid? ScopeId => _projectId;
     internal void SelectTab(string tab, string? initial = null) { _tabs.SelectedIndex = tab switch { "image" => 1, "vision" => 2, _ => 0 }; if (initial is not null && MessageBox.Show(this, "編集中の本文を直前の回答で置き換えますか？", "文書本文", MessageBoxButton.YesNo) == MessageBoxResult.Yes) { _document.Text = initial; } }
     internal string DraftPathForVerification => _draftPath;
     internal string DraftText => _document.Text;
-    internal bool ScopeMatches => _chat.Settings.SelectedProjectId == _projectId;
+    internal bool ScopeMatches => _chat.Settings.SelectedProjectId == _projectId && _chat.SelectedConversation?.Id == _conversationId && _chat.SelectedBranch?.Id == _branchId;
     internal string OperationStatus => Status;
 
     public MediaWindow(AppStore store, ChatViewModel chat, string tab = "document", string? initialText = null)
     {
         _store = store; _chat = chat; Title = "画像とドキュメント · Eluna"; Width = 1020; Height = 780; MinWidth = 720; MinHeight = 600;
         _projectId = chat.Settings.SelectedProjectId;
-        string primaryDraft = store.DocumentDraftPath(_projectId);
-        _draftPath = Application.Current.Windows.OfType<MediaWindow>().Any(w => !ReferenceEquals(w, this) && w.ScopeId == _projectId && w._store.Root == store.Root) ? Path.Combine(Path.GetDirectoryName(primaryDraft)!, Path.GetFileNameWithoutExtension(primaryDraft) + "-" + Guid.NewGuid().ToString("N") + ".md") : primaryDraft;
+        _conversationId = chat.SelectedConversation?.Id; _branchId = chat.SelectedBranch?.Id;
+        string primaryDraft = store.DocumentDraftPath(_projectId, _conversationId);
+        _draftPath = Application.Current.Windows.OfType<MediaWindow>().Any(w => !ReferenceEquals(w, this) && w._conversationId == _conversationId && w.ScopeId == _projectId && w._store.Root == store.Root) ? Path.Combine(Path.GetDirectoryName(primaryDraft)!, Path.GetFileNameWithoutExtension(primaryDraft) + "-" + Guid.NewGuid().ToString("N") + ".md") : primaryDraft;
         WindowStartupLocation = WindowStartupLocation.CenterOwner; Appearance.Attach(this);
         _tabs.Background = Brushes.Transparent; _tabs.BorderThickness = new(0); _tabs.Padding = new(0); _tabs.SetResourceReference(ForegroundProperty, "TextBrush");
         var root = new Grid { Margin = new(22) }; root.RowDefinitions.Add(new() { Height = GridLength.Auto }); root.RowDefinitions.Add(new()); root.RowDefinitions.Add(new() { Height = GridLength.Auto }); Content = root;
@@ -88,7 +90,8 @@ public sealed class MediaWindow : Window
         _document.LostKeyboardFocus += async (_, _) => { try { await SaveDraftAsync(); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Status = "下書きを保存できませんでした。保存先を指定して書き出してください。"; } };
         Note(docPanel, "DOCXは見出し・表付きの編集可能な文書です。PDFは日本語の見た目を保つ画像PDFで、文字選択には対応しません。");
 
-        var imagePanel = Panel("画像生成");
+        var imagePanel = Panel("画像モデルの準備・動作確認");
+        Note(imagePanel, "チャットで絵を依頼すると、絵描きスキルを持つアカウントが説明を考えて画像を返します。この画面のテスト生成はチャンネルへ自動投稿しません。");
         Note(imagePanel, "Stable Diffusion 1.5 / SDXLの一体型GGUFを使用します。分離したFLUX等の複数ファイル構成はこの画面では扱いません。初期の動作確認はSD 1.5です。");
         TextBox model = Field(imagePanel, "画像生成モデル", ReadImageModel());
         var modelButtons = Row(imagePanel);
@@ -118,7 +121,7 @@ public sealed class MediaWindow : Window
         var seed = new TextBox { Text = "-1", Width = 120, ToolTip = "シード（-1はランダム）" }; LabeledOption(options, "シード（-1は毎回変更）", seed);
         var compute = new ComboBox { ItemsSource = new[] { "自動（GPU優先）", "CPU" }, SelectedIndex = 0, Width = 170, Margin = new(8, 0, 0, 0) }; LabeledOption(options, "実行先", compute);
         var preview = new Image { MaxHeight = 450, Stretch = Stretch.Uniform, Margin = new(0, 14, 0, 0) };
-        Button(Row(imagePanel), "画像を生成", async () =>
+        Button(Row(imagePanel), "動作確認用の画像を生成", async () =>
         {
             if (!long.TryParse(seed.Text, out long value)) { throw new InvalidDataException("シードには整数を入力してください。"); }
             string[] dimensions = ((string)size.SelectedItem).Split('×');
@@ -210,7 +213,7 @@ public sealed class MediaWindow : Window
     private bool CheckScope()
     {
         if (ScopeMatches) { return true; }
-        Status = "この画面を開いたプロジェクトに戻すか、現在のプロジェクトで画面を開き直してください。処理は実行していません。"; return false;
+        Status = "この画面を開いたチャンネル・分岐へ戻すか、現在の場所で画面を開き直してください。処理は実行していません。"; return false;
     }
     private MediaJob? _trackedMedia;
     private void TrackMedia(MediaJob job, Action<MediaJob> update)

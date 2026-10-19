@@ -1,0 +1,48 @@
+$ErrorActionPreference = 'Stop'
+$taskRoot = Split-Path -Parent $PSScriptRoot
+$portable = Join-Path $PSScriptRoot 'workspace-portable'
+New-Item -ItemType Directory -Force $portable | Out-Null
+Copy-Item -LiteralPath (Join-Path $taskRoot 'artifacts/release-workspace/Eluna.exe') -Destination (Join-Path $portable 'Eluna.exe') -Force
+$env:DOTNET_ROOT = Join-Path $portable 'absent-runtime'
+$env:DOTNET_ROOT_X64 = $env:DOTNET_ROOT
+$env:DOTNET_MULTILEVEL_LOOKUP = '0'
+$env:DOTNET_BUNDLE_EXTRACT_BASE_DIR = Join-Path $portable 'extracted'
+$taskModel = Join-Path $taskRoot 'artifacts/media-integration-4b/Models/db5d6f08d43ef2e78a24a8f60ec7133c2dc7c933ac33e53f73df1206a8b9a30d/model.json'
+function Invoke-WorkspaceFixture([string[]]$TaskArguments, [string]$TaskOutput, [int]$TaskSeconds) {
+    $taskProcess = Start-Process -FilePath (Join-Path $portable 'Eluna.exe') -ArgumentList $TaskArguments -WindowStyle Hidden -PassThru
+    $taskDeadline = [DateTime]::UtcNow.AddSeconds($TaskSeconds)
+    $taskLastStage = ''
+    while (-not $taskProcess.WaitForExit(1000)) {
+        if ([DateTime]::UtcNow -gt $taskDeadline) { $taskProcess.Kill(); throw "Fixture timeout: $TaskOutput" }
+        $taskProgress = Join-Path $TaskOutput 'progress.json'
+        if (Test-Path -LiteralPath $taskProgress) {
+            try {
+                $taskStage = (Get-Content -LiteralPath $taskProgress -Raw | ConvertFrom-Json).stage
+                if ($taskStage -ne $taskLastStage) { Write-Output $taskStage; $taskLastStage = $taskStage }
+            } catch { }
+        }
+    }
+    $taskResult = Join-Path $TaskOutput 'result.txt'
+    if ($taskProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $taskResult) -or (Get-Content -LiteralPath $taskResult -Raw) -notmatch ': OK') {
+        if (Test-Path -LiteralPath $taskResult) { Get-Content -LiteralPath $taskResult }
+        throw "Fixture failed: $TaskOutput"
+    }
+    Get-Content -LiteralPath $taskResult
+}
+$taskUi = Join-Path $portable 'ui'
+Invoke-WorkspaceFixture @('--capture-dir', ('"' + $taskUi + '"'), '--verify-ui-ux') $taskUi 180
+$taskLive = Join-Path $portable 'live'
+Invoke-WorkspaceFixture @('--verify-workspace', ('"' + $taskLive + '"'), '--data-dir', ('"' + (Join-Path $taskLive 'data') + '"'), '--model-meta', ('"' + $taskModel + '"')) $taskLive 600
+$taskRuntime = Get-ChildItem -LiteralPath (Join-Path $taskLive 'data/Runtime') -Directory | Select-Object -First 1
+if ($null -eq $taskRuntime) { throw 'Bundled engines were not extracted.' }
+$taskNative = foreach ($backend in @('cpu', 'vulkan')) {
+    foreach ($name in @('llama-server.exe', 'sd-cli.exe')) {
+        $binary = Join-Path $taskRuntime.FullName "$backend/$name"
+        $lines = & $binary --version 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "$backend/$name failed: $lines" }
+        [pscustomobject]@{ Backend = $backend; Name = $name; ExitCode = $LASTEXITCODE; Sha256 = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash; Output = ($lines -join "`n") }
+    }
+}
+$taskNative | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $portable 'native.json') -Encoding utf8
+Get-FileHash -LiteralPath (Join-Path $portable 'Eluna.exe') -Algorithm SHA256 | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $portable 'exe.json') -Encoding utf8
+Write-Output 'Standalone exe: UI, real model, workspace/debate/research/backup and all four native engines: OK'
